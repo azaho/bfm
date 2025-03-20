@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+.env
+.temp/
+wandb/
+logs/
+profiler_logs/
+
+models_data/
+
+btbench/
+btbench_subject_metadata/
+
+analyses/eval_results/
+analyses/eval_results_old/
+analyses/btbench_map_figure/
