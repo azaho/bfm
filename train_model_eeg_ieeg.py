@@ -12,7 +12,7 @@ from evaluation_moabb import FrozenModelEvaluation_MOABB
 from train_utils import log, update_dir_name, update_random_seed, convert_dtypes, parse_configs_from_args, get_default_configs, get_shared_memory_info
 
 
-training_config, model_config, cluster_config = get_default_configs(random_string="benchtest1", wandb_project="eeg_ieeg_experiments")
+training_config, model_config, cluster_config = get_default_configs(random_string="benchtest2", wandb_project="eeg_ieeg_experiments")
 parse_configs_from_args(training_config, model_config, cluster_config)
 update_random_seed(training_config)
 
@@ -161,8 +161,8 @@ def calculate_loss_function(batch, subject_identifier, trial_id):
     # Randomly permute the electrodes
     permutation = torch.randperm(len(batch_other_electrode_indices))
     permutation_eeg = torch.randperm(len(batch_EEG_electrode_indices))
-    electrode_embedded_data = electrode_embedded_data[permutation]
-    electrode_embedded_data_eeg = electrode_embedded_data_eeg[permutation_eeg]
+    electrode_embedded_data = electrode_embedded_data[:, permutation]
+    electrode_embedded_data_eeg = electrode_embedded_data_eeg[:, permutation_eeg]
 
     # Put both halves of the batch through the models (eeg and ieeg). The outputs are of shape (batch_size, max_n_timebins, d_model)
     # Note that each output has the "electrode transformer" output, and the "time transformer" output. Those are the o_e and o_t outputs.
@@ -171,7 +171,6 @@ def calculate_loss_function(batch, subject_identifier, trial_id):
     o_eeg_e_2, o_eeg_t_2 = model_eeg(electrode_embedded_data_eeg[:, len(batch_EEG_electrode_indices)//2:])
     o_e_1, o_t_1 = model(electrode_embedded_data[:, :len(batch_other_electrode_indices)//2])
     o_e_2, o_t_2 = model(electrode_embedded_data[:, len(batch_other_electrode_indices)//2:])
-
 
     # Loss component 1: EEG model predicting the iEEG model, in the same timestep. Since we are splitting the data into halves, we have 4 possible combinations
     similarity_1 = torch.matmul(o_eeg_e_1[:, :].permute(1, 0, 2), o_e_1[:, :].permute(1, 2, 0)) * model_eeg.temperature_param
