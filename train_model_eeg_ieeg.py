@@ -159,18 +159,18 @@ def calculate_loss_function(batch, subject_identifier, trial_id):
     electrode_embedded_data_eeg = electrode_data_embeddings_eeg.forward(subject_identifier, EEG_electrode_indices, batch[:, batch_EEG_electrode_indices, :], max_n_electrodes=model_config['max_n_electrodes'])
 
     # Randomly permute the electrodes
-    permutation = torch.randperm(len(batch_other_electrode_indices))
-    permutation_eeg = torch.randperm(len(batch_EEG_electrode_indices))
+    permutation = torch.randperm(electrode_embedded_data.shape[1])
+    permutation_eeg = torch.randperm(electrode_embedded_data_eeg.shape[1])
     electrode_embedded_data = electrode_embedded_data[:, permutation]
     electrode_embedded_data_eeg = electrode_embedded_data_eeg[:, permutation_eeg]
 
     # Put both halves of the batch through the models (eeg and ieeg). The outputs are of shape (batch_size, max_n_timebins, d_model)
     # Note that each output has the "electrode transformer" output, and the "time transformer" output. Those are the o_e and o_t outputs.
     # We only use the time outputs for predicting the future timestep of the electrode transformer
-    o_eeg_e_1, o_eeg_t_1 = model_eeg(electrode_embedded_data_eeg[:, :len(batch_EEG_electrode_indices)//2])
-    o_eeg_e_2, o_eeg_t_2 = model_eeg(electrode_embedded_data_eeg[:, len(batch_EEG_electrode_indices)//2:])
-    o_e_1, o_t_1 = model(electrode_embedded_data[:, :len(batch_other_electrode_indices)//2])
-    o_e_2, o_t_2 = model(electrode_embedded_data[:, len(batch_other_electrode_indices)//2:])
+    o_eeg_e_1, o_eeg_t_1 = model_eeg(electrode_embedded_data_eeg[:, :len(permutation_eeg)//2])
+    o_eeg_e_2, o_eeg_t_2 = model_eeg(electrode_embedded_data_eeg[:, len(permutation_eeg)//2:])
+    o_e_1, o_t_1 = model(electrode_embedded_data[:, :len(permutation)//2])
+    o_e_2, o_t_2 = model(electrode_embedded_data[:, len(permutation)//2:])
 
     # Loss component 1: EEG model predicting the iEEG model, in the same timestep. Since we are splitting the data into halves, we have 4 possible combinations
     similarity_1 = torch.matmul(o_eeg_e_1[:, :].permute(1, 0, 2), o_e_1[:, :].permute(1, 2, 0)) * model_eeg.temperature_param
@@ -189,7 +189,7 @@ def calculate_loss_function(batch, subject_identifier, trial_id):
     similarity_2 = torch.matmul(o_e_2[:, :].permute(1, 0, 2), o_eeg_e_2[:, :].permute(1, 2, 0)) * model_eeg.temperature_param
     similarity_3 = torch.matmul(o_e_1[:, :].permute(1, 0, 2), o_eeg_e_2[:, :].permute(1, 2, 0)) * model_eeg.temperature_param
     similarity_4 = torch.matmul(o_e_2[:, :].permute(1, 0, 2), o_eeg_e_1[:, :].permute(1, 2, 0)) * model_eeg.temperature_param
-    expanded_arange = torch.arange(training_config['batch_size']).unsqueeze(0).repeat(model_config['max_n_timebins']-1, 1).to(device, dtype=torch.long).reshape(-1)
+    expanded_arange = torch.arange(training_config['batch_size']).unsqueeze(0).repeat(model_config['max_n_timebins'], 1).to(device, dtype=torch.long).reshape(-1)
     loss_ieeg_eeg = (torch.nn.functional.cross_entropy(similarity_1.view(-1, training_config['batch_size']), expanded_arange) + \
                     torch.nn.functional.cross_entropy(similarity_2.view(-1, training_config['batch_size']), expanded_arange) + \
                     torch.nn.functional.cross_entropy(similarity_3.view(-1, training_config['batch_size']), expanded_arange) + \

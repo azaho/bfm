@@ -9,7 +9,7 @@
 #SBATCH --output logs/%A_%a.out
 #SBATCH --error logs/%A_%a.err
 #SBATCH -p yanglab
-source .venv/bin/activate
+source ../bfm_ic2/.venv/bin/activate
 export TMPDIR=/om2/scratch/tmp
 
 python -u train_model_eeg_ieeg.py
