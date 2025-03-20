@@ -8,7 +8,7 @@ profiler_logs/
 
 models_data/
 
-btbench/
+#btbench/
 btbench_subject_metadata/
 
 analyses/eval_results/
