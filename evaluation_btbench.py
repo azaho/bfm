@@ -1,5 +1,6 @@
 from torch.utils.data import DataLoader
-import sklearn 
+import sklearn.metrics
+from sklearn.linear_model import LogisticRegression
 import numpy as np
 from btbench.btbench_train_test_splits import generate_splits_SS_SM
 from train_utils import log
@@ -78,7 +79,7 @@ class FrozenModelEvaluation_SS_SM():
         y_test = np.concatenate(y_test)
         log("done creating numpy arrays", priority=log_priority, indent=2)
 
-        regressor = sklearn.linear_model.LogisticRegression(
+        regressor = LogisticRegression(
             random_state=self.regression_random_state, 
             max_iter=self.regression_max_iter, 
             n_jobs=self.num_workers_eval, 

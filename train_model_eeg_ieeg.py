@@ -20,6 +20,9 @@ update_random_seed(training_config)
 EEG_channels = ['Fp1', 'Fp2', 'F3', 'Fz', 'F4', 'C3', 'Cz', 'C4', 'P3', 'Pz', 'P4', 'O1', 'O2', 'F7', 'F8', 'T3', 'T4', 'T5', 'T6']
 training_config['train_subject_trials'] = [('mgh1', 3), ('mgh1', 2)]
 training_config['eval_subject_trials'] = []
+
+training_config['n_epochs'] *= 5
+
 batch_size_multiplier = 1
 training_config['batch_size'] *= batch_size_multiplier
 training_config['learning_rate'] *= batch_size_multiplier
@@ -57,7 +60,9 @@ all_subjects, train_dataloader, test_dataloader = load_dataloaders(
 model = TransformerModel(
     model_config['transformer']['d_model'],  
     n_layers_electrode=model_config['transformer']['n_layers_electrode'], 
-    n_layers_time=model_config['transformer']['n_layers_time']).to(device, dtype=model_config['dtype'])
+    n_layers_time=model_config['transformer']['n_layers_time'],
+    n_heads=model_config['transformer']['n_heads']
+).to(device, dtype=model_config['dtype'])
 
 if model_config['electrode_embedding']['type'] == 'learned':
     electrode_embeddings = ElectrodeEmbedding_Learned(
@@ -97,7 +102,9 @@ electrode_data_embeddings = electrode_data_embeddings.to(device, dtype=model_con
 model_eeg = TransformerModel(
     model_config['transformer']['d_model'],  
     n_layers_electrode=model_config['transformer']['n_layers_electrode'], 
-    n_layers_time=model_config['transformer']['n_layers_time']).to(device, dtype=model_config['dtype'])
+    n_layers_time=model_config['transformer']['n_layers_time'],
+    n_heads=model_config['transformer']['n_heads']
+).to(device, dtype=model_config['dtype'])
 electrode_embeddings_eeg = ElectrodeEmbedding_Learned_FixedVocabulary(
     model_config['transformer']['d_model'], 
     vocabulary_channels=EEG_channels,

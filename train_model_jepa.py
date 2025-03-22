@@ -3,7 +3,7 @@ import wandb, os, json
 import time
 
 from muon import Muon
-from model_model import TransformerModel
+from model_model import TransformerModel_EMA
 from model_electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeDataEmbeddingFFT, ElectrodeDataEmbedding
 
 from dataset import load_dataloaders
@@ -33,11 +33,12 @@ all_subjects, train_dataloader, test_dataloader = load_dataloaders(
     prefetch_factor=cluster_config['prefetch_factor'],
 )
 
-model = TransformerModel(
+model = TransformerModel_EMA(
     model_config['transformer']['d_model'],  
     n_layers_electrode=model_config['transformer']['n_layers_electrode'], 
     n_layers_time=model_config['transformer']['n_layers_time'],
-    n_heads=model_config['transformer']['n_heads']
+    n_heads=model_config['transformer']['n_heads'],
+    momentum=model_config['transformer']['momentum']
 ).to(device, dtype=model_config['dtype'])
 
 if model_config['electrode_embedding']['type'] == 'learned':
@@ -112,30 +113,39 @@ if training_config['optimizer'] == 'Muon':
 else:
     optimizers = [torch.optim.AdamW(all_params, lr=training_config['learning_rate'], weight_decay=training_config['weight_decay'])]
 
-
 def calculate_loss_function(batch, subject_identifier, trial_id):
     electrode_embedded_data = electrode_data_embeddings.forward(subject_identifier, all_subjects[subject_identifier].get_electrode_indices(trial_id), 
                                                              batch, max_n_electrodes=model_config['max_n_electrodes'])
     
     batch_size, n_electrodes, n_timebins, d_model = electrode_embedded_data.shape
 
+    # Randomly split electrodes into two groups
     permutation = torch.randperm(n_electrodes)
-    electrode_embedded_data = electrode_embedded_data[:, permutation]
-
     n_electrodes_per_stream = int(n_electrodes * training_config['p_electrodes_per_stream'])
-    o1_e, o1_t = model(electrode_embedded_data[:, :n_electrodes_per_stream, :, :]) # shape: (batch_size, n_timebins, d_model)
-    o2_e, o2_t = model(electrode_embedded_data[:, -n_electrodes_per_stream:, :, :]) # shape: (batch_size, n_timebins, d_model)
     
-    similarity_1 = torch.matmul(o1_t[:, :-training_config['future_bin_idx']].permute(1, 0, 2), o2_e[:, training_config['future_bin_idx']:].permute(1, 2, 0)) * model.temperature_param
-    expanded_arange = torch.arange(batch_size).unsqueeze(0).repeat(n_timebins-training_config['future_bin_idx'], 1).to(model.device, dtype=torch.long).reshape(-1)
-    loss = torch.nn.functional.cross_entropy(similarity_1.view(-1, batch_size), expanded_arange)
+    # Get online view embeddings and predictions
+    online_view = electrode_embedded_data[:, permutation[:n_electrodes_per_stream]]
+    online_embeddings, predictions = model(online_view, is_target=False)
 
-    if training_config['symmetric_loss']:
-        similarity_2 = torch.matmul(o2_t[:, :-training_config['future_bin_idx']].permute(1, 0, 2), o1_e[:, training_config['future_bin_idx']:].permute(1, 2, 0)) * model.temperature_param
-        loss += torch.nn.functional.cross_entropy(similarity_2.view(-1, batch_size), expanded_arange)
-        loss /= 2
-    
-    return {'contrastive': loss}
+    # Get target view embeddings (with stop_grad)
+    target_view = electrode_embedded_data[:, permutation[n_electrodes_per_stream:]]
+    with torch.no_grad():  # Explicitly stop gradient for target view
+        target_embeddings = model(target_view, is_target=True)
+
+    # Normalize embeddings
+    predictions = torch.nn.functional.normalize(predictions, dim=-1)
+    target_embeddings = torch.nn.functional.normalize(target_embeddings, dim=-1)
+
+    # Calculate L2 loss between predictions and target embeddings
+    prediction_loss = torch.nn.functional.mse_loss(
+        predictions[:, :-1],
+        target_embeddings[:, 1:].detach(),  # Target is next timestep, detached
+        reduction='mean'
+    )
+
+    return {'jepa': prediction_loss}
+
+
 
 training_statistics_store = []
 if wandb: 
@@ -154,6 +164,9 @@ for epoch_i in range(training_config['n_epochs']):
         
         batch = batch.to(device, dtype=model_config['dtype'], non_blocking=True)
         loss_dict = calculate_loss_function(batch, subject_identifier, trial_id)
+        
+        # Update target network with momentum
+        model._update_target_network()
 
         for key, loss in loss_dict.items():
             if key not in epoch_losses: epoch_losses[key] = 0

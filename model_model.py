@@ -87,16 +87,18 @@ class BFModel(BFModule):
 
 from model_transformers import Transformer
 class TransformerModel(BFModel):
-    def __init__(self, d_model, n_layers_electrode=5, n_layers_time=5, frequency_cutoff_dim=64):
+    def __init__(self, d_model, n_layers_electrode=5, n_layers_time=5, n_heads=12):
         super().__init__()
         self.d_model = d_model
-        self.frequency_cutoff_dim = frequency_cutoff_dim
 
-        self.electrode_transformer = Transformer(d_input=d_model, d_model=d_model, d_output=d_model, n_layer=n_layers_electrode, n_head=12, causal=False, rope=False, cls_token=True)
-        self.time_transformer = Transformer(d_input=d_model, d_model=d_model, d_output=d_model, n_layer=n_layers_time, n_head=12, causal=True, rope=True, cls_token=False)
+        self.electrode_transformer = Transformer(d_input=d_model, d_model=d_model, d_output=d_model, 
+                                                 n_layer=n_layers_electrode, n_head=n_heads, causal=False, 
+                                                 rope=False, cls_token=True)
+        self.time_transformer = Transformer(d_input=d_model, d_model=d_model, d_output=d_model, 
+                                            n_layer=n_layers_time, n_head=n_heads, causal=True, 
+                                            rope=True, cls_token=False)
         self.temperature_param = nn.Parameter(torch.tensor(1.0))
 
-    
     def forward(self, embedded_electrode_data, only_electrode_output=False):
         # electrode_embeddings is of shape (n_electrodes, d_model)
         # embedded_electrode_data is of shape (batch_size, n_electrodes, n_timebins, d_model)
@@ -111,28 +113,6 @@ class TransformerModel(BFModel):
         
         time_output = self.time_transformer(electrode_output) # shape: (batch_size, n_timebins, d_model)
         return electrode_output, time_output
-
-
-    def calculate_pretrain_loss(self, electrode_embedded_data, p_electrodes_per_stream=0.5, symmetric_loss=False):
-        batch_size, n_electrodes, n_timebins, d_model = electrode_embedded_data.shape
-
-        permutation = torch.randperm(n_electrodes)
-        electrode_embedded_data = electrode_embedded_data[:, permutation]
-
-        n_electrodes_per_stream = int(n_electrodes * p_electrodes_per_stream)
-        o1_e, o1_t = self(electrode_embedded_data[:, :n_electrodes_per_stream, :, :]) # shape: (batch_size, n_timebins, d_model)
-        o2_e, o2_t = self(electrode_embedded_data[:, -n_electrodes_per_stream:, :, :]) # shape: (batch_size, n_timebins, d_model)
-        
-        similarity_1 = torch.matmul(o1_t[:, :-1].permute(1, 0, 2), o2_e[:, 1:].permute(1, 2, 0)) * self.temperature_param
-        expanded_arange = torch.arange(batch_size).unsqueeze(0).repeat(n_timebins-1, 1).to(self.device, dtype=torch.long).reshape(-1)
-        loss = nn.functional.cross_entropy(similarity_1.view(-1, batch_size), expanded_arange)
-
-        if symmetric_loss:
-            similarity_2 = torch.matmul(o2_t[:, :-1].permute(1, 0, 2), o1_e[:, 1:].permute(1, 2, 0)) * self.temperature_param
-            loss += nn.functional.cross_entropy(similarity_2.view(-1, batch_size), expanded_arange)
-            loss /= 2
-
-        return loss
     
     def generate_frozen_evaluation_features(self, electrode_embedded_data, feature_aggregation_method='concat'):
         batch_size, n_electrodes, n_timebins, d_model = electrode_embedded_data.shape
@@ -140,5 +120,83 @@ class TransformerModel(BFModel):
             return self(electrode_embedded_data, only_electrode_output=True)[0].reshape(batch_size, -1)
         elif feature_aggregation_method == 'mean':
             return self(electrode_embedded_data, only_electrode_output=True)[0].mean(dim=1)
+        else:
+            raise ValueError(f"Invalid feature aggregation method: {feature_aggregation_method}")
+
+
+class TransformerModel_EMA(BFModel):
+    def __init__(self, d_model, n_layers_electrode=5, n_layers_time=5, n_heads=12, momentum=0.99):
+        super().__init__()
+        self.d_model = d_model
+        self.momentum = momentum
+
+        # Online encoder
+        self.online_encoder = Transformer(
+            d_input=d_model, d_model=d_model, d_output=d_model,
+            n_layer=n_layers_electrode, n_head=n_heads, causal=False,
+            rope=False, cls_token=True
+        )
+        
+        # Target encoder (momentum updated)
+        self.target_encoder = Transformer(
+            d_input=d_model, d_model=d_model, d_output=d_model,
+            n_layer=n_layers_electrode, n_head=n_heads, causal=False,
+            rope=False, cls_token=True
+        )
+
+        # Predictor network (time transformer)
+        self.predictor = Transformer(
+            d_input=d_model, d_model=d_model, d_output=d_model,
+            n_layer=n_layers_time, n_head=n_heads, causal=True,
+            rope=True, cls_token=False
+        )
+
+        # Initialize target encoder as copy of online encoder
+        for online_params, target_params in zip(
+            self.online_encoder.parameters(), 
+            self.target_encoder.parameters()
+        ):
+            target_params.data.copy_(online_params.data)
+            target_params.requires_grad = False  # Target network never gets direct gradient updates
+
+    @torch.no_grad()
+    def _update_target_network(self):
+        """Update target network parameters using momentum"""
+        for online_params, target_params in zip(
+            self.online_encoder.parameters(),
+            self.target_encoder.parameters()
+        ):
+            target_params.data = target_params.data * self.momentum + \
+                                online_params.data * (1 - self.momentum)
+
+    def _encode_view(self, x, encoder):
+        # x: (batch_size, n_electrodes, n_timebins, d_model)
+        x = x.permute(0, 2, 1, 3)  # (batch_size, n_timebins, n_electrodes, d_model)
+        batch_size, n_timebins, n_electrodes, d_model = x.shape
+        
+        # Get embeddings
+        output = encoder(
+            x.reshape(batch_size * n_timebins, n_electrodes, d_model)
+        )
+        return output[:, 0:1, :].view(batch_size, n_timebins, d_model)  # Just the CLS token
+
+    def forward(self, electrode_embedded_data, is_target=False):
+        if is_target:
+            with torch.no_grad():  # No gradients needed for target view
+                embeddings = self._encode_view(electrode_embedded_data, self.target_encoder)
+                return embeddings
+        else:
+            embeddings = self._encode_view(electrode_embedded_data, self.online_encoder)
+            predictions = self.predictor(embeddings[:, :])  # Predict next timestep (means the last timestep is undefined)
+            return embeddings, predictions
+
+    def generate_frozen_evaluation_features(self, electrode_embedded_data, feature_aggregation_method='concat'):
+        batch_size, n_electrodes, n_timebins, d_model = electrode_embedded_data.shape
+        embeddings = self(electrode_embedded_data, is_target=True) # shape: (batch_size, n_timebins, d_model)
+        normalized_embeddings = torch.nn.functional.normalize(embeddings, dim=-1)
+        if feature_aggregation_method == 'concat':
+            return normalized_embeddings.reshape(batch_size, -1)
+        elif feature_aggregation_method == 'mean':
+            return normalized_embeddings.mean(dim=1)
         else:
             raise ValueError(f"Invalid feature aggregation method: {feature_aggregation_method}")

@@ -4,42 +4,32 @@ from model_model import BFModule
     
 
 class ElectrodeDataEmbedding(BFModule):
-    def __init__(self, electrode_embedding_class):
+    def __init__(self, electrode_embedding_class, sample_timebin_size, overall_sampling_rate, normalization_requires_grad=True, std_smoothing=1e-5):
         super(ElectrodeDataEmbedding, self).__init__()
         self.electrode_embedding_class = electrode_embedding_class
         self.d_model = electrode_embedding_class.d_model
+        self.std_smoothing = std_smoothing
+        self.sample_timebin_size = sample_timebin_size
+        self.normalization_requires_grad = normalization_requires_grad
+
+        self.sampling_rates = nn.ParameterDict({})
         self.normalization_means = nn.ParameterDict({})
         self.normalization_stds = nn.ParameterDict({})
 
-    def add_subject(self, subject):
+        self.overall_sampling_rate = overall_sampling_rate # XXX think about how to be flexible here regarding the sampling rate. Maybe, resample? Or learn a linear layer?
+        self.linear_embed = nn.Linear(int(self.sample_timebin_size * self.overall_sampling_rate), self.d_model)
+
+    def add_subject(self, subject, sampling_rate, normalization_shape=None):
         subject_identifier = subject.subject_identifier
         assert subject_identifier not in self.normalization_means, f"Subject identifier {subject_identifier} already in the class"
         self.electrode_embedding_class.add_embedding(subject)
 
-    def forward(self, subject_identifier, electrode_data, permutation=None):
-        # electrode_data is of shape (n_electrodes, n_timebins, n_samples)
-        #   where n_samples = sample_timebin_size * n_timebins
-        pass
-
-class ElectrodeDataEmbeddingFFT(ElectrodeDataEmbedding):
-    def __init__(self, electrode_embedding_class, sample_timebin_size, max_frequency_bin=64, normalization_requires_grad=True, std_smoothing=1e-5):
-        super(ElectrodeDataEmbeddingFFT, self).__init__(electrode_embedding_class)
-        self.sample_timebin_size = sample_timebin_size
-        self.normalization_requires_grad = normalization_requires_grad
-        self.max_frequency_bin = max_frequency_bin
-        self.std_smoothing = std_smoothing
-
-        self.linear_embed = nn.Linear(max_frequency_bin, self.d_model)
-        self.sampling_rates = nn.ParameterDict({})
-        self.n_frequency_bins = {}
-
-    def add_subject(self, subject, sampling_rate):
-        super(ElectrodeDataEmbeddingFFT, self).add_subject(subject)
-        subject_identifier = subject.subject_identifier
-
+        if normalization_shape is None:
+            normalization_shape = (subject.get_n_electrodes(), 1)
+        
         self.sampling_rates[subject_identifier] = nn.Parameter(torch.tensor(int(sampling_rate)), requires_grad=False)
-        self.normalization_means[subject_identifier] = nn.Parameter(torch.zeros(subject.get_n_electrodes(), self.max_frequency_bin, dtype=self.dtype, device=self.device), requires_grad=self.normalization_requires_grad)
-        self.normalization_stds[subject_identifier] = nn.Parameter(torch.ones(subject.get_n_electrodes(), self.max_frequency_bin, dtype=self.dtype, device=self.device), requires_grad=self.normalization_requires_grad)
+        self.normalization_means[subject_identifier] = nn.Parameter(torch.zeros(normalization_shape, dtype=self.dtype, device=self.device), requires_grad=self.normalization_requires_grad)
+        self.normalization_stds[subject_identifier] = nn.Parameter(torch.ones(normalization_shape, dtype=self.dtype, device=self.device), requires_grad=self.normalization_requires_grad)
 
     def add_raw_subject(self, subject_identifier, sampling_rate, normalization_means=None, normalization_stds=None):
         # Warning: this function will not add the subject to the electrode_embedding_class, that has to be done separately XXX
@@ -53,79 +43,29 @@ class ElectrodeDataEmbeddingFFT(ElectrodeDataEmbedding):
         if normalization_stds is not None:
             self.normalization_stds[subject_identifier] = nn.Parameter(normalization_stds.to(self.device, dtype=self.dtype), requires_grad=self.normalization_requires_grad)
 
-    def initialize_normalization(self, subject, session_id, init_normalization_window_to=2048 * 60 * 10):
-        subject_identifier = subject.subject_identifier
-        indices = subject.get_electrode_indices(session_id)
-
-        with torch.no_grad():
-            all_electrode_data = subject.get_all_electrode_data(session_id, window_to=init_normalization_window_to)
-            electrode_means, electrode_stds = self.calculate_electrode_normalization(all_electrode_data, self.sampling_rates[subject_identifier])
-
-            self.normalization_means[subject_identifier].data[indices] = electrode_means
-            self.normalization_stds[subject_identifier].data[indices] = electrode_stds
-
-
-    def _forward_fft(self, x, sampling_rate):
-        # x is of shape (batch_size, n_electrodes, n_samples)
-        #   where n_samples = sample_timebin_size * n_timebins
-        batch_size, n_electrodes, n_samples = x.shape
-
-        timebin_samples = int(self.sample_timebin_size * sampling_rate)
-        n_timebins = n_samples // timebin_samples
-        assert n_samples % timebin_samples == 0, f"n_samples must be a multiple of timebin_samples, got {n_samples} and {timebin_samples}"
-        
-        # Calculate FFT for each timebin
-        x = x.reshape(-1, timebin_samples)
-        x = x.to(dtype=torch.float32)  # Convert to float32 for FFT
-        x = torch.fft.rfft(x, dim=-1)  # Using rfft for real-valued input
-
-        # Pad or trim to max_frequency_bin dimension
-        if x.shape[1] < self.max_frequency_bin:
-            x = torch.nn.functional.pad(x, (0, self.max_frequency_bin - x.shape[1]))
-        else:
-            x = x[:, :self.max_frequency_bin]
-
-        x = x.reshape(batch_size, n_electrodes, n_timebins, -1)  # shape: (batch_size, n_electrodes, n_timebins, max_frequency_bin)
-        
-        # Calculate magnitude (equivalent to scipy.signal.stft's magnitude)
-        x = torch.abs(x)
-        # Convert to power
-        x = torch.log(x + 1e-5)
-        return x.to(dtype=self.dtype)  # Convert back to original dtype; shape (batch_size, n_electrodes, n_timebins, max_frequency_bin)
-
-    def calculate_electrode_normalization(self, electrode_data, sampling_rate):
-        """
-            x is of shape (batch_size, n_electrodes, n_samples) or (n_electrodes, n_samples)
-            where n_samples = sample_timebin_size * n_timebins 
-                (will be trimmed to a multiple of timebin_samples)
-        """
-        if len(electrode_data.shape) == 2: # no batch dimension; add it
-            electrode_data = electrode_data.unsqueeze(0)
-        
+    def preprocess_electrode_data(self, electrode_data, sampling_rate, allow_trim=False):
         batch_size, n_electrodes, n_samples = electrode_data.shape
 
         timebin_samples = int(self.sample_timebin_size * sampling_rate)
         n_timebins = n_samples // timebin_samples
-        electrode_data = electrode_data[:, :, :n_timebins*timebin_samples]
-        electrode_data = electrode_data.to(self.device)
-    
-        electrode_data = self._forward_fft(electrode_data, sampling_rate)
-        batch_size, n_electrodes, n_timebins, n_frequency_bins = electrode_data.shape
+        
+        # trim the data to a multiple of the timebin size
+        if n_samples % timebin_samples != 0:
+            assert allow_trim or (n_samples % timebin_samples == 0), f"n_samples must be a multiple of timebin_samples, got {n_samples} and {timebin_samples}"
+            electrode_data = electrode_data[:, :, :n_timebins*timebin_samples]
 
-        electrode_data = electrode_data.permute(1, 0, 2, 3).reshape(n_electrodes, -1, n_frequency_bins) # flatten the batch dimension
-        return electrode_data.mean(dim=1), electrode_data.std(dim=1)
+        # reshape data
+        electrode_data = electrode_data.view(batch_size, n_electrodes, n_timebins, timebin_samples)
+        return electrode_data
 
     def forward(self, subject_identifier, electrode_indices, electrode_data, max_n_electrodes=None, normalization_means=None, normalization_stds=None):
         # electrode_data is of shape (batch_size, n_electrodes, n_samples)
         #   where n_samples = sample_timebin_size * n_timebins
         assert electrode_data.shape[1] == len(electrode_indices), f"Electrode data must have the same number of electrodes as the electrode indices, got {electrode_data.shape[1]} and {len(electrode_indices)}"
-        max_n_electrodes = max_n_electrodes if max_n_electrodes is not None else 10000
     
-        if normalization_means is None:
-            normalization_means = self.normalization_means[subject_identifier][electrode_indices]
-        if normalization_stds is None:
-            normalization_stds = self.normalization_stds[subject_identifier][electrode_indices]
-        electrode_embeddings = self.electrode_embedding_class.forward(subject_identifier)[electrode_indices]
+        if normalization_means is None: normalization_means = self.normalization_means[subject_identifier][electrode_indices] # shape: (n_electrodes, X); by default, X is 1. Can be different for FFT
+        if normalization_stds is None: normalization_stds = self.normalization_stds[subject_identifier][electrode_indices]
+        electrode_embeddings = self.electrode_embedding_class.forward(subject_identifier)[electrode_indices] # shape: (n_electrodes, d_model)
     
         if max_n_electrodes is not None and electrode_data.shape[1] > max_n_electrodes:
             # Randomly select max_n_electrodes from all available electrodes
@@ -136,17 +76,16 @@ class ElectrodeDataEmbeddingFFT(ElectrodeDataEmbedding):
             normalization_stds = normalization_stds[idx]
             electrode_embeddings = electrode_embeddings[idx] 
 
-        electrode_data = self._forward_fft(electrode_data, self.sampling_rates[subject_identifier]) # shape: (batch_size, n_electrodes, n_timebins, max_frequency_bin)
-        batch_size, n_electrodes, n_timebins, n_frequency_bins = electrode_data.shape
+        electrode_data = self.preprocess_electrode_data(electrode_data, self.sampling_rates[subject_identifier]) 
+        # shape: (batch_size, n_electrodes, n_timebins, d_timebin), by default d_timebin = sample_timebin_size
 
-        electrode_data = electrode_data - normalization_means.view(1, n_electrodes, 1, n_frequency_bins)
-        electrode_data = electrode_data / (normalization_stds.view(1, n_electrodes, 1, n_frequency_bins) + self.std_smoothing)
+        electrode_data = electrode_data - normalization_means.view(1, normalization_means.shape[0], 1, normalization_means.shape[1])
+        electrode_data = electrode_data / (normalization_stds.view(1, normalization_stds.shape[0], 1, normalization_stds.shape[1]) + self.std_smoothing)
 
         electrode_data = self.linear_embed(electrode_data) # shape: (batch_size, n_electrodes, n_timebins, d_model)
-        electrode_data = electrode_data + electrode_embeddings.view(1, n_electrodes, 1, self.d_model)
+        electrode_data = electrode_data + electrode_embeddings.view(1, electrode_embeddings.shape[0], 1, electrode_embeddings.shape[1])
 
         return electrode_data # shape: (batch_size, n_electrodes, n_timebins, d_model)
-    
 
     def load_state_dict(self, state_dict, strict=True):
         # Extract all unique subject identifiers from the state dict keys
@@ -181,6 +120,74 @@ class ElectrodeDataEmbeddingFFT(ElectrodeDataEmbedding):
                 )
         # Now we can load the state dict normally
         return super().load_state_dict(state_dict, strict=strict)
+
+    def initialize_normalization(self, subject, session_id, init_normalization_window_to=2048 * 60 * 10):
+        subject_identifier = subject.subject_identifier
+        indices = subject.get_electrode_indices(session_id)
+
+        with torch.no_grad():
+            all_electrode_data = subject.get_all_electrode_data(session_id, window_to=init_normalization_window_to).to(self.device, dtype=self.dtype)
+            electrode_means, electrode_stds = self.calculate_electrode_normalization(all_electrode_data, self.sampling_rates[subject_identifier])
+            self.normalization_means[subject_identifier].data[indices] = electrode_means
+            self.normalization_stds[subject_identifier].data[indices] = electrode_stds
+
+    def calculate_electrode_normalization(self, electrode_data, sampling_rate):
+        """
+            x is of shape (batch_size, n_electrodes, n_samples) or (n_electrodes, n_samples)
+            where n_samples = sample_timebin_size * n_timebins 
+                (will be trimmed to a multiple of timebin_samples)
+        """
+        if len(electrode_data.shape) == 2: # no batch dimension; add it
+            electrode_data = electrode_data.unsqueeze(0)
+
+        return electrode_data.mean(dim=(0, 2)).unsqueeze(1), electrode_data.std(dim=(0, 2)).unsqueeze(1)
+
+class ElectrodeDataEmbeddingFFT(ElectrodeDataEmbedding):
+    def __init__(self, electrode_embedding_class, sample_timebin_size, max_frequency_bin=64, normalization_requires_grad=True, std_smoothing=1e-5):
+        super(ElectrodeDataEmbeddingFFT, self).__init__(electrode_embedding_class, sample_timebin_size, overall_sampling_rate=2048, normalization_requires_grad=normalization_requires_grad, std_smoothing=std_smoothing) # XXX overall sampling rate doesnt matter, remove once fixed
+        self.max_frequency_bin = max_frequency_bin
+        self.linear_embed = nn.Linear(max_frequency_bin, self.d_model)
+
+    def add_subject(self, subject, sampling_rate):
+        super(ElectrodeDataEmbeddingFFT, self).add_subject(subject, sampling_rate, normalization_shape=(subject.get_n_electrodes(), self.max_frequency_bin))
+
+    def preprocess_electrode_data(self, electrode_data, sampling_rate, allow_trim=False):
+        # x is of shape (batch_size, n_electrodes, n_samples)
+        #   where n_samples = sample_timebin_size * n_timebins
+        electrode_data = super(ElectrodeDataEmbeddingFFT, self).preprocess_electrode_data(electrode_data, sampling_rate, allow_trim=allow_trim) # shape: (batch_size, n_electrodes, n_timebins, samples_per_bin)
+        batch_size, n_electrodes, n_timebins, samples_per_bin = electrode_data.shape
+
+        # Calculate FFT for each timebin
+        x = electrode_data.reshape(-1, samples_per_bin)
+        x = x.to(dtype=torch.float32)  # Convert to float32 for FFT
+        x = torch.fft.rfft(x, dim=-1)  # Using rfft for real-valued input
+
+        # Pad or trim to max_frequency_bin dimension
+        if x.shape[1] < self.max_frequency_bin:
+            x = torch.nn.functional.pad(x, (0, self.max_frequency_bin - x.shape[1]))
+        else:
+            x = x[:, :self.max_frequency_bin]
+
+        x = x.reshape(batch_size, n_electrodes, n_timebins, -1)  # shape: (batch_size, n_electrodes, n_timebins, max_frequency_bin)
+        
+        # Calculate magnitude (equivalent to scipy.signal.stft's magnitude)
+        x = torch.abs(x)
+        # Convert to power
+        x = torch.log(x + 1e-5)
+        return x.to(dtype=self.dtype)  # Convert back to original dtype; shape (batch_size, n_electrodes, n_timebins, max_frequency_bin)
+
+    def calculate_electrode_normalization(self, electrode_data, sampling_rate):
+        """
+            x is of shape (batch_size, n_electrodes, n_samples) or (n_electrodes, n_samples)
+            where n_samples = sample_timebin_size * n_timebins 
+                (will be trimmed to a multiple of timebin_samples)
+        """
+        if len(electrode_data.shape) == 2: # no batch dimension; add it
+            electrode_data = electrode_data.unsqueeze(0)
+    
+        electrode_data = self.preprocess_electrode_data(electrode_data, sampling_rate, allow_trim=True)
+        return electrode_data.mean(dim=(0, 2)), electrode_data.std(dim=(0, 2))
+
 
 class ElectrodeEmbedding(BFModule):
     def __init__(self, d_model):
