@@ -84,10 +84,11 @@ electrode_data_embeddings = electrode_data_embeddings.to(device, dtype=model_con
 
 eval_subject_trials = [(all_subjects[subject_identifier], trial_id) for subject_identifier, trial_id in training_config['eval_subject_trials']]
 evaluation = FrozenModelEvaluation_SS_SM(
-    ['speech', 'volume'], eval_subject_trials, 
+    ['speech', 'volume', 'gpt2_surprisal', 'word_part_speech'], eval_subject_trials, 
     training_config['data_dtype'], training_config['batch_size'] * 2, # Can have a bigger batch size here if that speeds things up
     num_workers_eval=cluster_config['num_workers_eval'],
     prefetch_factor=cluster_config['prefetch_factor'],
+    feature_aggregation_method=cluster_config['eval_aggregation_method'],
 )
 
 
@@ -138,8 +139,8 @@ def calculate_loss_function(batch, subject_identifier, trial_id):
 
     # Calculate L2 loss between predictions and target embeddings
     prediction_loss = torch.nn.functional.mse_loss(
-        predictions[:, :-1],
-        target_embeddings[:, 1:].detach(),  # Target is next timestep, detached
+        predictions[:, :-training_config['future_bin_idx']],
+        target_embeddings[:, training_config['future_bin_idx']:].detach(),  # Target is next timestep, detached
         reduction='mean'
     )
 

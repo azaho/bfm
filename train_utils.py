@@ -16,6 +16,7 @@ def get_default_configs(random_string, wandb_project):
         'p_electrodes_per_stream': 0.5,
         'symmetric_loss': True,
         'future_bin_idx': 1,
+        'projection_type': None, # None, 'random_batch'
         
         # MINI-BFM on braintreebank
         'train_subject_trials': [("btbank1", 0), ("btbank1", 1), ("btbank2", 4), ("btbank2", 5), ("btbank3", 1), ("btbank3", 2), ("btbank7", 1), ("btbank10", 1)],
@@ -34,7 +35,7 @@ def get_default_configs(random_string, wandb_project):
         'init_normalization': True, # XXX rename to a more sensible name later
 
         'electrode_embedding': {
-            'type': 'learned', # coordinate_init, noisy_coordinate, learned
+            'type': 'learned', # coordinate_init, noisy_coordinate, learned, zero
             'coordinate_noise_std': 0.0, # only relevant for noisy_coordinate type; note coordinates are normalized to be within [0,1]
             'embedding_dim': None,
             'spectrogram': True,
@@ -49,11 +50,12 @@ def get_default_configs(random_string, wandb_project):
             'n_layers_time': 5,
             'dropout': 0.2,
             'momentum': 0.99,
+            'use_cls_token': True,
         },
     }
     cluster_config = {
         'save_model_every_n_epochs': 20,
-        'eval_model_every_n_epochs': 5,
+        'eval_model_every_n_epochs': 10,
 
         'wandb_project': wandb_project,
         'timestamp': time.strftime("%Y%m%d_%H%M%S"),
@@ -63,6 +65,10 @@ def get_default_configs(random_string, wandb_project):
         'num_workers_dataloaders': 4,
         'num_workers_eval': 4,
         'prefetch_factor': 2,
+
+        'resume_run': False,
+
+        'eval_aggregation_method': 'mean', # 'mean', 'concat'
     }
     return training_config, model_config, cluster_config
 
@@ -81,6 +87,8 @@ def parse_configs_from_args(training_config, model_config, cluster_config):
     parser.add_argument('--sample_timebin_size', type=float, default=None, help='Sample timebin size in seconds')
     parser.add_argument('--max_n_timebins', type=int, default=None, help='Maximum number of time bins')
     parser.add_argument('--momentum', type=float, default=None, help='Momentum for EMA')
+    parser.add_argument('--resume_run', type=int, default=None, help='Whether to resume run')
+    parser.add_argument('--projection_type', type=str, default=None, help='Projection type')
 
     # Training arguments
     parser.add_argument('--batch_size', type=int, default=None, help='Batch size for training')
@@ -91,6 +99,8 @@ def parse_configs_from_args(training_config, model_config, cluster_config):
     parser.add_argument('--symmetric_loss', type=int, default=None, help='Whether to use symmetric pretraining')
     parser.add_argument('--spectrogram', type=int, default=None, help='Whether to use spectrogram')
     parser.add_argument('--future_bin_idx', type=int, default=None, help='Future bin index')
+    parser.add_argument('--eval_aggregation_method', type=str, default=None, help='Feature aggregation method')
+    parser.add_argument('--use_cls_token', type=int, default=None, help='Whether to use CLS token')
     
     # Other model config
     parser.add_argument('--init_normalization', type=int, default=None, help='Whether to use initial normalization')
@@ -182,7 +192,14 @@ def parse_configs_from_args(training_config, model_config, cluster_config):
         model_config['transformer']['momentum'] = args.momentum
     if args.future_bin_idx is not None:
         training_config['future_bin_idx'] = args.future_bin_idx
-
+    if args.eval_aggregation_method is not None:
+        cluster_config['eval_aggregation_method'] = args.eval_aggregation_method
+    if args.resume_run is not None:
+        cluster_config['resume_run'] = bool(args.resume_run)
+    if args.use_cls_token is not None:
+        model_config['transformer']['use_cls_token'] = bool(args.use_cls_token)
+    if args.projection_type is not None:
+        training_config['projection_type'] = args.projection_type
 
 max_log_priority = 1
 def log(message, priority=0, indent=0):
@@ -221,7 +238,11 @@ def update_dir_name(model_config, training_config, cluster_config):
         dir_name += f"_nSL"
     if not model_config['electrode_embedding']['spectrogram']:
         dir_name += f"_nSP"
-        
+    if cluster_config['eval_aggregation_method'] != 'concat':
+        dir_name += f"_ea{cluster_config['eval_aggregation_method'][0].upper()}"
+    if training_config['projection_type'] is not None:
+        dir_name += f"_proj{''.join([x[0] for x in training_config['projection_type'].upper().split('_')])}"
+
     if model_config['sample_timebin_size'] != 0.125:
         dir_name += f"_stbs{model_config['sample_timebin_size']}"
     if model_config['max_n_timebins'] != 24:
@@ -232,12 +253,18 @@ def update_dir_name(model_config, training_config, cluster_config):
     elif model_config['electrode_embedding']['type'] == 'noisy_coordinate':
         dir_name += f"_eeNC_ecns{model_config['electrode_embedding']['coordinate_noise_std']}"
     elif model_config['electrode_embedding']['type'] == 'learned':
-        dir_name += f""
+        dir_name += f"_eeL"
+    elif model_config['electrode_embedding']['type'] == 'zero':
+        dir_name += f"_eeZ"
+    else:
+        dir_name += f"_ee{model_config['electrode_embedding']['type'].upper()}"
 
     if model_config['transformer']['momentum'] != 0.99:
         dir_name += f"_m{model_config['transformer']['momentum']}"
     if training_config['future_bin_idx'] != 0:
         dir_name += f"_fb{training_config['future_bin_idx']}"
+    if model_config['transformer']['use_cls_token']:
+        dir_name += f"_cls"
 
     if 'p_electrodes_per_stream' in training_config and training_config['p_electrodes_per_stream'] != 0.5:
         dir_name += f"_pps{training_config['p_electrodes_per_stream']}"

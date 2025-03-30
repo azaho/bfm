@@ -46,7 +46,40 @@ class SubjectTrialDataset(Dataset):
             return window, (self.subject.subject_identifier, self.trial_id)
         else: return window
 
-def load_dataloaders(train_subject_trials, eval_subject_trials, p_test, sample_timebin_size, max_n_timebins, dtype, batch_size, num_workers_dataloaders=12, prefetch_factor=2, cache=True, allow_corrupted=False, test_num_workers_fraction=0.15):
+# XXX This can be a wrapper around SubjectTrialDataset class! (but then it's less efficient if you don't use cache because it uses get all electrode data)
+class SubjectTrialDataset_SingleElectrode(Dataset):
+    def __init__(self, subject, trial_id, window_size, dtype=torch.float32, output_subject_trial_id=False):
+        """
+        Args:
+            subject (BrainTreebankSubject or MGHSubject): Subject object
+            trial_id (int): Trial ID
+            dtype (torch.dtype): Data type to load the data in (float32, bfloat16)
+            window_size (int): Number of time samples per data item
+        """
+        self.subject = subject
+        self.trial_id = trial_id
+        self.window_size = window_size
+        self.dtype = dtype
+        self.output_subject_trial_id = output_subject_trial_id
+
+        subject.load_neural_data(trial_id)
+        self.n_windows = self.subject.electrode_data_length[trial_id] // self.window_size
+        self.n_electrodes = self.subject.get_n_electrodes()
+
+    def __len__(self):
+        return self.n_windows * self.n_electrodes
+    
+    def __getitem__(self, idx):
+        window_idx = idx // self.n_electrodes
+        electrode_idx = idx % self.n_electrodes
+        start_idx = window_idx * self.window_size
+        end_idx = start_idx + self.window_size
+        window = self.subject.get_electrode_data(self.subject.electrode_labels[electrode_idx], self.trial_id, start_idx, end_idx).to(dtype=self.dtype)
+        if self.output_subject_trial_id: 
+            return window, (self.subject.subject_identifier, self.trial_id, self.subject.electrode_labels[electrode_idx])
+        else: return window
+
+def load_dataloaders(train_subject_trials, eval_subject_trials, p_test, sample_timebin_size, max_n_timebins, dtype, batch_size, single_electrode=False, num_workers_dataloaders=12, prefetch_factor=2, cache=True, allow_corrupted=False, test_num_workers_fraction=0.15):
     # Step 1: Load all subjects
     all_subject_identifiers = [subject_identifier for subject_identifier, trial_id in train_subject_trials]
     all_subject_identifiers += [subject_identifier for subject_identifier, trial_id in eval_subject_trials]
@@ -64,11 +97,12 @@ def load_dataloaders(train_subject_trials, eval_subject_trials, p_test, sample_t
             raise ValueError(f"Unknown subject identifier: {subject_identifier}")
 
     # Step 2: Load all datasets 
+    SubjectTrialDatasetClass = SubjectTrialDataset_SingleElectrode if single_electrode else SubjectTrialDataset
     datasets = []
     for subject_identifier, trial_id in train_subject_trials:
         log(f"loading dataset for {subject_identifier}_{trial_id}...", indent=1, priority=1)
         datasets.append(
-            SubjectTrialDataset(
+            SubjectTrialDatasetClass(
                 all_subjects[subject_identifier], 
                 trial_id, 
                 int(sample_timebin_size * all_subjects[subject_identifier].get_sampling_rate(trial_id) * max_n_timebins), 
@@ -156,6 +190,9 @@ def load_dataloaders(train_subject_trials, eval_subject_trials, p_test, sample_t
 
 if __name__ == "__main__":
     subject = BrainTreebankSubject(3, cache=False)
-    dataset = SubjectTrialDataset(subject, 0, 100, torch.float32)
-    print(len(dataset))
-    print(dataset[0].shape)
+    # dataset = SubjectTrialDataset(subject, 0, 100, torch.float32)
+    # print(len(dataset))
+    # print(dataset[0].shape)
+    dataset_single_electrode = SubjectTrialDataset_SingleElectrode(subject, 0, 2048 * 3, torch.float32)
+    print(len(dataset_single_electrode))
+    print(dataset_single_electrode[0].shape)

@@ -90,10 +90,35 @@ class FrozenModelEvaluation_SS_SM():
         log('fitting regressor', priority=log_priority, indent=2)
         regressor.fit(X_train, y_train)
         log('done fitting regressor', priority=log_priority, indent=2)
-        regressor_pred = regressor.predict_proba(X_test)[:, 1]
-        regressor_pred_class = regressor.predict(X_test)
-        auroc = sklearn.metrics.roc_auc_score(y_test, regressor_pred, multi_class='ovr')
-        accuracy = sklearn.metrics.accuracy_score(y_test, regressor_pred_class)
+
+        # Get predictions for multiclass classification
+        train_probs = regressor.predict_proba(X_train)
+        test_probs = regressor.predict_proba(X_test)
+
+        # Filter test samples to only include classes that were in training
+        valid_class_mask = np.isin(y_test, regressor.classes_)
+        y_test_filtered = y_test[valid_class_mask]
+        test_probs_filtered = test_probs[valid_class_mask]
+
+        # Convert to one-hot encoding
+        y_test_onehot = np.zeros((len(y_test_filtered), len(regressor.classes_)))
+        for i, label in enumerate(y_test_filtered):
+            class_idx = np.where(regressor.classes_ == label)[0][0]
+            y_test_onehot[i, class_idx] = 1
+
+        y_train_onehot = np.zeros((len(y_train), len(regressor.classes_)))
+        for i, label in enumerate(y_train):
+            class_idx = np.where(regressor.classes_ == label)[0][0]
+            y_train_onehot[i, class_idx] = 1
+
+        # Calculate ROC AUC based on number of classes
+        n_classes = len(regressor.classes_)
+        if n_classes > 2:
+            auroc = sklearn.metrics.roc_auc_score(y_test_onehot, test_probs_filtered, multi_class='ovr', average='macro')
+        else:
+            auroc = sklearn.metrics.roc_auc_score(y_test_onehot, test_probs_filtered)
+
+        accuracy = regressor.score(X_test, y_test)
         log('done evaluating', priority=log_priority, indent=2)
         return auroc, accuracy
     

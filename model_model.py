@@ -87,14 +87,18 @@ class BFModel(BFModule):
 
 from model_transformers import Transformer
 class TransformerModel(BFModel):
-    def __init__(self, d_model, n_layers_electrode=5, n_layers_time=5, n_heads=12):
+    def __init__(self, d_model, d_output=None, n_layers_electrode=5, n_layers_time=5, n_heads=12, use_cls_token=True):
         super().__init__()
         self.d_model = d_model
+        self.use_cls_token = use_cls_token
+        
+        if d_output is None:
+            d_output = d_model
 
         self.electrode_transformer = Transformer(d_input=d_model, d_model=d_model, d_output=d_model, 
                                                  n_layer=n_layers_electrode, n_head=n_heads, causal=False, 
-                                                 rope=False, cls_token=True)
-        self.time_transformer = Transformer(d_input=d_model, d_model=d_model, d_output=d_model, 
+                                                 rope=False, cls_token=self.use_cls_token)
+        self.time_transformer = Transformer(d_input=d_model, d_model=d_model, d_output=d_output, 
                                             n_layer=n_layers_time, n_head=n_heads, causal=True, 
                                             rope=True, cls_token=False)
         self.temperature_param = nn.Parameter(torch.tensor(1.0))
@@ -107,7 +111,10 @@ class TransformerModel(BFModel):
         batch_size, n_timebins, n_electrodes, d_model = electrode_data.shape
 
         electrode_output = self.electrode_transformer(electrode_data.reshape(batch_size * n_timebins, n_electrodes, d_model)) # shape: (batch_size*n_timebins, n_electrodes+1, d_model)
-        electrode_output = electrode_output[:, 0:1, :].view(batch_size, n_timebins, d_model) # just the CLS token. Shape: (batch_size, n_timebins, d_model)
+        if self.use_cls_token:
+            electrode_output = electrode_output[:, -1:, :].view(batch_size, n_timebins, d_model) # just the CLS token. Shape: (batch_size, n_timebins, d_model)
+        else:
+            electrode_output = electrode_output[:, 0:1, :].view(batch_size, n_timebins, d_model) # (just the first token, which can be anything)
         if only_electrode_output:
             return electrode_output, None
         
@@ -125,23 +132,24 @@ class TransformerModel(BFModel):
 
 
 class TransformerModel_EMA(BFModel):
-    def __init__(self, d_model, n_layers_electrode=5, n_layers_time=5, n_heads=12, momentum=0.99):
+    def __init__(self, d_model, n_layers_electrode=5, n_layers_time=5, n_heads=12, momentum=0.99, use_cls_token=True):
         super().__init__()
         self.d_model = d_model
         self.momentum = momentum
+        self.use_cls_token = use_cls_token
 
         # Online encoder
         self.online_encoder = Transformer(
             d_input=d_model, d_model=d_model, d_output=d_model,
             n_layer=n_layers_electrode, n_head=n_heads, causal=False,
-            rope=False, cls_token=True
+            rope=False, cls_token=self.use_cls_token
         )
         
         # Target encoder (momentum updated)
         self.target_encoder = Transformer(
             d_input=d_model, d_model=d_model, d_output=d_model,
             n_layer=n_layers_electrode, n_head=n_heads, causal=False,
-            rope=False, cls_token=True
+            rope=False, cls_token=self.use_cls_token
         )
 
         # Predictor network (time transformer)
@@ -178,7 +186,10 @@ class TransformerModel_EMA(BFModel):
         output = encoder(
             x.reshape(batch_size * n_timebins, n_electrodes, d_model)
         )
-        return output[:, 0:1, :].view(batch_size, n_timebins, d_model)  # Just the CLS token
+        if self.use_cls_token:
+            return output[:, -1:, :].view(batch_size, n_timebins, d_model)  # Just the CLS token
+        else:
+            return output[:, 0:1, :].view(batch_size, n_timebins, d_model)  # (just the first token, which can be anything)
 
     def forward(self, electrode_embedded_data, is_target=False):
         if is_target:

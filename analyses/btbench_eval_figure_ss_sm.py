@@ -154,12 +154,6 @@ def create_performance_figure():
 
     # Color palette
     colors = sns.color_palette("husl", 4)
-    category_colors = {
-        'Visual': colors[0],
-        'Auditory': colors[1],
-        'Language': colors[2],
-        'Multimodal': colors[3]
-    }
 
     # Model color palette using viridis
     model_colors = sns.color_palette("viridis", len(models))

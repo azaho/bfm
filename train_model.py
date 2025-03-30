@@ -37,13 +37,15 @@ model = TransformerModel(
     model_config['transformer']['d_model'],  
     n_layers_electrode=model_config['transformer']['n_layers_electrode'], 
     n_layers_time=model_config['transformer']['n_layers_time'],
-    n_heads=model_config['transformer']['n_heads']
+    n_heads=model_config['transformer']['n_heads'],
+    use_cls_token=model_config['transformer']['use_cls_token']
 ).to(device, dtype=model_config['dtype'])
 
-if model_config['electrode_embedding']['type'] == 'learned':
+if model_config['electrode_embedding']['type'] == 'learned' or model_config['electrode_embedding']['type'] == 'zero':
     electrode_embeddings = ElectrodeEmbedding_Learned(
         model_config['transformer']['d_model'], 
-        embedding_dim=model_config['electrode_embedding']['embedding_dim']
+        embedding_dim=model_config['electrode_embedding']['embedding_dim'],
+        embedding_requires_grad=model_config['electrode_embedding']['type'] != 'zero'
     )
 elif model_config['electrode_embedding']['type'] == 'coordinate_init':
     electrode_embeddings = ElectrodeEmbedding_Learned_CoordinateInit(
@@ -83,10 +85,11 @@ electrode_data_embeddings = electrode_data_embeddings.to(device, dtype=model_con
 
 eval_subject_trials = [(all_subjects[subject_identifier], trial_id) for subject_identifier, trial_id in training_config['eval_subject_trials']]
 evaluation = FrozenModelEvaluation_SS_SM(
-    ['speech', 'volume'], eval_subject_trials, 
+    ['speech', 'volume', 'gpt2_surprisal', 'word_part_speech'], eval_subject_trials, 
     training_config['data_dtype'], training_config['batch_size'] * 2, # Can have a bigger batch size here if that speeds things up
     num_workers_eval=cluster_config['num_workers_eval'],
     prefetch_factor=cluster_config['prefetch_factor'],
+    feature_aggregation_method=cluster_config['eval_aggregation_method'],
 )
 
 
@@ -126,6 +129,13 @@ def calculate_loss_function(batch, subject_identifier, trial_id):
     o1_e, o1_t = model(electrode_embedded_data[:, :n_electrodes_per_stream, :, :]) # shape: (batch_size, n_timebins, d_model)
     o2_e, o2_t = model(electrode_embedded_data[:, -n_electrodes_per_stream:, :, :]) # shape: (batch_size, n_timebins, d_model)
     
+    if training_config['projection_type'] == 'random_batch':
+        random_matrix = torch.randn(d_model, d_model, device=model.device, dtype=model_config['dtype']) / (d_model ** 0.5)
+        o1_t = torch.matmul(o1_t, random_matrix)
+        o2_t = torch.matmul(o2_t, random_matrix)
+        o1_e = torch.matmul(o1_e, random_matrix)
+        o2_e = torch.matmul(o2_e, random_matrix)
+
     similarity_1 = torch.matmul(o1_t[:, :-training_config['future_bin_idx']].permute(1, 0, 2), o2_e[:, training_config['future_bin_idx']:].permute(1, 2, 0)) * model.temperature_param
     expanded_arange = torch.arange(batch_size).unsqueeze(0).repeat(n_timebins-training_config['future_bin_idx'], 1).to(model.device, dtype=torch.long).reshape(-1)
     loss = torch.nn.functional.cross_entropy(similarity_1.view(-1, batch_size), expanded_arange)
@@ -136,6 +146,24 @@ def calculate_loss_function(batch, subject_identifier, trial_id):
         loss /= 2
     
     return {'contrastive': loss}
+
+# After all model components are created and before the training loop
+if cluster_config['save_model_every_n_epochs'] > 0:  # Only save if we're saving models at all
+    model_path = f"models_data/{cluster_config['dir_name']}/model_epoch_0.pth"
+    os.makedirs(f"models_data/{cluster_config['dir_name']}", exist_ok=True)
+    
+    torch.save({
+        'eval_results': {},  # Empty since no evaluation has happened yet
+        'epoch': 0,
+        'model_state_dict': model.state_dict(),
+        'electrode_data_embeddings_state_dict': electrode_data_embeddings.state_dict(),
+        'optimizer_state_dicts': [optimizer.state_dict() for optimizer in optimizers],
+        'training_config': convert_dtypes(training_config),
+        'model_config': convert_dtypes(model_config), 
+        'cluster_config': convert_dtypes(cluster_config),
+    }, model_path)
+
+exit()
 
 training_statistics_store = []
 if wandb: 

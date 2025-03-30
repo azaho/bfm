@@ -208,9 +208,10 @@ class ElectrodeEmbedding(BFModule):
 
 
 class ElectrodeEmbedding_Learned(ElectrodeEmbedding):
-    def __init__(self, d_model, embedding_dim=None, embedding_fanout_requires_grad=True):
+    def __init__(self, d_model, embedding_dim=None, embedding_fanout_requires_grad=True, embedding_requires_grad=True):
         super(ElectrodeEmbedding_Learned, self).__init__(d_model)
         self.embedding_dim = embedding_dim if embedding_dim is not None else d_model
+        self.embedding_requires_grad = embedding_requires_grad
         if self.embedding_dim < d_model:
             self.linear_embed = nn.Linear(self.embedding_dim, self.d_model)
             self.linear_embed.weight.requires_grad = embedding_fanout_requires_grad
@@ -218,11 +219,11 @@ class ElectrodeEmbedding_Learned(ElectrodeEmbedding):
         else: 
             self.linear_embed = lambda x: x # just identity function if embedding dim is already at d_model
     
-    def add_embedding(self, subject, embedding_init=None, requires_grad=True):
+    def add_embedding(self, subject, embedding_init=None):
         subject_identifier = subject.subject_identifier
         n_electrodes = subject.get_n_electrodes()
         if embedding_init is None: embedding_init = torch.zeros(n_electrodes, self.embedding_dim)
-        super(ElectrodeEmbedding_Learned, self).add_embedding(subject, embedding_init, requires_grad)
+        super(ElectrodeEmbedding_Learned, self).add_embedding(subject, embedding_init, requires_grad=self.embedding_requires_grad)
     
     def forward(self, subject_identifier):
         embedding = super(ElectrodeEmbedding_Learned, self).forward(subject_identifier)
