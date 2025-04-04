@@ -6,7 +6,7 @@ from muon import Muon
 from model_model import TransformerModel
 from model_electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeDataEmbeddingFFT, ElectrodeDataEmbedding
 
-from dataset import load_dataloaders
+from dataset import load_dataloaders, load_subjects
 from evaluation_btbench import FrozenModelEvaluation_SS_SM
 from train_utils import log, update_dir_name, update_random_seed, convert_dtypes, parse_configs_from_args, get_default_configs, get_shared_memory_info
 
@@ -21,18 +21,11 @@ if len(cluster_config['wandb_project'])==0: wandb = False
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 log(f"Using device: {device}", priority=0)
 
+log(f"Loading subjects...", priority=0)
+all_subjects = load_subjects(training_config['train_subject_trials'], training_config['eval_subject_trials'], training_config['data_dtype'], 
+                             cache=cluster_config['cache_subjects'], allow_corrupted=False)
 
-log(f"Loading dataloaders...", priority=0)
-n_samples = model_config['max_n_timebins'] * model_config['sample_timebin_size']
-all_subjects, train_dataloader, test_dataloader = load_dataloaders(
-    training_config['train_subject_trials'], training_config['eval_subject_trials'], training_config['p_test'], 
-    model_config['sample_timebin_size'], model_config['max_n_timebins'], training_config['data_dtype'], 
-    training_config['batch_size'],
-    num_workers_dataloaders=cluster_config['num_workers_dataloaders'], 
-    cache=cluster_config['cache_subjects'], allow_corrupted=False,
-    prefetch_factor=cluster_config['prefetch_factor'],
-)
-
+log(f"Loading model...", priority=0)
 model = TransformerModel(
     model_config['transformer']['d_model'],  
     n_layers_electrode=model_config['transformer']['n_layers_electrode'], 
@@ -83,10 +76,23 @@ for subject in all_subjects.values():
             electrode_data_embeddings.initialize_normalization(subject, trial_id, init_normalization_window_to=int(subject.get_sampling_rate(trial_id) * 60 * 5))
 electrode_data_embeddings = electrode_data_embeddings.to(device, dtype=model_config['dtype']) # moving to device again to ensure the new parameters are on the correct device
 
+log(f"Loading dataloaders...", priority=0)
+n_samples = model_config['max_n_timebins'] * model_config['sample_timebin_size']
+train_dataloader, test_dataloader = load_dataloaders(
+    all_subjects, training_config['train_subject_trials'], training_config['p_test'], 
+    model_config['sample_timebin_size'], model_config['max_n_timebins'], training_config['data_dtype'], 
+    training_config['batch_size'],
+    num_workers_dataloaders=cluster_config['num_workers_dataloaders'], 
+    prefetch_factor=cluster_config['prefetch_factor'],
+    max_n_electrodes=model_config['max_n_electrodes'],
+    output_embeddings_map=electrode_embeddings.embeddings_map
+)
+
 eval_subject_trials = [(all_subjects[subject_identifier], trial_id) for subject_identifier, trial_id in training_config['eval_subject_trials']]
 evaluation = FrozenModelEvaluation_SS_SM(
     ['speech', 'volume', 'gpt2_surprisal', 'word_part_speech'], eval_subject_trials, 
     training_config['data_dtype'], training_config['batch_size'] * 2, # Can have a bigger batch size here if that speeds things up
+    electrode_embeddings.embeddings_map,
     num_workers_eval=cluster_config['num_workers_eval'],
     prefetch_factor=cluster_config['prefetch_factor'],
     feature_aggregation_method=cluster_config['eval_aggregation_method'],
@@ -94,8 +100,10 @@ evaluation = FrozenModelEvaluation_SS_SM(
 
 
 all_params = list(model.parameters()) + list(electrode_data_embeddings.parameters())
-n_model_params = sum(p.numel() for p in model.parameters())
-n_embed_params = sum(p.numel() for p in electrode_data_embeddings.parameters())
+# filter to only include parameters that require grad
+all_params = [p for p in all_params if p.requires_grad]
+n_model_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+n_embed_params = sum(p.numel() for p in electrode_data_embeddings.parameters() if p.requires_grad)
 log(f"Model parameters: {n_model_params:,}", priority=0)
 log(f"Embedding parameters: {n_embed_params:,}", priority=0)
 log(f"Total parameters: {n_model_params + n_embed_params:,}", priority=0)
@@ -116,10 +124,9 @@ else:
     optimizers = [torch.optim.AdamW(all_params, lr=training_config['learning_rate'], weight_decay=training_config['weight_decay'])]
 
 
-def calculate_loss_function(batch, subject_identifier, trial_id):
-    electrode_embedded_data = electrode_data_embeddings.forward(subject_identifier, all_subjects[subject_identifier].get_electrode_indices(trial_id), 
-                                                             batch, max_n_electrodes=model_config['max_n_electrodes'])
-    
+def calculate_loss_function(batch):
+    electrode_embedded_data = electrode_data_embeddings.forward(batch['data'], batch['electrode_index'])
+
     batch_size, n_electrodes, n_timebins, d_model = electrode_embedded_data.shape
 
     permutation = torch.randperm(n_electrodes)
@@ -147,6 +154,19 @@ def calculate_loss_function(batch, subject_identifier, trial_id):
     
     return {'contrastive': loss}
 
+def calculate_pretrain_test_loss():
+    losses = {}
+    n_batches = 0
+    for batch in test_dataloader:
+        batch['data'] = batch['data'].to(model.device, dtype=model_config['dtype'], non_blocking=True)
+        batch['electrode_index'] = batch['electrode_index'].to(model.device, dtype=torch.long, non_blocking=True)
+        loss = calculate_loss_function(batch)
+        for key, value in loss.items():
+            if key not in losses: losses[key] = 0
+            losses[key] += value
+        n_batches += 1
+    return {k: v / n_batches for k, v in losses.items()}
+
 # After all model components are created and before the training loop
 if cluster_config['save_model_every_n_epochs'] > 0:  # Only save if we're saving models at all
     model_path = f"models_data/{cluster_config['dir_name']}/model_epoch_0.pth"
@@ -163,8 +183,6 @@ if cluster_config['save_model_every_n_epochs'] > 0:  # Only save if we're saving
         'cluster_config': convert_dtypes(cluster_config),
     }, model_path)
 
-exit()
-
 training_statistics_store = []
 if wandb: 
     wandb.init(project=cluster_config['wandb_project'], name=cluster_config['wandb_name'], id=cluster_config['wandb_name'],
@@ -175,13 +193,14 @@ for epoch_i in range(training_config['n_epochs']):
 
     # Main training loop
     epoch_losses = {}
-    for batch_idx, (batch, (subject_identifiers, trial_ids)) in enumerate(train_dataloader):
+    for batch_idx, batch in enumerate(train_dataloader):
+        batch['data'] = batch['data'].to(device, dtype=model_config['dtype'], non_blocking=True)
+        batch['electrode_index'] = batch['electrode_index'].to(device, dtype=torch.long, non_blocking=True)
+        subject_identifier, trial_id = batch['subject_trial'][0]
+
         for optimizer in optimizers: optimizer.zero_grad()
-        subject_identifier = subject_identifiers[0]
-        trial_id = trial_ids[0].item()
-        
-        batch = batch.to(device, dtype=model_config['dtype'], non_blocking=True)
-        loss_dict = calculate_loss_function(batch, subject_identifier, trial_id)
+
+        loss_dict = calculate_loss_function(batch)
 
         for key, loss in loss_dict.items():
             if key not in epoch_losses: epoch_losses[key] = 0
@@ -210,7 +229,7 @@ for epoch_i in range(training_config['n_epochs']):
     eval_results = {f"train_{k}": v for k, v in epoch_losses.items()}
     eval_results['train_loss'] = sum(epoch_losses.values()) / len(epoch_losses)
     with torch.no_grad():
-        test_loss_dict = model.calculate_pretrain_test_loss(electrode_data_embeddings, test_dataloader, all_subjects, calculate_loss_function=calculate_loss_function)
+        test_loss_dict = calculate_pretrain_test_loss()
         eval_results.update({f"test_{k}": v.item() for k, v in test_loss_dict.items()})
         eval_results['test_loss'] = sum(test_loss_dict.values()).item() / len(test_loss_dict)
         if (epoch_i+1) % cluster_config['eval_model_every_n_epochs'] == 0:

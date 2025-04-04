@@ -4,10 +4,11 @@ from sklearn.linear_model import LogisticRegression
 import numpy as np
 from btbench.btbench_train_test_splits import generate_splits_SS_SM
 from train_utils import log
+import torch
 
 # Evaluation class for Same Subject Same Movie (SS-SM), on btbench evals
 class FrozenModelEvaluation_SS_SM():
-    def __init__(self, eval_names, subject_trials, dtype, batch_size,
+    def __init__(self, eval_names, subject_trials, dtype, batch_size, embeddings_map,
                  num_workers_eval=4, prefetch_factor=2,
                  feature_aggregation_method='concat', # 'mean', 'concat'
                  # regression parameters
@@ -44,31 +45,45 @@ class FrozenModelEvaluation_SS_SM():
                 evaluation_datasets[(eval_name, subject.subject_identifier, trial_id)] = splits
         self.evaluation_datasets = evaluation_datasets
 
+        self.all_subject_electrode_indices = {}
+        for subject in self.all_subjects:
+            self.all_subject_electrode_indices[subject.subject_identifier] = []
+            for electrode_label in subject.get_electrode_labels():
+                key = (subject.subject_identifier, electrode_label)
+                self.all_subject_electrode_indices[subject.subject_identifier].append(embeddings_map[key])
+            self.all_subject_electrode_indices[subject.subject_identifier] = torch.tensor(self.all_subject_electrode_indices[subject.subject_identifier])
+
     def _evaluate_on_dataset(self, model, electrode_embedding_class, subject, train_dataset, test_dataset, log_priority=0):
         subject_identifier = subject.subject_identifier
-        train_dataloader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers_eval, prefetch_factor=self.prefetch_factor, pin_memory=True)
-        test_dataloader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers_eval, prefetch_factor=self.prefetch_factor, pin_memory=True)
+        train_dataloader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers_eval, 
+                                      prefetch_factor=self.prefetch_factor, pin_memory=True)
+        test_dataloader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers_eval, 
+                                      prefetch_factor=self.prefetch_factor, pin_memory=True)
         device, dtype = model.device, model.dtype
         X_train, y_train = [], []
         log('generating frozen train features', priority=log_priority, indent=2)
         for i, (batch_input, batch_label) in enumerate(train_dataloader):
             log(f'generating frozen features for batch {i} of {len(train_dataloader)}', priority=log_priority, indent=3)
             batch_input = batch_input.to(device, dtype=dtype, non_blocking=True)
-            electrode_embedded_data = electrode_embedding_class.forward(subject_identifier, subject.get_electrode_indices(0), batch_input)
-            features = model.generate_frozen_evaluation_features(electrode_embedded_data, feature_aggregation_method=self.feature_aggregation_method).detach().cpu().float().numpy()
+            electrode_indices = self.all_subject_electrode_indices[subject_identifier].to(device, dtype=torch.long, non_blocking=True)
+            electrode_indices = electrode_indices.unsqueeze(0).expand(batch_input.shape[0], -1) # Add the batch dimension to the electrode indices
+            electrode_embedded_data = electrode_embedding_class.forward(batch_input, electrode_indices)
+            features = model.generate_frozen_evaluation_features(electrode_embedded_data, feature_aggregation_method=self.feature_aggregation_method)
             log(f'done generating frozen features for batch {i} of {len(train_dataloader)}', priority=log_priority, indent=3)
-            X_train.append(features)
+            X_train.append(features.detach().cpu().float().numpy())
             y_train.append(batch_label.numpy())
 
         X_test, y_test = [], []
         log('generating frozen test features', priority=log_priority, indent=2)
         for i, (batch_input, batch_label) in enumerate(test_dataloader):
-            batch_input = batch_input.to(device, dtype=dtype)
+            batch_input = batch_input.to(device, dtype=dtype, non_blocking=True)
             log(f'generating frozen features for batch {i} of {len(test_dataloader)}', priority=log_priority, indent=3)
-            electrode_embedded_data = electrode_embedding_class.forward(subject_identifier, subject.get_electrode_indices(0), batch_input)
-            features = model.generate_frozen_evaluation_features(electrode_embedded_data, feature_aggregation_method=self.feature_aggregation_method).detach().cpu().float().numpy()
+            electrode_indices = self.all_subject_electrode_indices[subject_identifier].to(device, dtype=torch.long, non_blocking=True)
+            electrode_indices = electrode_indices.unsqueeze(0).expand(batch_input.shape[0], -1) # Add the batch dimension to the electrode indices
+            electrode_embedded_data = electrode_embedding_class.forward(batch_input, electrode_indices)
+            features = model.generate_frozen_evaluation_features(electrode_embedded_data, feature_aggregation_method=self.feature_aggregation_method)
             log(f'done generating frozen features for batch {i} of {len(test_dataloader)}', priority=log_priority, indent=3)
-            X_test.append(features)
+            X_test.append(features.detach().cpu().float().numpy())
             y_test.append(batch_label.numpy())
         log('done generating frozen features', priority=log_priority, indent=2)
 

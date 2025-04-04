@@ -55,36 +55,6 @@ class BFModel(BFModule):
     def generate_frozen_evaluation_features(self, electrode_embedded_data, feature_aggregation_method='concat'):
         pass
 
-    def calculate_pretrain_test_loss(self, electrode_data_embedding_class, test_dataloader, all_subjects, calculate_loss_function=None):
-        def _calculate_loss_function(batch, subject_identifier, trial_id):
-            electrode_embedded_data = electrode_data_embedding_class.forward(subject_identifier, all_subjects[subject_identifier].get_electrode_indices(trial_id), batch)
-            return self.calculate_pretrain_loss(electrode_embedded_data)
-        if calculate_loss_function is None:
-            calculate_loss_function = _calculate_loss_function
-
-        losses = {}
-        n_batches = 0
-        for batch, (subject_identifiers, trial_ids) in test_dataloader:
-            subject_identifier = subject_identifiers[0]
-            trial_id = trial_ids[0].item()
-            
-            batch = batch.to(self.device, dtype=self.dtype, non_blocking=True)
-            loss = calculate_loss_function(batch, subject_identifier, trial_id)
-            
-            if isinstance(loss, dict):
-                for key, value in loss.items():
-                    if key not in losses: losses[key] = 0
-                    losses[key] += value
-            else:
-                if 'loss' not in losses: losses['loss'] = 0
-                losses['loss'] += loss
-            n_batches += 1
-            
-        if isinstance(loss, dict):
-            return {k: v / n_batches for k, v in losses.items()}
-        else:
-            return losses['loss'] / n_batches
-
 from model_transformers import Transformer
 class TransformerModel(BFModel):
     def __init__(self, d_model, d_output=None, n_layers_electrode=5, n_layers_time=5, n_heads=12, use_cls_token=True):
