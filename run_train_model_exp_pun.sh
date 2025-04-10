@@ -18,7 +18,7 @@ random_string_options=("EXP_PUN1" "EXP_PUN2" "EXP_PUN3")
 symmetric_loss_options=(1)
 learning_rate_options=(0.0015 0.0021 0.003 0.0042 0.006 0.0084)
 future_bin_idx_options=(1 2)
-spec_options=(1)
+spec_options=(0)
 use_cls_token_options=(1)
 p_unmasked_options=(0.25 0.5 0.75 1.0)
 

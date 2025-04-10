@@ -135,27 +135,28 @@ class RandomElectrodeCollator:
         data = [item['data'] for item in batch]
         
         # Find minimum number of electrodes in batch
-        min_electrodes = min(s.shape[0] for s in data)
+        min_electrodes = min(item['data'].shape[0] for item in batch)
+        max_electrodes = max(item['data'].shape[0] for item in batch)
         n_electrodes = min(min_electrodes, self.max_n_electrodes) if self.max_n_electrodes else min_electrodes
-        
+
+        selected_idx = torch.randperm(min_electrodes)[:n_electrodes]
+
         # Process each item in batch
         output = {}
         
         # Process signals
-        processed_signals = []
-        for signal in data:
-            selected_idx = torch.randperm(signal.shape[0])[:n_electrodes]
-            processed_signals.append(signal[selected_idx])
-        output['data'] = torch.stack(processed_signals)
-        
-        # Process electrode indices if present
-        if 'electrode_index' in batch[0]:
-            processed_indices = []
-            for item in batch:
-                indices = item['electrode_index']
-                selected_idx = torch.randperm(len(indices))[:n_electrodes]
-                processed_indices.append(indices[selected_idx])
-            output['electrode_index'] = torch.stack(processed_indices)
+        processed_data = []
+        processed_electrode_indices = []
+        for item in batch:
+            data = item['data']
+            if min_electrodes != max_electrodes: # Only if all electrodes are not the same length (assuming they come from different places) # XXX Surely there must be a better way to do this, for example look at variance of electrode_indices
+                selected_idx =  torch.randperm(data.shape[0])[:n_electrodes]
+            if 'electrode_index' in item:
+                processed_electrode_indices.append(item['electrode_index'][selected_idx])
+            processed_data.append(data[selected_idx])
+        output['data'] = torch.stack(processed_data)
+        if len(processed_electrode_indices) > 0:
+            output['electrode_index'] = torch.stack(processed_electrode_indices)
         
         # Copy through any other fields that don't need processing
         for key in batch[0].keys():
