@@ -99,6 +99,94 @@ class TransformerModel(BFModel):
             return self(electrode_embedded_data, only_electrode_output=True)[0].mean(dim=1)
         else:
             raise ValueError(f"Invalid feature aggregation method: {feature_aggregation_method}")
+        
+class TransformerModel_RawSample(BFModel):
+    def __init__(self, d_model, d_output=None, n_layers_encoder=5, n_layers_predictor=5, n_heads=12, use_cls_token=True):
+        super().__init__()
+        self.d_model = d_model
+        
+        if d_output is None:
+            d_output = d_model
+
+        self.use_cls_token = use_cls_token
+        self.encoder = Transformer(d_input=d_model, d_model=d_model, d_output=d_model, 
+                                    n_layer=n_layers_encoder, n_head=n_heads, causal=True, 
+                                    rope=False, cls_token=use_cls_token)
+        self.predictor = Transformer(d_input=d_model, d_model=d_model, d_output=d_output, 
+                                     n_layer=n_layers_predictor, n_head=n_heads, causal=True, 
+                                     rope=True, cls_token=False)
+        self.prediction_token = nn.Parameter(torch.zeros(d_model, device=self.device, dtype=self.dtype))
+        self.temperature_param = nn.Parameter(torch.tensor(1.0))
+
+    def _encode_view(self, embedded_electrode_data):
+        pass
+
+    def forward(self, embedded_electrode_data, only_electrode_output=False):
+        # embedded_electrode_data is of shape (batch_size, n_electrodes, n_timebins, d_model) where n_electrodes could be any number but is squeezed into batch dimension
+        if len(embedded_electrode_data.shape) == 3:
+            embedded_electrode_data = embedded_electrode_data.unsqueeze(1) # returning the electrode dimension
+
+        batch_size, n_electrodes, n_timebins, d_model = embedded_electrode_data.shape
+        electrode_output = self.electrode_transformer(embedded_electrode_data.reshape(batch_size * n_electrodes, n_timebins, d_model)) # shape: (batch_size*n_electrodes, n_timebins, d_model)
+
+
+
+
+        if only_electrode_output:
+            return electrode_output.reshape(batch_size, n_electrodes, n_timebins, d_model), None
+
+        time_output = self.time_transformer(electrode_output) # shape: (batch_size, n_timebins, d_output)
+        d_output = time_output.shape[-1]
+        return electrode_output.reshape(batch_size, n_electrodes, n_timebins, d_model), time_output.reshape(batch_size, n_electrodes, n_timebins, d_output)
+    
+    def generate_frozen_evaluation_features(self, electrode_embedded_data, feature_aggregation_method='concat'):
+        batch_size, n_electrodes, n_timebins, d_model = electrode_embedded_data.shape
+        if feature_aggregation_method == 'concat':
+            return self(electrode_embedded_data, only_electrode_output=True)[0].reshape(batch_size, -1)
+        elif feature_aggregation_method == 'mean':
+            return self(electrode_embedded_data, only_electrode_output=True)[0].mean(dim=[1, 2])
+        else:
+            raise ValueError(f"Invalid feature aggregation method: {feature_aggregation_method}")
+
+class TransformerModel_SingleElectrode_Old(BFModel):
+    def __init__(self, d_model, d_output=None, n_layers_electrode=5, n_layers_time=5, n_heads=12):
+        super().__init__()
+        self.d_model = d_model
+        
+        if d_output is None:
+            d_output = d_model
+
+        self.electrode_transformer = Transformer(d_input=d_model, d_model=d_model, d_output=d_model, 
+                                                 n_layer=n_layers_electrode, n_head=n_heads, causal=True, 
+                                                 rope=False, cls_token=False)
+        self.time_transformer = Transformer(d_input=d_model, d_model=d_model, d_output=d_output, 
+                                            n_layer=n_layers_time, n_head=n_heads, causal=True, 
+                                            rope=True, cls_token=False)
+        self.temperature_param = nn.Parameter(torch.tensor(1.0))
+
+    def forward(self, embedded_electrode_data, only_electrode_output=False):
+        # embedded_electrode_data is of shape (batch_size, n_electrodes, n_timebins, d_model) where n_electrodes could be any number but is squeezed into batch dimension
+        if len(embedded_electrode_data.shape) == 3:
+            embedded_electrode_data = embedded_electrode_data.unsqueeze(1) # returning the electrode dimension
+
+        batch_size, n_electrodes, n_timebins, d_model = embedded_electrode_data.shape
+        electrode_output = self.electrode_transformer(embedded_electrode_data.reshape(batch_size * n_electrodes, n_timebins, d_model)) # shape: (batch_size*n_electrodes, n_timebins, d_model)
+
+        if only_electrode_output:
+            return electrode_output.reshape(batch_size, n_electrodes, n_timebins, d_model), None
+
+        time_output = self.time_transformer(electrode_output) # shape: (batch_size, n_timebins, d_output)
+        d_output = time_output.shape[-1]
+        return electrode_output.reshape(batch_size, n_electrodes, n_timebins, d_model), time_output.reshape(batch_size, n_electrodes, n_timebins, d_output)
+    
+    def generate_frozen_evaluation_features(self, electrode_embedded_data, feature_aggregation_method='concat'):
+        batch_size, n_electrodes, n_timebins, d_model = electrode_embedded_data.shape
+        if feature_aggregation_method == 'concat':
+            return self(electrode_embedded_data, only_electrode_output=True)[0].reshape(batch_size, -1)
+        elif feature_aggregation_method == 'mean':
+            return self(electrode_embedded_data, only_electrode_output=True)[0].mean(dim=[1, 2])
+        else:
+            raise ValueError(f"Invalid feature aggregation method: {feature_aggregation_method}")
 
 
 class TransformerModel_EMA(BFModel):

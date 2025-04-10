@@ -3,7 +3,7 @@ import wandb, os, json
 import time
 
 from muon import Muon
-from model_model import TransformerModel
+from model_model import TransformerModel, TransformerModel_SingleElectrode
 from model_electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeDataEmbeddingFFT, ElectrodeDataEmbedding
 
 from dataset import load_dataloaders, load_subjects
@@ -12,6 +12,7 @@ from train_utils import log, update_dir_name, update_random_seed, convert_dtypes
 
 training_config, model_config, cluster_config = get_default_configs(random_string="TEMP", wandb_project="temp_experiments")
 parse_configs_from_args(training_config, model_config, cluster_config)
+model_config['name'] = "M_SE"
 dir_name = update_dir_name(model_config, training_config, cluster_config)
 update_random_seed(training_config)
 cluster_config['wandb_name'] = cluster_config['dir_name']
@@ -26,12 +27,11 @@ all_subjects = load_subjects(training_config['train_subject_trials'], training_c
                              cache=cluster_config['cache_subjects'], allow_corrupted=False)
 
 log(f"Loading model...", priority=0)
-model = TransformerModel(
+model = TransformerModel_SingleElectrode(
     model_config['transformer']['d_model'],  
     n_layers_electrode=model_config['transformer']['n_layers_electrode'], 
     n_layers_time=model_config['transformer']['n_layers_time'],
-    n_heads=model_config['transformer']['n_heads'],
-    use_cls_token=model_config['transformer']['use_cls_token']
+    n_heads=model_config['transformer']['n_heads']
 ).to(device, dtype=model_config['dtype'])
 
 if model_config['electrode_embedding']['type'] == 'learned' or model_config['electrode_embedding']['type'] == 'zero':
@@ -58,12 +58,14 @@ electrode_embeddings = electrode_embeddings.to(device, dtype=model_config['dtype
 if model_config['electrode_embedding']['spectrogram']:
     electrode_data_embeddings = ElectrodeDataEmbeddingFFT(
         electrode_embeddings, model_config['sample_timebin_size'], 
-        max_frequency_bin=model_config['max_frequency_bin']
+        max_frequency_bin=model_config['max_frequency_bin'],
+        normalization_requires_grad=False #XXX: This is a hack to ensure that the normalization parameters are not updated
     ).to(device, dtype=model_config['dtype'])
 else:
     electrode_data_embeddings = ElectrodeDataEmbedding(
         electrode_embeddings, model_config['sample_timebin_size'], 
-        overall_sampling_rate=next(iter(all_subjects.values())).get_sampling_rate(0) # XXX remove this once figured out how to be flexible here regarding the sampling rate
+        overall_sampling_rate=next(iter(all_subjects.values())).get_sampling_rate(0), # XXX remove this once figured out how to be flexible here regarding the sampling rate
+        normalization_requires_grad=False
     ).to(device, dtype=model_config['dtype'])
 
 for subject in all_subjects.values():
@@ -85,13 +87,14 @@ train_dataloader, test_dataloader = load_dataloaders(
     num_workers_dataloaders=cluster_config['num_workers_dataloaders'], 
     prefetch_factor=cluster_config['prefetch_factor'],
     max_n_electrodes=model_config['max_n_electrodes'],
-    output_embeddings_map=electrode_embeddings.embeddings_map
+    output_embeddings_map=electrode_embeddings.embeddings_map,
+    single_electrode=True
 )
 
 eval_subject_trials = [(all_subjects[subject_identifier], trial_id) for subject_identifier, trial_id in training_config['eval_subject_trials']]
 evaluation = FrozenModelEvaluation_SS_SM(
     ['speech', 'volume', 'gpt2_surprisal', 'word_part_speech'], eval_subject_trials, 
-    training_config['data_dtype'], training_config['batch_size'] * 2, # Can have a bigger batch size here if that speeds things up
+    training_config['data_dtype'], 200, # Can have a bigger batch size here if that speeds things up
     electrode_embeddings.embeddings_map,
     num_workers_eval=cluster_config['num_workers_eval'],
     prefetch_factor=cluster_config['prefetch_factor'],
@@ -127,31 +130,21 @@ else:
 def calculate_loss_function(batch):
     electrode_embedded_data = electrode_data_embeddings.forward(batch['data'], batch['electrode_index'])
 
-    batch_size, n_electrodes, n_timebins, d_model = electrode_embedded_data.shape
+    batch_size, n_electrodes, n_timebins, d_model = electrode_embedded_data.shape # n_electrodes = 1
 
-    permutation = torch.randperm(n_electrodes)
-    electrode_embedded_data = electrode_embedded_data[:, permutation]
+    o_e, o_t = model(electrode_embedded_data) # shape: (batch_size, n_electrodes, n_timebins, d_model) where n_electrodes = 1
 
-    n_electrodes_per_stream = int(n_electrodes * training_config['p_electrodes_per_stream'] * training_config['p_unmasked'])
-    o1_e, o1_t = model(electrode_embedded_data[:, :n_electrodes_per_stream, :, :]) # shape: (batch_size, n_timebins, d_model)
-    o2_e, o2_t = model(electrode_embedded_data[:, -n_electrodes_per_stream:, :, :]) # shape: (batch_size, n_timebins, d_model)
+    o_e = o_e.squeeze(1) # shape: (batch_size, n_timebins, d_model)
+    o_t = o_t.squeeze(1) # shape: (batch_size, n_timebins, d_model)
     
     if training_config['projection_type'] == 'random_batch':
         random_matrix = torch.randn(d_model, d_model, device=model.device, dtype=model_config['dtype']) / (d_model ** 0.5)
-        o1_t = torch.matmul(o1_t, random_matrix)
-        o2_t = torch.matmul(o2_t, random_matrix)
-        o1_e = torch.matmul(o1_e, random_matrix)
-        o2_e = torch.matmul(o2_e, random_matrix)
+        o_e = torch.matmul(o_e, random_matrix)
+        o_t = torch.matmul(o_t, random_matrix)
 
-    similarity_1 = torch.matmul(o1_t[:, :-training_config['future_bin_idx']].permute(1, 0, 2), o2_e[:, training_config['future_bin_idx']:].permute(1, 2, 0)) * model.temperature_param
+    similarity_1 = torch.matmul(o_t[:, :-training_config['future_bin_idx']].permute(1, 0, 2), o_e[:, training_config['future_bin_idx']:].permute(1, 2, 0)) * model.temperature_param
     expanded_arange = torch.arange(batch_size).unsqueeze(0).repeat(n_timebins-training_config['future_bin_idx'], 1).to(model.device, dtype=torch.long).reshape(-1)
     loss = torch.nn.functional.cross_entropy(similarity_1.view(-1, batch_size), expanded_arange)
-
-    if training_config['symmetric_loss']:
-        similarity_2 = torch.matmul(o2_t[:, :-training_config['future_bin_idx']].permute(1, 0, 2), o1_e[:, training_config['future_bin_idx']:].permute(1, 2, 0)) * model.temperature_param
-        loss += torch.nn.functional.cross_entropy(similarity_2.view(-1, batch_size), expanded_arange)
-        loss /= 2
-    
     return {'contrastive': loss}
 
 def calculate_pretrain_test_loss():

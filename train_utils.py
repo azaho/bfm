@@ -17,6 +17,7 @@ def get_default_configs(random_string, wandb_project):
         'symmetric_loss': True,
         'future_bin_idx': 1,
         'projection_type': None, # None, 'random_batch'
+        'p_unmasked': 1.0,
         
         # MINI-BFM on braintreebank
         'train_subject_trials': [("btbank1", 0), ("btbank1", 1), ("btbank2", 4), ("btbank2", 5), ("btbank3", 1), ("btbank3", 2), ("btbank7", 1), ("btbank10", 1)],
@@ -27,6 +28,8 @@ def get_default_configs(random_string, wandb_project):
         'random_string': random_string,
     }
     model_config = {
+        'name': 'M',
+
         'sample_timebin_size': 0.125, # in seconds
         'max_frequency_bin': 64, # XXX Todo: make this based on frequency and not bin number
         'max_n_timebins': 24,
@@ -89,6 +92,7 @@ def parse_configs_from_args(training_config, model_config, cluster_config):
     parser.add_argument('--momentum', type=float, default=None, help='Momentum for EMA')
     parser.add_argument('--resume_run', type=int, default=None, help='Whether to resume run')
     parser.add_argument('--projection_type', type=str, default=None, help='Projection type')
+    parser.add_argument('--p_unmasked', type=float, default=None, help='Proportion of unmasked electrodes')
 
     # Training arguments
     parser.add_argument('--batch_size', type=int, default=None, help='Batch size for training')
@@ -200,6 +204,8 @@ def parse_configs_from_args(training_config, model_config, cluster_config):
         model_config['transformer']['use_cls_token'] = bool(args.use_cls_token)
     if args.projection_type is not None:
         training_config['projection_type'] = args.projection_type
+    if args.p_unmasked is not None:
+        training_config['p_unmasked'] = args.p_unmasked
 
 max_log_priority = 1
 def log(message, priority=0, indent=0):
@@ -221,7 +227,7 @@ def update_random_seed(training_config):
 
 
 def update_dir_name(model_config, training_config, cluster_config):
-    dir_name = "M"
+    dir_name = model_config['name']
     #dir_name += f"_t{model_config['max_n_timebins']}"
     #dir_name += f"_st{model_config['sample_timebin_size']}"
     dir_name += f"_nst{len(training_config['train_subject_trials'])}"
@@ -242,6 +248,8 @@ def update_dir_name(model_config, training_config, cluster_config):
         dir_name += f"_ea{cluster_config['eval_aggregation_method'][0].upper()}"
     if training_config['projection_type'] is not None:
         dir_name += f"_proj{''.join([x[0] for x in training_config['projection_type'].upper().split('_')])}"
+    if training_config['p_unmasked'] != 1.0:
+        dir_name += f"_pum{training_config['p_unmasked']}"
 
     if model_config['sample_timebin_size'] != 0.125:
         dir_name += f"_stbs{model_config['sample_timebin_size']}"

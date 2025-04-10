@@ -59,7 +59,7 @@ class SubjectTrialDataset(Dataset):
 
 # XXX This can be a wrapper around SubjectTrialDataset class! (but then it's less efficient if you don't use cache because it uses get all electrode data)
 class SubjectTrialDataset_SingleElectrode(Dataset):
-    def __init__(self, subject, trial_id, window_size, dtype=torch.float32, output_embeddings_map=None, output_subject_trial_id=False):
+    def __init__(self, subject, trial_id, window_size, dtype=torch.float32, output_embeddings_map=None, output_subject_trial_id=False, unsqueeze_electrode_dimension=True):
         """
         Args:
             subject (BrainTreebankSubject or MGHSubject): Subject object
@@ -73,6 +73,7 @@ class SubjectTrialDataset_SingleElectrode(Dataset):
         self.dtype = dtype
         self.output_embeddings_map = output_embeddings_map
         self.output_subject_trial_id = output_subject_trial_id
+        self.unsqueeze_electrode_dimension = unsqueeze_electrode_dimension
 
         electrode_labels = subject.get_electrode_labels()
         electrode_indices = subject.get_electrode_indices(trial_id)
@@ -92,13 +93,19 @@ class SubjectTrialDataset_SingleElectrode(Dataset):
         end_idx = start_idx + self.window_size
         window = self.subject.get_electrode_data(self.electrode_labels[electrode_idx], self.trial_id, start_idx, end_idx).to(dtype=self.dtype)
 
+        if self.unsqueeze_electrode_dimension:
+            window = window.unsqueeze(0)
+
         output = {'data': window}
         if self.output_subject_trial_id:
             output['subject_trial'] = (self.subject.subject_identifier, self.trial_id)
             output['electrode_label'] = self.electrode_labels[electrode_idx] # Also output the electrode label
         if self.output_embeddings_map:
             key = (self.subject.subject_identifier, self.electrode_labels[electrode_idx])
-            output['electrode_index'] = self.output_embeddings_map[key]
+            electrode_index = torch.tensor(self.output_embeddings_map[key])
+            if self.unsqueeze_electrode_dimension:
+                electrode_index = electrode_index.unsqueeze(0)
+            output['electrode_index'] = electrode_index
         
         return output
 
@@ -109,8 +116,12 @@ class SimpleCollator:
     def __call__(self, batch):
         data = [item['data'] for item in batch]
         output = {'data': torch.stack(data)}
+        if 'electrode_index' in batch[0]:
+            electrode_indices = [item['electrode_index'] for item in batch]
+            output['electrode_index'] = torch.stack(electrode_indices)
+
         for key in batch[0].keys():
-            if key != 'data':
+            if key != 'data' and key != 'electrode_index':
                 output[key] = [item[key] for item in batch]
         return output
 
@@ -253,7 +264,7 @@ def load_dataloaders(all_subjects, train_subject_trials, p_test, sample_timebin_
         pin_memory=True,  # Pin memory for faster GPU transfer
         persistent_workers=True,  # Keep worker processes alive between iterations
         prefetch_factor=prefetch_factor,
-        collate_fn=RandomElectrodeCollator(max_n_electrodes) if not single_electrode else SimpleCollator()
+        collate_fn=RandomElectrodeCollator(max_n_electrodes)# if not single_electrode else SimpleCollator()
     )
     test_dataloader = DataLoader(
         test_dataset,
@@ -266,7 +277,7 @@ def load_dataloaders(all_subjects, train_subject_trials, p_test, sample_timebin_
         pin_memory=True,
         persistent_workers=True,
         prefetch_factor=prefetch_factor,
-        collate_fn=RandomElectrodeCollator(max_n_electrodes) if not single_electrode else SimpleCollator()
+        collate_fn=RandomElectrodeCollator(max_n_electrodes)# if not single_electrode else SimpleCollator()
     )
     return train_dataloader, test_dataloader
 
