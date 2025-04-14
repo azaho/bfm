@@ -38,6 +38,9 @@ class Muon(torch.optim.Optimizer):
             for i, p in enumerate(group['params']):
                 g = p.grad
                 #assert g is not None
+                #print(f"Param {i} has shape {p.shape}, and grad % of nan values: {torch.sum(torch.isnan(g)).item() / g.numel() * 100:.2f}%, and % of zeros: {torch.sum(g == 0).item() / g.numel() * 100:.2f}%")
+
+
                 if g is None:
                     continue
                 state = self.state[p]
@@ -52,4 +55,6 @@ class Muon(torch.optim.Optimizer):
                 if group['weight_decay'] > 0:
                     p.data.mul_(1 - group['weight_decay'] * lr)
                 #p.data.add_(g, alpha=-lr * max(1, (g.shape[-2] / g.shape[-1]))**0.5) #XXX
+
+                #print(f" == After Muon, % of zeros in grad: {torch.sum(g == 0).item() / g.numel() * 100:.2f}%")
                 p.data.add_(g, alpha=-lr)

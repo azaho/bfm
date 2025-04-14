@@ -33,12 +33,13 @@ class SubjectTrialDataset(Dataset):
         self.output_embeddings_map = output_embeddings_map
         self.output_subject_trial_id = output_subject_trial_id
 
+
+        electrode_labels = subject.get_electrode_labels()
+        electrode_indices = subject.get_electrode_indices(trial_id)
+        electrode_labels = [electrode_labels[i] for i in electrode_indices]
+        self.electrode_keys = [(subject.subject_identifier, electrode_label) for electrode_label in electrode_labels]
         if output_embeddings_map is not None:                
-            electrode_labels = subject.get_electrode_labels()
-            electrode_indices = subject.get_electrode_indices(trial_id)
-            electrode_labels = [electrode_labels[i] for i in electrode_indices]
-            keys = [(subject.subject_identifier, electrode_label) for electrode_label in electrode_labels]
-            self.electrode_indices = torch.tensor([self.output_embeddings_map[key] for key in keys])
+            self.electrode_indices = torch.tensor([self.output_embeddings_map[key] for key in self.electrode_keys])
 
         subject.load_neural_data(trial_id)
         self.n_windows = self.subject.electrode_data_length[trial_id] // self.window_size
@@ -52,7 +53,9 @@ class SubjectTrialDataset(Dataset):
         window = self.subject.get_all_electrode_data(self.trial_id, start_idx, end_idx).to(dtype=self.dtype)
 
         output = {'data': window}
-        if self.output_subject_trial_id: output['subject_trial'] = (self.subject.subject_identifier, self.trial_id)
+        if self.output_subject_trial_id: 
+            output['subject_trial'] = (self.subject.subject_identifier, self.trial_id)
+            output['electrode_label'] = self.electrode_labels # Also output the electrode label
         if self.output_embeddings_map: 
             output['electrode_index'] = self.electrode_indices
         return output

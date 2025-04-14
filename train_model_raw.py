@@ -3,7 +3,7 @@ import wandb, os, json
 import time
 
 from muon import Muon
-from model_model import TransformerModel
+from model_model import TransformerModel_RawSample
 from model_electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeDataEmbeddingFFT, ElectrodeDataEmbedding
 
 from dataset import load_dataloaders, load_subjects
@@ -26,12 +26,11 @@ all_subjects = load_subjects(training_config['train_subject_trials'], training_c
                              cache=cluster_config['cache_subjects'], allow_corrupted=False)
 
 log(f"Loading model...", priority=0)
-model = TransformerModel(
+model = TransformerModel_RawSample(
     model_config['transformer']['d_model'],  
-    n_layers_electrode=model_config['transformer']['n_layers_electrode'], 
-    n_layers_time=model_config['transformer']['n_layers_time'],
-    n_heads=model_config['transformer']['n_heads'],
-    use_cls_token=model_config['transformer']['use_cls_token']
+    n_layers_encoder=model_config['transformer']['n_layers_encoder'], 
+    n_layers_predictor=model_config['transformer']['n_layers_predictor'],
+    n_heads=model_config['transformer']['n_heads']
 ).to(device, dtype=model_config['dtype'])
 
 if model_config['electrode_embedding']['type'] == 'learned' or model_config['electrode_embedding']['type'] == 'zero':
@@ -121,9 +120,9 @@ if training_config['optimizer'] == 'Muon':
     #other_params += list(electrode_data_embeddings.parameters()) # use adam for electrode data embeddings
 
     optimizers.append(Muon(matrix_params, lr=training_config['learning_rate'], momentum=0.95, nesterov=True, backend='newtonschulz5', backend_steps=5, weight_decay=training_config['weight_decay']))
-    optimizers.append(torch.optim.AdamW(other_params, lr=training_config['learning_rate'], weight_decay=training_config['weight_decay'], betas=(0.9, 0.95)))
+    optimizers.append(torch.optim.AdamW(other_params, lr=training_config['learning_rate'], weight_decay=training_config['weight_decay']))
 else:
-    optimizers = [torch.optim.AdamW(all_params, lr=training_config['learning_rate'], weight_decay=training_config['weight_decay'], betas=(0.9, 0.95))]
+    optimizers = [torch.optim.AdamW(all_params, lr=training_config['learning_rate'], weight_decay=training_config['weight_decay'])]
 
 
 def calculate_loss_function(batch):

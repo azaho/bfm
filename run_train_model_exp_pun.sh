@@ -14,7 +14,7 @@ export TMPDIR=/om2/scratch/tmp
 
 train_subject_trials="btbank1_0,btbank1_1,btbank2_4,btbank2_5,btbank3_1,btbank3_2,btbank7_1,btbank10_1"
 eval_subject_trials="btbank1_2,btbank2_6,btbank3_0,btbank7_0,btbank10_0"
-random_string_options=("EXP_PUN1" "EXP_PUN2" "EXP_PUN3")
+random_string_options=("EXP_PUN11" "EXP_PUN12" "EXP_PUN13")
 symmetric_loss_options=(1)
 learning_rate_options=(0.0015 0.0021 0.003 0.0042 0.006 0.0084)
 future_bin_idx_options=(1 2)

@@ -55,11 +55,13 @@ class ElectrodeDataEmbedding(BFModule):
 
     def add_subject(self, subject, sampling_rate):
         self.electrode_embedding_class.add_subject(subject)
-        self._ensure_capacity(self._get_current_size() + subject.get_n_electrodes())
+        # Get the new size directly from the embedding class after adding the subject
+        needed_size = self._get_current_size()
+        self._ensure_capacity(needed_size)
 
         for electrode_label in subject.get_electrode_labels():
             electrode_index = self.electrode_embedding_class.embeddings_map[(subject.subject_identifier, electrode_label)]
-            self.sampling_rates[electrode_index] = nn.Parameter(torch.tensor(int(sampling_rate)), requires_grad=False)
+            self.sampling_rates.data[electrode_index] = sampling_rate
 
     def preprocess_electrode_data(self, electrode_data, sampling_rate, allow_trim=False):
         batch_size, n_electrodes, n_samples = electrode_data.shape
@@ -109,8 +111,8 @@ class ElectrodeDataEmbedding(BFModule):
             electrode_means, electrode_stds = self.calculate_electrode_normalization(all_electrode_data, self.sampling_rates[electrode_indices[0]]) # XXX: Assuming all electrodes have the same sampling rate
 
             for idx, electrode_index in enumerate(electrode_indices):
-                self.normalization_means[electrode_index].data = electrode_means[idx]
-                self.normalization_stds[electrode_index].data = electrode_stds[idx]
+                self.normalization_means.data[electrode_index] = electrode_means[idx]
+                self.normalization_stds.data[electrode_index] = electrode_stds[idx]
 
     def calculate_electrode_normalization(self, electrode_data, sampling_rate):
         """
@@ -169,7 +171,8 @@ class ElectrodeDataEmbeddingFFT(ElectrodeDataEmbedding):
             electrode_data = electrode_data.unsqueeze(0)
     
         electrode_data = self.preprocess_electrode_data(electrode_data, sampling_rate, allow_trim=True)
-        return electrode_data.mean(dim=(0, 2)), electrode_data.std(dim=(0, 2))
+        means, stds = electrode_data.mean(dim=(0, 2)), electrode_data.std(dim=(0, 2))
+        return means, stds
 
 
 class ElectrodeEmbedding(BFModule):
@@ -179,9 +182,7 @@ class ElectrodeEmbedding(BFModule):
         self.embedding_dim = embedding_dim if embedding_dim is not None else d_model
         self.embedding_requires_grad = embedding_requires_grad
         if self.embedding_dim < d_model:
-            self.linear_embed = nn.Linear(self.embedding_dim, self.d_model)
-            self.linear_embed.weight.requires_grad = embedding_fanout_requires_grad
-            self.linear_embed.bias.requires_grad = embedding_fanout_requires_grad
+            self.linear_embed = nn.Linear(self.embedding_dim, self.d_model, requires_grad=embedding_fanout_requires_grad)
         else: 
             self.linear_embed = lambda x: x # just identity function if embedding dim is already at d_model
         
@@ -238,12 +239,15 @@ EEG_CHANNEL_NAME_MAPPING = {
     'T6': 'P8'
 }
 class ElectrodeEmbedding_Learned_FixedVocabulary(ElectrodeEmbedding):
-    def __init__(self, d_model, vocabulary_channels, embedding_dim=None, embedding_fanout_requires_grad=True):
+    def __init__(self, d_model, vocabulary_channels, embedding_dim=None, embedding_fanout_requires_grad=True, embedding_requires_grad=True):
         """
             vocabulary is a list of strings, each corresponding to each recorded channel name.
             All the channels that are not in the vocabulary will be set to an "overflow" vector that can be learned.
         """
-        super(ElectrodeEmbedding_Learned_FixedVocabulary, self).__init__(d_model, initial_capacity=len(vocabulary_channels)+1, embedding_dim=embedding_dim, embedding_fanout_requires_grad=embedding_fanout_requires_grad)
+        super(ElectrodeEmbedding_Learned_FixedVocabulary, self).__init__(d_model, initial_capacity=len(vocabulary_channels)+1, 
+                                                                         embedding_dim=embedding_dim, 
+                                                                         embedding_fanout_requires_grad=embedding_fanout_requires_grad, 
+                                                                         embedding_requires_grad=embedding_requires_grad)
         self.vocabulary_channels = [EEG_CHANNEL_NAME_MAPPING.get(x.upper(), x.upper()) for x in vocabulary_channels]
 
     def add_raw(self, subject_identifier, channel_names):
