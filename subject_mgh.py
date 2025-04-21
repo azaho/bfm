@@ -115,11 +115,11 @@ class MGHSubject:
             original_h5_electrode_keys = ["channel_"+str(i) for i in original_h5_electrode_ids]
 
             with h5py.File(h5_path, 'r', locking=False) as f:
-                self.electrode_data_length[session_id] = f['data'][original_h5_electrode_keys[0]].shape[0]
+                self.electrode_data_length[session_id] = f['data'][original_h5_electrode_keys[0]].shape[1]
 
                 self.neural_data_cache[session_id] = torch.zeros((len(original_h5_electrode_keys), self.electrode_data_length[session_id]), dtype=self.dtype)
                 for i, key in enumerate(original_h5_electrode_keys):
-                    self.neural_data_cache[session_id][i] = torch.from_numpy(f['data'][key][:]).to(self.dtype)
+                    self.neural_data_cache[session_id][i] = torch.from_numpy(f['data'][key][0, :]).to(self.dtype)
         else: 
             edf_path = os.path.join(MGH_ROOT_DIR, self.sessions[session_id]['filename'] + '.edf')
             raw = mne.io.read_raw_edf(edf_path, preload=True, verbose=False)
@@ -148,7 +148,7 @@ class MGHSubject:
         if self.use_h5_file:
             h5_path = os.path.join(MGH_ROOT_DIR, 'h5', self.sessions[session_id]['filename'] + '.h5')
             self.h5_files[session_id] = h5py.File(h5_path, 'r', locking=False)
-            self.electrode_data_length[session_id] = self.h5_files[session_id]['data']['channel_0'].shape[0]
+            self.electrode_data_length[session_id] = self.h5_files[session_id]['data']['channel_0'].shape[1]
         else: 
             edf_path = os.path.join(MGH_ROOT_DIR, self.sessions[session_id]['filename'] + '.edf')
             self.edf_files[session_id] = mne.io.read_raw_edf(edf_path, preload=False, verbose=False)
@@ -188,7 +188,7 @@ class MGHSubject:
                 original_h5_electrode_labels = self.sessions[session_id]['channel_names']
                 electrode_id = original_h5_electrode_labels.index(electrode_label)
                 h5_electrode_key = "channel_" + str(electrode_id)
-                return torch.from_numpy(self.h5_files[session_id]['data'][h5_electrode_key][window_from:window_to]).to(self.dtype)
+                return torch.from_numpy(self.h5_files[session_id]['data'][h5_electrode_key][0, window_from:window_to]).to(self.dtype)
             else:
                 data = self.edf_files[session_id].get_data(picks=[electrode_label], start=window_from, stop=window_to)
                 return torch.from_numpy(data[0]).to(self.dtype)
@@ -210,7 +210,7 @@ class MGHSubject:
                 with h5py.File(h5_path, 'r', locking=False) as f:
                     data = torch.zeros((len(original_h5_electrode_keys), window_to-window_from), dtype=self.dtype)
                     for i, key in enumerate(original_h5_electrode_keys):
-                        data[i] = torch.from_numpy(f['data'][key][window_from:window_to]).to(self.dtype)
+                        data[i] = torch.from_numpy(f['data'][key][0, window_from:window_to]).to(self.dtype)
                 return data
             else: 
                 data = self.edf_files[session_id].get_data(picks=self.get_electrode_labels(session_id), start=window_from, stop=window_to)

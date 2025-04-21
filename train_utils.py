@@ -18,6 +18,7 @@ def get_default_configs(random_string, wandb_project):
         'future_bin_idx': 1,
         'projection_type': None, # None, 'random_batch'
         'p_unmasked': 1.0,
+        'lr_schedule': "None", # none, linear, cosine
         
         # MINI-BFM on braintreebank
         'train_subject_trials': [("btbank1", 0), ("btbank1", 1), ("btbank2", 4), ("btbank2", 5), ("btbank3", 1), ("btbank3", 2), ("btbank7", 1), ("btbank10", 1)],
@@ -105,6 +106,7 @@ def parse_configs_from_args(training_config, model_config, cluster_config):
     parser.add_argument('--future_bin_idx', type=int, default=None, help='Future bin index')
     parser.add_argument('--eval_aggregation_method', type=str, default=None, help='Feature aggregation method')
     parser.add_argument('--use_cls_token', type=int, default=None, help='Whether to use CLS token')
+    parser.add_argument('--lr_schedule', type=str, default=None, help='Learning rate schedule (none, linear, cosine)')
     
     # Other model config
     parser.add_argument('--init_normalization', type=int, default=None, help='Whether to use initial normalization')
@@ -206,6 +208,8 @@ def parse_configs_from_args(training_config, model_config, cluster_config):
         training_config['projection_type'] = args.projection_type
     if args.p_unmasked is not None:
         training_config['p_unmasked'] = args.p_unmasked
+    if args.lr_schedule is not None:
+        training_config['lr_schedule'] = args.lr_schedule
 
 max_log_priority = 1
 def log(message, priority=0, indent=0):
@@ -290,6 +294,8 @@ def update_dir_name(model_config, training_config, cluster_config):
     if training_config['optimizer'] != 'Muon':
         dir_name += f"_opt{training_config['optimizer']}"
     dir_name += f"_r{training_config['random_string']}"
+    if training_config['lr_schedule'] != "None":
+        dir_name += f"_lr{training_config['lr_schedule'][0].upper()}"
     cluster_config['dir_name'] = dir_name
     return dir_name
 

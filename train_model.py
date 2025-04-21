@@ -10,7 +10,7 @@ from dataset import load_dataloaders, load_subjects
 from evaluation_btbench import FrozenModelEvaluation_SS_SM
 from train_utils import log, update_dir_name, update_random_seed, convert_dtypes, parse_configs_from_args, get_default_configs, get_shared_memory_info
 
-training_config, model_config, cluster_config = get_default_configs(random_string="TEMP", wandb_project="temp_experiments")
+training_config, model_config, cluster_config = get_default_configs(random_string="TEMP", wandb_project="btbank_fft_exp")
 parse_configs_from_args(training_config, model_config, cluster_config)
 dir_name = update_dir_name(model_config, training_config, cluster_config)
 update_random_seed(training_config)
@@ -125,6 +125,13 @@ if training_config['optimizer'] == 'Muon':
 else:
     optimizers = [torch.optim.AdamW(all_params, lr=training_config['learning_rate'], weight_decay=training_config['weight_decay'], betas=(0.9, 0.95))]
 
+schedulers = []
+if training_config['lr_schedule'] == 'linear':
+    for optimizer in optimizers:
+        schedulers.append(torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1, end_factor=0.1, total_iters=training_config['n_epochs'] * len(train_dataloader)))
+elif training_config['lr_schedule'] == 'cosine':
+    for optimizer in optimizers:
+        schedulers.append(torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=training_config['n_epochs'] * len(train_dataloader)))
 
 def calculate_loss_function(batch):
     electrode_embedded_data = electrode_data_embeddings.forward(batch['data'], batch['electrode_index'])
@@ -213,6 +220,7 @@ for epoch_i in range(training_config['n_epochs']):
         loss = sum(loss_dict.values()) / len(loss_dict)
         loss.backward()
         for optimizer in optimizers: optimizer.step()
+        for scheduler in schedulers: scheduler.step()
 
         training_statistics_store.append({
             'epoch': epoch_i+1,
@@ -224,7 +232,7 @@ for epoch_i in range(training_config['n_epochs']):
             **{f"batch_{k}": v.item() for k, v in loss_dict.items()}
         })
 
-        log(f"Epoch {epoch_i+1}/{training_config['n_epochs']}, Batch {batch_idx+1}/{len(train_dataloader)} ({subject_identifier}_{trial_id}), Loss: {loss.item():.4f}", priority=0)
+        log(f"Epoch {epoch_i+1}/{training_config['n_epochs']}, Batch {batch_idx+1}/{len(train_dataloader)} ({subject_identifier}_{trial_id}), LR: {optimizers[0].param_groups[0]['lr']:.6f}, Loss: {loss.item():.4f}", priority=0)
     for key, loss in epoch_losses.items():
         epoch_losses[key] /= len(train_dataloader)
 

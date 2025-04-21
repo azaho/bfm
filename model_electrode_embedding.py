@@ -126,13 +126,13 @@ class ElectrodeDataEmbedding(BFModule):
         return electrode_data.mean(dim=(0, 2)).unsqueeze(1), electrode_data.std(dim=(0, 2)).unsqueeze(1)
 
 class ElectrodeDataEmbeddingFFT(ElectrodeDataEmbedding):
-    def __init__(self, electrode_embedding_class, sample_timebin_size, max_frequency_bin=64, normalization_requires_grad=True, std_smoothing=1e-5):
+    def __init__(self, electrode_embedding_class, sample_timebin_size, max_frequency_bin=64, normalization_requires_grad=True, std_smoothing=1e-5, power=False):
         super(ElectrodeDataEmbeddingFFT, self).__init__(electrode_embedding_class, sample_timebin_size, 
                                                         overall_sampling_rate=2048, normalization_requires_grad=normalization_requires_grad, 
-                                                        std_smoothing=std_smoothing, normalization_shape=(max_frequency_bin,)) # XXX overall sampling rate doesnt matter, remove once fixed
+                                                        std_smoothing=std_smoothing, normalization_shape=(max_frequency_bin if power else 2*max_frequency_bin,)) # XXX overall sampling rate doesnt matter, remove once fixed
         self.max_frequency_bin = max_frequency_bin
-        self.linear_embed = nn.Linear(max_frequency_bin, self.d_model)
-
+        self.linear_embed = nn.Linear(max_frequency_bin if power else 2*max_frequency_bin, self.d_model)
+        self.power = power
     def add_subject(self, subject, sampling_rate):
         super(ElectrodeDataEmbeddingFFT, self).add_subject(subject, sampling_rate)
 
@@ -155,10 +155,13 @@ class ElectrodeDataEmbeddingFFT(ElectrodeDataEmbedding):
 
         x = x.reshape(batch_size, n_electrodes, n_timebins, -1)  # shape: (batch_size, n_electrodes, n_timebins, max_frequency_bin)
         
-        # Calculate magnitude (equivalent to scipy.signal.stft's magnitude)
-        x = torch.abs(x)
-        # Convert to power
-        x = torch.log(x + 1e-5)
+        if self.power:
+            # Calculate magnitude (equivalent to scipy.signal.stft's magnitude)
+            x = torch.abs(x)
+            # Convert to power
+            x = torch.log(x + 1e-5)
+        else:
+            x = torch.cat([torch.abs(x), torch.angle(x)], dim=-1) # shape: (batch_size, n_electrodes, n_timebins, 2*max_frequency_bin)
         return x.to(dtype=self.dtype)  # Convert back to original dtype; shape (batch_size, n_electrodes, n_timebins, max_frequency_bin)
 
     def calculate_electrode_normalization(self, electrode_data, sampling_rate):

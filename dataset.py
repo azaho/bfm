@@ -34,10 +34,8 @@ class SubjectTrialDataset(Dataset):
         self.output_subject_trial_id = output_subject_trial_id
 
 
-        electrode_labels = subject.get_electrode_labels()
-        electrode_indices = subject.get_electrode_indices(trial_id)
-        electrode_labels = [electrode_labels[i] for i in electrode_indices]
-        self.electrode_keys = [(subject.subject_identifier, electrode_label) for electrode_label in electrode_labels]
+        self.electrode_labels = subject.get_electrode_labels(trial_id)
+        self.electrode_keys = [(subject.subject_identifier, electrode_label) for electrode_label in self.electrode_labels]
         if output_embeddings_map is not None:                
             self.electrode_indices = torch.tensor([self.output_embeddings_map[key] for key in self.electrode_keys])
 
@@ -62,7 +60,7 @@ class SubjectTrialDataset(Dataset):
 
 # XXX This can be a wrapper around SubjectTrialDataset class! (but then it's less efficient if you don't use cache because it uses get all electrode data)
 class SubjectTrialDataset_SingleElectrode(Dataset):
-    def __init__(self, subject, trial_id, window_size, dtype=torch.float32, output_embeddings_map=None, output_subject_trial_id=False, unsqueeze_electrode_dimension=True):
+    def __init__(self, subject, trial_id, window_size, dtype=torch.float32, output_embeddings_map=None, output_subject_trial_id=False, unsqueeze_electrode_dimension=True, electrodes_subset=None):
         """
         Args:
             subject (BrainTreebankSubject or MGHSubject): Subject object
@@ -78,9 +76,7 @@ class SubjectTrialDataset_SingleElectrode(Dataset):
         self.output_subject_trial_id = output_subject_trial_id
         self.unsqueeze_electrode_dimension = unsqueeze_electrode_dimension
 
-        electrode_labels = subject.get_electrode_labels()
-        electrode_indices = subject.get_electrode_indices(trial_id)
-        self.electrode_labels = [electrode_labels[i] for i in electrode_indices]
+        self.electrode_labels = subject.get_electrode_labels(trial_id) if electrodes_subset is None else electrodes_subset
 
         subject.load_neural_data(trial_id)
         self.n_windows = self.subject.electrode_data_length[trial_id] // self.window_size
