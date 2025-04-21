@@ -2,9 +2,9 @@ import torch
 from torch.utils.data import Dataset, DataLoader, Subset, ConcatDataset
 from sklearn.model_selection import KFold
 from subject_ajile12 import AjileSubject
-from ajilebench_datasets import AjileSubjectTrialBenchmarkDataset
+from .ajilebench_datasets import AjileSubjectTrialBenchmarkDataset
 import numpy as np
-from ajilebench_config import *
+from .ajilebench_config import *
 
 _all_subject_trials = [
     (1, 3), (1, 4), (1, 5), (1, 7),

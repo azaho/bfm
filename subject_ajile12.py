@@ -15,12 +15,13 @@ class AjileSubject:
         This class is used to load the neural data for a given subject and trial.
         It also contains methods to get the data for a given electrode and trial, and to get the spectrogram for a given electrode and trial.
     """
-    def __init__(self, subject_id, allow_corrupted=False, cache=False, dtype=torch.float32):
+    def __init__(self, subject_id, allow_corrupted=False, cache=False, dtype=torch.float32, replace_nan_with=0):
         self.subject_id = subject_id
         self.subject_identifier = f'ajile{subject_id}'
         self.allow_corrupted = allow_corrupted
         self.cache = cache
         self.dtype = dtype  # Store dtype as instance variable
+        self.replace_nan_with = replace_nan_with # TODO: Figure out why the dataset contains NaN in the first place. Conjecture: this is when the epoch is Blocked, and it is NaN even though the paper said 0.
 
         self.channel_metadata = self._load_channel_metadata()
         self.electrode_labels = self._generate_electrode_labels()
@@ -80,6 +81,7 @@ class AjileSubject:
         electrode_ids = [self.nwb_electrode_ids[label] for label in self.electrode_labels]
         neural_data = nwb.acquisition['ElectricalSeries'].data[:, electrode_ids].T
         self.neural_data_cache[trial_id] = torch.from_numpy(neural_data).to(self.dtype)
+        self.neural_data_cache[trial_id][torch.isnan(self.neural_data_cache[trial_id])] = self.replace_nan_with
         io.close()
 
     def clear_neural_data_cache(self, trial_id=None):
@@ -130,6 +132,7 @@ class AjileSubject:
             if trial_id not in self.nwb_files: self.open_neural_data_file(trial_id)
             neural_data_key = self.nwb_electrode_ids[electrode_label]
             data = torch.from_numpy(self.nwb_files[trial_id].acquisition['ElectricalSeries'].data[window_from:window_to, neural_data_key]).to(self.dtype).T
+            data[torch.isnan(data)] = self.replace_nan_with
             return data
 
     def get_all_electrode_data(self, trial_id, window_from=None, window_to=None):
@@ -142,6 +145,7 @@ class AjileSubject:
             if trial_id not in self.nwb_files: self.open_neural_data_file(trial_id)
             electrode_ids = [self.nwb_electrode_ids[label] for label in self.electrode_labels]
             all_electrode_data = torch.from_numpy(self.nwb_files[trial_id].acquisition['ElectricalSeries'].data[window_from:window_to, electrode_ids]).to(self.dtype).T
+            all_electrode_data[torch.isnan(all_electrode_data)] = self.replace_nan_with
             return all_electrode_data
     
     def get_electrode_data_length(self, trial_id):

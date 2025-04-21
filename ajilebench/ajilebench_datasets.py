@@ -3,8 +3,16 @@ from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import pandas as pd
 import os
-from ajilebench_config import *
+from .ajilebench_config import *
 from subject_ajile12 import AjileSubject
+
+# TODO: fix bug
+# Problem left: some values are NaN. To reproduce, run single electrode on subject 1 trial 3 with reach_onset eval_name
+# I suspect that it has something to do with the range value of the time offset being outside of the expected one (if its <0)
+# and maybe some values are just NaN there
+# I think two solutions are either just remove the indices with nan values and send a warning (more principled but requires going through the whole data on loading the class)
+# or just substitute the nan values with 0s (faster but less principled)
+# ASSUMPTION BROKEN: WARNING: Found NaN values in X_test for electrode 18GRID, trial 4, time bin [1.0, 1.125]
 
 def _get_nonreach_start_times(subject, trial_id, 
                               neural_data_nonreach_epoch_types=NEURAL_DATA_NONREACH_EPOCH_TYPES, 
@@ -54,7 +62,8 @@ all_tasks = ["reach_onset"] # TODO: add more tasks, based on qualitative feature
 class AjileSubjectTrialBenchmarkDataset(Dataset):
     def __init__(self, subject, trial_id, dtype, eval_name, output_indices=False, 
                  start_neural_data_before_reach_onset=int(START_NEURAL_DATA_BEFORE_REACH_ONSET * SAMPLING_RATE),
-                 end_neural_data_after_reach_onset=int(END_NEURAL_DATA_AFTER_REACH_ONSET * SAMPLING_RATE)):
+                 end_neural_data_after_reach_onset=int(END_NEURAL_DATA_AFTER_REACH_ONSET * SAMPLING_RATE),
+                 replace_nan_with=0):
         """
         Args:
             subject (Subject): the subject to evaluate on
@@ -81,6 +90,7 @@ class AjileSubjectTrialBenchmarkDataset(Dataset):
         self.output_indices = output_indices
         self.start_neural_data_before_reach_onset = start_neural_data_before_reach_onset
         self.end_neural_data_after_reach_onset = end_neural_data_after_reach_onset    
+        self.replace_nan_with = replace_nan_with
 
         nonreach_start_times, _ = _get_nonreach_start_times(subject, trial_id)
         self.negative_indices = (nonreach_start_times * subject.get_sampling_rate()).astype(np.int32)
@@ -101,7 +111,9 @@ class AjileSubjectTrialBenchmarkDataset(Dataset):
     def _get_neural_data(self, window_from, window_to):
         if not self.output_indices:
             input = self.subject.get_all_electrode_data(self.trial_id, window_from=window_from, window_to=window_to)
-            return input.to(dtype=self.dtype)
+            input = input.to(dtype=self.dtype)
+            input[torch.isnan(input)] = self.replace_nan_with
+            return input
         else:
             return window_from, window_to # just return the window indices
 
