@@ -4,7 +4,7 @@
 ```
 python -m venv .venv
 source .venv/bin/activate
-pip install beautifulsoup4 requests torch torchvision h5py pandas scipy numpy matplotlib seaborn wandb scikit-learn psutil ml_dtypes plotly nbformat mne pyedflib moabb pynwb dandi
+pip install beautifulsoup4 requests torch torchvision h5py pandas scipy numpy matplotlib seaborn wandb scikit-learn psutil ml_dtypes plotly nbformat mne pyedflib moabb pynwb dandi numpy-hilbert-curve
 ```
 
 2. Clone btbench from https://github.com/azaho/btbench

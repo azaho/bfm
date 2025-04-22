@@ -1,5 +1,6 @@
 from subject_ajile12 import AjileSubject
-import ajilebench_train_test_splits, ajilebench_config
+import ajilebench.ajilebench_train_test_splits as ajilebench_train_test_splits
+import ajilebench.ajilebench_config as ajilebench_config
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
@@ -84,7 +85,7 @@ for eval_name in eval_names:
             for fold_idx in range(len(train_datasets)):
                 train_dataset = train_datasets[fold_idx]
                 test_dataset = test_datasets[fold_idx]
-                
+
                 # Convert PyTorch dataset to numpy arrays for scikit-learn
                 X_train = np.array([item[0][:, data_idx_from:data_idx_to].flatten() for item in train_dataset])
                 y_train = np.array([item[1] for item in train_dataset])
