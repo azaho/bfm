@@ -126,7 +126,7 @@ class ElectrodeDataEmbedding(BFModule):
         return electrode_data.mean(dim=(0, 2)).unsqueeze(1), electrode_data.std(dim=(0, 2)).unsqueeze(1)
 
 class ElectrodeDataEmbeddingFFT(ElectrodeDataEmbedding):
-    def __init__(self, electrode_embedding_class, sample_timebin_size, max_frequency_bin=64, normalization_requires_grad=True, std_smoothing=1e-5, power=False):
+    def __init__(self, electrode_embedding_class, sample_timebin_size, max_frequency_bin=64, normalization_requires_grad=True, std_smoothing=1e-5, power=True):
         super(ElectrodeDataEmbeddingFFT, self).__init__(electrode_embedding_class, sample_timebin_size, 
                                                         overall_sampling_rate=2048, normalization_requires_grad=normalization_requires_grad, 
                                                         std_smoothing=std_smoothing, normalization_shape=(max_frequency_bin if power else 2*max_frequency_bin,)) # XXX overall sampling rate doesnt matter, remove once fixed
