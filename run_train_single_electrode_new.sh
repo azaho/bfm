@@ -37,4 +37,4 @@ python --version
 nvidia-smi
 
 # note: change train_model_fbi_combined.py to train_model.py for the non-combined version
-python -u train_model_single_electrode_new.py --d_hilbert $d_hilbert --d_embed $d_embed --bits_per_sample $bits_per_sample
+python -u train_model_single_electrode_new.py --d_hilbert $d_hilbert --d_embed $d_embed --bits_per_sample $bits_per_sample --n_steps 300 --save_dir eval_results/single_electrode_new_smol/
