@@ -6,15 +6,11 @@ from model_model import BFModule
 class ElectrodeDataEmbedding(BFModule):
     def __init__(self, electrode_embedding_class, 
                  sample_timebin_size, overall_sampling_rate, 
-                 normalization_requires_grad=True, std_smoothing=1e-5, 
-                 initial_capacity=100, normalization_shape=(1, )):
+                 initial_capacity=100):
         super(ElectrodeDataEmbedding, self).__init__()
         self.electrode_embedding_class = electrode_embedding_class
         self.d_model = electrode_embedding_class.d_model
-        self.std_smoothing = std_smoothing
         self.sample_timebin_size = sample_timebin_size
-        self.normalization_requires_grad = normalization_requires_grad
-        self.normalization_shape = normalization_shape
 
         # Initialize embeddings and maps
         self._initialize_parameters(initial_capacity)
@@ -23,18 +19,10 @@ class ElectrodeDataEmbedding(BFModule):
         self.linear_embed = nn.Linear(int(self.sample_timebin_size * self.overall_sampling_rate), self.d_model)
 
     def _get_current_capacity(self):
-        return self.normalization_means.shape[0]
+        return self.sampling_rates.shape[0]
     def _get_current_size(self):
         return len(self.electrode_embedding_class.embeddings_map)
     def _initialize_parameters(self, initial_capacity):
-        self.normalization_means = nn.Parameter(
-            torch.zeros((initial_capacity, *self.normalization_shape), dtype=self.dtype, device=self.device),
-            requires_grad=self.normalization_requires_grad
-        )
-        self.normalization_stds = nn.Parameter(
-            torch.ones((initial_capacity, *self.normalization_shape), dtype=self.dtype, device=self.device),
-            requires_grad=self.normalization_requires_grad
-        )
         self.sampling_rates = nn.Parameter(
             torch.zeros(initial_capacity, dtype=torch.int64, device=self.device),
             requires_grad=False
@@ -43,14 +31,9 @@ class ElectrodeDataEmbedding(BFModule):
         if needed_size >= self._get_current_capacity():
             new_capacity = needed_size
             # Save old data
-            old_means = self.normalization_means.data
-            old_stds = self.normalization_stds.data
             old_rates = self.sampling_rates.data
             # Initialize new parameters
             self._initialize_parameters(new_capacity)
-            # Copy old data
-            self.normalization_means.data[:old_means.shape[0]] = old_means
-            self.normalization_stds.data[:old_stds.shape[0]] = old_stds
             self.sampling_rates.data[:old_rates.shape[0]] = old_rates
 
     def add_subject(self, subject, sampling_rate):
@@ -78,58 +61,26 @@ class ElectrodeDataEmbedding(BFModule):
         electrode_data = electrode_data.view(batch_size, n_electrodes, n_timebins, timebin_samples)
         return electrode_data
 
-    def forward(self, electrode_data, electrode_indices, normalization_means=None, normalization_stds=None):
+    def forward(self, electrode_data, electrode_indices):
         # electrode_data is of shape (batch_size, n_electrodes, n_samples) 
         #   where n_samples = sample_timebin_size * n_timebins 
-        # electrode_indices is of shape (batch_size, *normalization_shape)
+        # electrode_indices is of shape (batch_size, n_electrodes)
         
-        if normalization_means is None: normalization_means = self.normalization_means[electrode_indices] # shape: (batch_size, n_electrodes, *normalization_shape)
-        if normalization_stds is None: normalization_stds = self.normalization_stds[electrode_indices]
         electrode_embeddings = self.electrode_embedding_class.forward(electrode_indices) # shape: (batch_size, n_electrodes, d_model)
         batch_size, n_electrodes, d_model = electrode_embeddings.shape
 
         electrode_data = self.preprocess_electrode_data(electrode_data, self.sampling_rates[electrode_indices][0][0]) # XXX: Assuming all items in the batch have the sane sampling rate
         # shape: (batch_size, n_electrodes, n_timebins, d_timebin), by default d_timebin = sample_timebin_size
 
-        electrode_data = electrode_data - normalization_means.view(batch_size, n_electrodes, 1, *self.normalization_shape)
-        electrode_data = electrode_data / (normalization_stds.view(batch_size, n_electrodes, 1, *self.normalization_shape) + self.std_smoothing)
-
         electrode_data = self.linear_embed(electrode_data) # shape: (batch_size, n_electrodes, n_timebins, d_model)
         electrode_data = electrode_data + electrode_embeddings.view(batch_size, n_electrodes, 1, d_model)
 
         return electrode_data # shape: (batch_size, n_electrodes, n_timebins, d_model)
 
-    def initialize_normalization(self, subject, session_id, init_normalization_window_to=2048 * 60 * 10):
-        subject_identifier = subject.subject_identifier
-        indices = subject.get_electrode_indices(session_id)
-        electrode_labels = subject.get_electrode_labels()
-        electrode_labels = [electrode_labels[i] for i in indices]
-        electrode_indices = [self.electrode_embedding_class.embeddings_map[(subject.subject_identifier, electrode_label)] for electrode_label in electrode_labels]
-
-        with torch.no_grad():
-            all_electrode_data = subject.get_all_electrode_data(session_id, window_to=init_normalization_window_to).to(self.device, dtype=self.dtype)
-            electrode_means, electrode_stds = self.calculate_electrode_normalization(all_electrode_data, self.sampling_rates[electrode_indices[0]]) # XXX: Assuming all electrodes have the same sampling rate
-
-            for idx, electrode_index in enumerate(electrode_indices):
-                self.normalization_means.data[electrode_index] = electrode_means[idx]
-                self.normalization_stds.data[electrode_index] = electrode_stds[idx]
-
-    def calculate_electrode_normalization(self, electrode_data, sampling_rate):
-        """
-            x is of shape (batch_size, n_electrodes, n_samples) or (n_electrodes, n_samples)
-            where n_samples = sample_timebin_size * n_timebins 
-                (will be trimmed to a multiple of timebin_samples)
-        """
-        if len(electrode_data.shape) == 2: # no batch dimension; add it
-            electrode_data = electrode_data.unsqueeze(0)
-
-        return electrode_data.mean(dim=(0, 2)).unsqueeze(1), electrode_data.std(dim=(0, 2)).unsqueeze(1)
-
 class ElectrodeDataEmbeddingFFT(ElectrodeDataEmbedding):
-    def __init__(self, electrode_embedding_class, sample_timebin_size, max_frequency_bin=64, normalization_requires_grad=True, std_smoothing=1e-5, power=True):
+    def __init__(self, electrode_embedding_class, sample_timebin_size, max_frequency_bin=64, power=True):
         super(ElectrodeDataEmbeddingFFT, self).__init__(electrode_embedding_class, sample_timebin_size, 
-                                                        overall_sampling_rate=2048, normalization_requires_grad=normalization_requires_grad, 
-                                                        std_smoothing=std_smoothing, normalization_shape=(max_frequency_bin if power else 2*max_frequency_bin,)) # XXX overall sampling rate doesnt matter, remove once fixed
+                                                        overall_sampling_rate=2048) # XXX overall sampling rate doesnt matter, remove once fixed
         self.max_frequency_bin = max_frequency_bin
         self.linear_embed = nn.Linear(max_frequency_bin if power else 2*max_frequency_bin, self.d_model)
         self.power = power
@@ -162,20 +113,7 @@ class ElectrodeDataEmbeddingFFT(ElectrodeDataEmbedding):
             x = torch.log(x + 1e-5)
         else:
             x = torch.cat([torch.abs(x), torch.angle(x)], dim=-1) # shape: (batch_size, n_electrodes, n_timebins, 2*max_frequency_bin)
-        return x.to(dtype=self.dtype)  # Convert back to original dtype; shape (batch_size, n_electrodes, n_timebins, max_frequency_bin)
-
-    def calculate_electrode_normalization(self, electrode_data, sampling_rate):
-        """
-            x is of shape (batch_size, n_electrodes, n_samples) or (n_electrodes, n_samples)
-            where n_samples = sample_timebin_size * n_timebins 
-                (will be trimmed to a multiple of timebin_samples)
-        """
-        if len(electrode_data.shape) == 2: # no batch dimension; add it
-            electrode_data = electrode_data.unsqueeze(0)
-    
-        electrode_data = self.preprocess_electrode_data(electrode_data, sampling_rate, allow_trim=True)
-        means, stds = electrode_data.mean(dim=(0, 2)), electrode_data.std(dim=(0, 2))
-        return means, stds
+        return x.to(dtype=self.dtype)  # Convert back to original dtype; shape (batch_size, n_electrodes, n_timebins, max_frequency_bin)=
 
 
 class ElectrodeEmbedding(BFModule):

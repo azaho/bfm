@@ -9,15 +9,13 @@ from train_utils import log
 import random, os
 import sklearn
 from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader
 import numpy as np
 
-
-n_samples_per_bin = 1
-n_samples_inverter = 100
-mean_collapse_factor = 128//n_samples_per_bin
-
 btbench_tasks = ["frame_brightness", "global_flow", "local_flow", "global_flow_angle", "local_flow_angle", "face_num", "volume", "pitch", "delta_volume", 
+                "delta_pitch", "speech", "onset", "gpt2_surprisal", "word_length", "word_gap", "word_index", "word_head_pos", "word_part_speech", "speaker"]
+btbench_tasks = ["frame_brightness", "global_flow", "local_flow", "face_num", "volume", "pitch", "delta_volume", 
                 "delta_pitch", "speech", "onset", "gpt2_surprisal", "word_length", "word_gap", "word_index", "word_head_pos", "word_part_speech", "speaker"]
 
 
@@ -171,9 +169,10 @@ class ContrastiveModel(Model):
     def forward(self, x, y=None, mask=None):
         # x is of shape (batch_size, seq_len, n_channels, d_input) 
         # y is of shape (batch_size, seq_len, n_channels, d_input)
-        batch_size, seq_len, n_channels, d_input = x.shape
 
         x = self.embed(x)# shape (batch_size, seq_len, n_channels, d_model)
+        batch_size, seq_len, n_channels, d_model = x.shape
+
         if mask is not None:
             x[:, mask, :] = self.mask_token.view(1, 1, 1, -1)
         
@@ -211,7 +210,9 @@ class ContrastiveModel(Model):
 
 from btbench.btbench_train_test_splits import generate_splits_SS_SM
 class ModelEvaluation_BTBench():
-    def __init__(self, model, inverter, subject_trials, eval_names, batch_size=128, dtype=torch.float32, feature_aggregation_method='mean', mean_collapse_factor=1, start_neural_data_before_word_onset=0, end_neural_data_after_word_onset=2048, eval_electrode_index=0):
+    def __init__(self, model, inverter, subject_trials, eval_names, batch_size=128, dtype=torch.float32, feature_aggregation_method='mean', 
+                 mean_collapse_factor=1, start_neural_data_before_word_onset=0, end_neural_data_after_word_onset=2048, eval_electrode_indices=None, 
+                 n_samples_per_bin=1, lite=True, standardize=True):
         self.model = model
         self.inverter = inverter
         self.subject_trials = subject_trials
@@ -222,7 +223,11 @@ class ModelEvaluation_BTBench():
         self.mean_collapse_factor = mean_collapse_factor
         self.start_neural_data_before_word_onset = start_neural_data_before_word_onset
         self.end_neural_data_after_word_onset = end_neural_data_after_word_onset
-        self.eval_electrode_index = eval_electrode_index
+        self.eval_electrode_indices = eval_electrode_indices if eval_electrode_indices is not None else [0]
+        self.n_samples_per_bin = n_samples_per_bin
+        self.lite = lite
+        self.standardize = standardize
+        self.subjects = {subject.subject_identifier: subject for subject, _ in subject_trials}
         
         # Create evaluation datasets
         self.evaluation_datasets = {}
@@ -230,10 +235,11 @@ class ModelEvaluation_BTBench():
             for subject, trial_id in self.subject_trials:
                 splits = generate_splits_SS_SM(subject, trial_id, eval_name, dtype=self.dtype,
                                                start_neural_data_before_word_onset=self.start_neural_data_before_word_onset,
-                                               end_neural_data_after_word_onset=self.end_neural_data_after_word_onset)
+                                               end_neural_data_after_word_onset=self.end_neural_data_after_word_onset,
+                                               lite=self.lite)
                 self.evaluation_datasets[(eval_name, subject.subject_identifier, trial_id)] = splits
 
-    def evaluate_on_dataset(self, train_dataset, test_dataset):
+    def evaluate_on_dataset(self, train_dataset, test_dataset, electrode_index):
         train_dataloader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=False)
         test_dataloader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False)
         
@@ -246,9 +252,9 @@ class ModelEvaluation_BTBench():
             batch_size = batch_input.shape[0]
             window_size = batch_input.shape[2]
 
-            batch_input = batch_input[:, self.eval_electrode_index] # select just the first channel
+            batch_input = batch_input[:, electrode_index] # select the specified electrode
 
-            batch_data = batch_input.to(self.model.device, dtype=self.model.dtype).reshape(batch_size, window_size//n_samples_per_bin, 1, n_samples_per_bin) # shape (batch_size, seq_len, 1)
+            batch_data = batch_input.to(self.model.device, dtype=self.model.dtype).reshape(batch_size, window_size//self.n_samples_per_bin, 1, self.n_samples_per_bin) # shape (batch_size, seq_len, 1)
             batch_data = self.inverter(batch_data)
 
             with torch.no_grad():
@@ -269,9 +275,9 @@ class ModelEvaluation_BTBench():
             batch_size = batch_input.shape[0]
             window_size = batch_input.shape[2]
 
-            batch_input = batch_input[:, self.eval_electrode_index] # select just the first channel
+            batch_input = batch_input[:, electrode_index] # select the specified electrode
 
-            batch_data = batch_input.to(self.model.device, dtype=self.model.dtype).reshape(batch_size, window_size//n_samples_per_bin, 1, n_samples_per_bin) # shape (batch_size, seq_len, 1)
+            batch_data = batch_input.to(self.model.device, dtype=self.model.dtype).reshape(batch_size, window_size//self.n_samples_per_bin, 1, self.n_samples_per_bin) # shape (batch_size, seq_len, 1)
             batch_data = self.inverter(batch_data)
 
             with torch.no_grad():
@@ -290,6 +296,11 @@ class ModelEvaluation_BTBench():
         y_train = np.concatenate(y_train)
         X_test = np.concatenate(X_test)
         y_test = np.concatenate(y_test)
+
+        if self.standardize:
+            scaler = StandardScaler()
+            X_train = scaler.fit_transform(X_train)
+            X_test = scaler.transform(X_test)
 
         # Train logistic regression classifier
         clf = LogisticRegression(random_state=42, max_iter=10000)
@@ -312,52 +323,72 @@ class ModelEvaluation_BTBench():
             
         return auroc, accuracy
 
-    def evaluate(self, return_raw=False):
+    def evaluate(self, return_raw=False, only_keys_containing=None):
         results = {}
         for subject in set(subject for subject, _ in self.subject_trials):
             for eval_name in self.eval_names:
                 trial_ids = [trial_id for _subject, trial_id in self.subject_trials if _subject == subject]
                 for trial_id in trial_ids:
                     splits = self.evaluation_datasets[(eval_name, subject.subject_identifier, trial_id)]
-                    auroc_list, acc_list = [], []
-                    for train_dataset, test_dataset in zip(splits[0], splits[1]):
-                        auroc, acc = self.evaluate_on_dataset(train_dataset, test_dataset)
-                        auroc_list.append(auroc)
-                        acc_list.append(acc)
                     
-                    mean_auroc = np.mean(auroc_list)
-                    mean_acc = np.mean(acc_list)
-                    results[(eval_name, subject.subject_identifier, trial_id)] = (mean_auroc, mean_acc) if not return_raw else (auroc_list, acc_list)
+                    for electrode_index in self.eval_electrode_indices:
+                        auroc_list, acc_list = [], []
+                        for train_dataset, test_dataset in zip(splits[0], splits[1]):
+                            #print(f"Evaluating {eval_name} for subject {subject.subject_identifier}")
+                            auroc, acc = self.evaluate_on_dataset(train_dataset, test_dataset, electrode_index)
+                            auroc_list.append(auroc)
+                            acc_list.append(acc)
+                        
+                        mean_auroc = np.mean(auroc_list)
+                        mean_acc = np.mean(acc_list)
+                        results[(eval_name, subject.subject_identifier, trial_id, electrode_index)] = (mean_auroc, mean_acc) if not return_raw else (auroc_list, acc_list)
                     
-        return self._format_results(results) if not return_raw else results
+        return self._format_results(results, only_keys_containing=only_keys_containing) if not return_raw else results
         
-    def _format_results(self, results):
+    def _format_results(self, results, only_keys_containing=None):
         formatted_results = {}
         for eval_name in self.eval_names:
-            auroc_values = []
-            acc_values = []
+            # Track metrics by subject and by electrode
             subject_aurocs = {}
             subject_accs = {}
+            electrode_aurocs = {}
+            electrode_accs = {}
             
-            for (metric, subject_id, trial_id) in [k for k in results.keys() if k[0] == eval_name]:
+            for (metric, subject_id, trial_id, electrode_index) in [k for k in results.keys() if k[0] == eval_name]:
+                # Initialize dictionaries if needed
                 if subject_id not in subject_aurocs:
                     subject_aurocs[subject_id] = []
                     subject_accs[subject_id] = []
+                
+                if electrode_index not in electrode_aurocs:
+                    electrode_aurocs[electrode_index] = []
+                    electrode_accs[electrode_index] = []
                     
-                auroc, acc = results[(eval_name, subject_id, trial_id)]
+                auroc, acc = results[(eval_name, subject_id, trial_id, electrode_index)]
+                
+                # Add to subject metrics
                 subject_aurocs[subject_id].append(auroc)
                 subject_accs[subject_id].append(acc)
                 
-                formatted_results[f"eval_auroc/{subject_id}_{trial_id}_{eval_name}"] = auroc
-                formatted_results[f"eval_acc/{subject_id}_{trial_id}_{eval_name}"] = acc
-                
+                # Add individual result
+                formatted_results[f"eval_auroc/{subject_id}_{trial_id}_{eval_name}_{self.subjects[subject_id].electrode_labels[electrode_index]}"] = auroc
+                formatted_results[f"eval_acc/{subject_id}_{trial_id}_{eval_name}_{self.subjects[subject_id].electrode_labels[electrode_index]}"] = acc
+            
+            # Calculate average metrics per subject
             for subject_id in subject_aurocs:
-                auroc_values.append(np.mean(subject_aurocs[subject_id]))
-                acc_values.append(np.mean(subject_accs[subject_id]))
-                
-            if auroc_values:
-                formatted_results[f"eval_auroc/average_{eval_name}"] = np.mean(auroc_values)
-                formatted_results[f"eval_acc/average_{eval_name}"] = np.mean(acc_values)
+                formatted_results[f"eval_auroc/{subject_id}_{eval_name}_avg"] = np.mean(subject_aurocs[subject_id])
+                formatted_results[f"eval_acc/{subject_id}_{eval_name}_avg"] = np.mean(subject_accs[subject_id])
+            
+            # Calculate overall average
+            all_aurocs = [item for sublist in subject_aurocs.values() for item in sublist]
+            all_accs = [item for sublist in subject_accs.values() for item in sublist]
+            
+            if all_aurocs:
+                formatted_results[f"eval_auroc/average_{eval_name}"] = np.mean(all_aurocs)
+                formatted_results[f"eval_acc/average_{eval_name}"] = np.mean(all_accs)
+
+        if only_keys_containing is not None:
+            formatted_results = {k: v for k, v in formatted_results.items() if only_keys_containing in k}
                 
         return formatted_results
 
@@ -382,7 +413,7 @@ def main():
     inverter = DistributionInverter(samples=samples).to(device, dtype=dtype)
 
     evaluation = ModelEvaluation_BTBench(model, inverter, [(subject, 0)], btbench_tasks, feature_aggregation_method='concat', 
-                                         mean_collapse_factor=mean_collapse_factor, eval_electrode_index=eval_electrode_index)
+                                         mean_collapse_factor=mean_collapse_factor, eval_electrode_indices=[eval_electrode_index])
 
     log(f'Training model...')
     initial_lr = 0.003
@@ -491,6 +522,10 @@ if __name__ == "__main__":
     n_steps = args.n_steps
     batch_size = args.batch_size
     log_every_step = min(100, n_steps//10)
+
+    n_samples_per_bin = 1
+    n_samples_inverter = 100
+    mean_collapse_factor = 128//n_samples_per_bin
 
     save_dir = args.save_dir
     os.makedirs(save_dir, exist_ok=True)
