@@ -21,10 +21,15 @@ def get_default_configs(random_string, wandb_project):
         'lr_schedule': "None", # none, linear, cosine
         
         # MINI-BFM on braintreebank
-        'train_subject_trials': [("btbank1", 0), ("btbank1", 1), ("btbank2", 4), ("btbank2", 5), ("btbank3", 1), ("btbank3", 2), ("btbank7", 1), ("btbank10", 1)],
-        'eval_subject_trials': [("btbank1", 2), ("btbank2", 6), ("btbank3", 0), ("btbank7", 0), ("btbank10", 0)],
+        'train_subject_trials': [('btbank3', 2), ('btbank3', 1)], #[("btbank1", 0), ("btbank1", 1), ("btbank2", 4), ("btbank2", 5), ("btbank3", 1), ("btbank3", 2), ("btbank7", 1), ("btbank10", 1)],
+        'eval_subject_trials': [('btbank3', 0)], #[("btbank1", 2), ("btbank2", 6), ("btbank3", 0), ("btbank7", 0), ("btbank10", 0)],
+
+        'n_electrodes_subset': 80,
+
+        'normalize_features': True,
+        'use_temperature_param': True,
         
-        'data_dtype': torch.float16,
+        'data_dtype': torch.float32,
 
         'random_string': random_string,
     }
@@ -33,7 +38,7 @@ def get_default_configs(random_string, wandb_project):
 
         'sample_timebin_size': 0.125, # in seconds
         'max_frequency_bin': 64, # XXX Todo: make this based on frequency and not bin number
-        'max_n_timebins': 24,
+        'max_n_timebins': 8,
         'max_n_electrodes': 128,
 
         'init_normalization': True, # XXX rename to a more sensible name later
@@ -42,10 +47,10 @@ def get_default_configs(random_string, wandb_project):
             'type': 'learned', # coordinate_init, noisy_coordinate, learned, zero
             'coordinate_noise_std': 0.0, # only relevant for noisy_coordinate type; note coordinates are normalized to be within [0,1]
             'embedding_dim': None,
-            'spectrogram': True,
+            'spectrogram': False,
         },
 
-        'dtype': torch.bfloat16,
+        'dtype': torch.float32,
 
         'transformer': {
             'd_model': 192,
@@ -59,7 +64,7 @@ def get_default_configs(random_string, wandb_project):
     }
     cluster_config = {
         'save_model_every_n_epochs': 20,
-        'eval_model_every_n_epochs': 10,
+        'eval_model_every_n_epochs': 1,
 
         'wandb_project': wandb_project,
         'timestamp': time.strftime("%Y%m%d_%H%M%S"),
@@ -72,7 +77,7 @@ def get_default_configs(random_string, wandb_project):
 
         'resume_run': False,
 
-        'eval_aggregation_method': 'mean', # 'mean', 'concat'
+        'eval_aggregation_method': 'concat', # 'mean', 'concat'
     }
     return training_config, model_config, cluster_config
 
@@ -94,6 +99,9 @@ def parse_configs_from_args(training_config, model_config, cluster_config):
     parser.add_argument('--resume_run', type=int, default=None, help='Whether to resume run')
     parser.add_argument('--projection_type', type=str, default=None, help='Projection type')
     parser.add_argument('--p_unmasked', type=float, default=None, help='Proportion of unmasked electrodes')
+    parser.add_argument('--n_electrodes_subset', type=int, default=None, help='Number of electrodes subset')
+    parser.add_argument('--normalize_features', type=int, default=None, help='Whether to normalize features')
+    parser.add_argument('--use_temperature_param', type=int, default=None, help='Whether to use temperature parameter') 
 
     # Training arguments
     parser.add_argument('--batch_size', type=int, default=None, help='Batch size for training')
@@ -210,6 +218,12 @@ def parse_configs_from_args(training_config, model_config, cluster_config):
         training_config['p_unmasked'] = args.p_unmasked
     if args.lr_schedule is not None:
         training_config['lr_schedule'] = args.lr_schedule
+    if args.n_electrodes_subset is not None:
+        training_config['n_electrodes_subset'] = args.n_electrodes_subset
+    if args.normalize_features is not None:
+        training_config['normalize_features'] = bool(args.normalize_features)
+    if args.use_temperature_param is not None:
+        training_config['use_temperature_param'] = bool(args.use_temperature_param)
 
 max_log_priority = 1
 def log(message, priority=0, indent=0):
@@ -219,7 +233,7 @@ def log(message, priority=0, indent=0):
     gpu_memory_reserved = torch.cuda.memory_reserved() / 1024**3 if torch.cuda.is_available() else 0
     process = psutil.Process()
     ram_usage = process.memory_info().rss / 1024**3
-    print(f"[{current_time} gpu {gpu_memory_reserved:.1f}G ram {ram_usage:.1f}G] ({priority}) {' '*4*indent}{message}")
+    print(f"[{current_time} gpu {gpu_memory_reserved:.1f}G ram {ram_usage:.1f}G] {' '*4*indent}{message}")
 
 
 def update_random_seed(training_config):
@@ -239,6 +253,12 @@ def update_dir_name(model_config, training_config, cluster_config):
     dir_name += f"_dm{model_config['transformer']['d_model']}"
     dir_name += f"_nh{model_config['transformer']['n_heads']}"
     dir_name += f"_nl{model_config['transformer']['n_layers_electrode']}" + f"_{model_config['transformer']['n_layers_time']}"
+    if training_config['n_electrodes_subset'] != 60:
+        dir_name += f"_nes{training_config['n_electrodes_subset']}"
+    if training_config['normalize_features']:
+        dir_name += f"_nf"
+    if not training_config['use_temperature_param']:
+        dir_name += f"_nUTP"
     
     if not cluster_config['cache_subjects']:
         dir_name += f"_nCS"

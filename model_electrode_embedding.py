@@ -5,18 +5,21 @@ from model_model import BFModule
 
 class ElectrodeDataEmbedding(BFModule):
     def __init__(self, electrode_embedding_class, 
-                 sample_timebin_size, overall_sampling_rate, 
+                 sample_timebin_size, d_model, overall_sampling_rate, 
                  initial_capacity=100):
         super(ElectrodeDataEmbedding, self).__init__()
         self.electrode_embedding_class = electrode_embedding_class
-        self.d_model = electrode_embedding_class.d_model
+        self.d_model = d_model
         self.sample_timebin_size = sample_timebin_size
 
         # Initialize embeddings and maps
         self._initialize_parameters(initial_capacity)
 
         self.overall_sampling_rate = overall_sampling_rate # XXX think about how to be flexible here regarding the sampling rate. Maybe, resample? Or learn a linear layer?
-        self.linear_embed = nn.Linear(int(self.sample_timebin_size * self.overall_sampling_rate), self.d_model)
+        self.embed_transformation = nn.Linear(int(self.sample_timebin_size * self.overall_sampling_rate), int(self.sample_timebin_size * self.overall_sampling_rate), bias=False)
+
+        self.embed_transformation.weight.data = torch.eye(int(self.sample_timebin_size * self.overall_sampling_rate))
+        
 
     def _get_current_capacity(self):
         return self.sampling_rates.shape[0]
@@ -72,17 +75,48 @@ class ElectrodeDataEmbedding(BFModule):
         electrode_data = self.preprocess_electrode_data(electrode_data, self.sampling_rates[electrode_indices][0][0]) # XXX: Assuming all items in the batch have the sane sampling rate
         # shape: (batch_size, n_electrodes, n_timebins, d_timebin), by default d_timebin = sample_timebin_size
 
-        electrode_data = self.linear_embed(electrode_data) # shape: (batch_size, n_electrodes, n_timebins, d_model)
-        electrode_data = electrode_data + electrode_embeddings.view(batch_size, n_electrodes, 1, d_model)
+        electrode_data = self.embed_transformation(electrode_data) # shape: (batch_size, n_electrodes, n_timebins, d_model)
+        electrode_data = electrode_data #+ electrode_embeddings.view(batch_size, n_electrodes, 1, d_model) #XXX SCUFFED
 
         return electrode_data # shape: (batch_size, n_electrodes, n_timebins, d_model)
 
+
+from model_transformers import Transformer
+class EmbedTransformer(BFModule):
+    def __init__(self, first_kernel=16, d_model=192, n_layers=5, n_heads=6, overall_sampling_rate=2048, sample_timebin_size=0.125):
+        super(EmbedTransformer, self).__init__()
+        self.transformer = Transformer(d_input=first_kernel, d_model=d_model, d_output=first_kernel, 
+                                            n_layer=n_layers, n_head=n_heads, causal=False, 
+                                            rope=True, cls_token=False, rope_base=int(overall_sampling_rate*sample_timebin_size)//first_kernel)
+        self.first_kernel = first_kernel
+    
+    def forward(self, electrode_data):
+        # (batch_size, n_electrodes, n_timebins, sample_timebin_size)
+
+        batch_size, n_electrodes, n_timebins, sample_timebin_size = electrode_data.shape
+        electrode_data = electrode_data.reshape(batch_size, n_electrodes, n_timebins, -1, self.first_kernel)
+        electrode_data = electrode_data.reshape(batch_size, -1, self.first_kernel)
+        electrode_data = self.transformer(electrode_data) # shape: (batch_size, n_electrodes, n_timebins, -1, d_model)
+        electrode_data = electrode_data.reshape(batch_size, n_electrodes, n_timebins, -1, self.first_kernel)
+        electrode_data = electrode_data.reshape(batch_size, n_electrodes, n_timebins, sample_timebin_size)
+        
+        return electrode_data
+    
+class ElectrodeDataEmbeddingTransformer(ElectrodeDataEmbedding):
+    def __init__(self, electrode_embedding_class, sample_timebin_size, first_kernel=16, d_model=192, n_layers=5, n_heads=6):
+        overall_sampling_rate = 2048
+        super(ElectrodeDataEmbeddingTransformer, self).__init__(electrode_embedding_class, sample_timebin_size, d_model, overall_sampling_rate) # XXX overall sampling rate doesnt matter, remove once fixed
+
+        self.embed_transformation = EmbedTransformer(first_kernel, d_model, n_layers, n_heads, overall_sampling_rate, sample_timebin_size)
+        
+
+
 class ElectrodeDataEmbeddingFFT(ElectrodeDataEmbedding):
-    def __init__(self, electrode_embedding_class, sample_timebin_size, max_frequency_bin=64, power=True):
+    def __init__(self, electrode_embedding_class, sample_timebin_size, d_model, max_frequency_bin=64, power=True):
         super(ElectrodeDataEmbeddingFFT, self).__init__(electrode_embedding_class, sample_timebin_size, 
-                                                        overall_sampling_rate=2048) # XXX overall sampling rate doesnt matter, remove once fixed
+                                                        d_model, overall_sampling_rate=2048) # XXX overall sampling rate doesnt matter, remove once fixed
         self.max_frequency_bin = max_frequency_bin
-        self.linear_embed = nn.Linear(max_frequency_bin if power else 2*max_frequency_bin, self.d_model)
+        self.embed_transformation = nn.Linear(max_frequency_bin if power else 2*max_frequency_bin, self.d_model)
         self.power = power
     def add_subject(self, subject, sampling_rate):
         super(ElectrodeDataEmbeddingFFT, self).add_subject(subject, sampling_rate)
@@ -123,9 +157,9 @@ class ElectrodeEmbedding(BFModule):
         self.embedding_dim = embedding_dim if embedding_dim is not None else d_model
         self.embedding_requires_grad = embedding_requires_grad
         if self.embedding_dim < d_model:
-            self.linear_embed = nn.Linear(self.embedding_dim, self.d_model, requires_grad=embedding_fanout_requires_grad)
+            self.embed_transformation = nn.Linear(self.embedding_dim, self.d_model, requires_grad=embedding_fanout_requires_grad)
         else: 
-            self.linear_embed = lambda x: x # just identity function if embedding dim is already at d_model
+            self.embed_transformation = lambda x: x # just identity function if embedding dim is already at d_model
         
         self.d_model = d_model
         self._initialize_embeddings(initial_capacity)
@@ -151,7 +185,7 @@ class ElectrodeEmbedding(BFModule):
 
     def forward(self, electrode_indices):
         # electrode_indices is a tensor of shape (batch_size, n_electrodes)
-        return self.linear_embed(self.embeddings(electrode_indices))
+        return self.embed_transformation(self.embeddings(electrode_indices))
 
     def add_raw(self, subject_identifier, electrode_labels):
         self._ensure_capacity(self._get_current_size() + len(electrode_labels))

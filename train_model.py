@@ -1,16 +1,17 @@
 import torch
 import wandb, os, json
 import time
+import numpy as np
 
 from muon import Muon
-from model_model import TransformerModel
+from model_model import GranularModel
 from model_electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeDataEmbeddingFFT, ElectrodeDataEmbedding
 
 from dataset import load_dataloaders, load_subjects
 from evaluation_btbench import FrozenModelEvaluation_SS_SM
 from train_utils import log, update_dir_name, update_random_seed, convert_dtypes, parse_configs_from_args, get_default_configs, get_shared_memory_info
 
-training_config, model_config, cluster_config = get_default_configs(random_string="TEMP", wandb_project="btbank_fft_exp")
+training_config, model_config, cluster_config = get_default_configs(random_string="TEMP", wandb_project="")
 parse_configs_from_args(training_config, model_config, cluster_config)
 dir_name = update_dir_name(model_config, training_config, cluster_config)
 update_random_seed(training_config)
@@ -26,12 +27,10 @@ all_subjects = load_subjects(training_config['train_subject_trials'], training_c
                              cache=cluster_config['cache_subjects'], allow_corrupted=False)
 
 log(f"Loading model...", priority=0)
-model = TransformerModel(
+model = GranularModel(
     model_config['transformer']['d_model'],  
-    n_layers_electrode=model_config['transformer']['n_layers_electrode'], 
-    n_layers_time=model_config['transformer']['n_layers_time'],
+    n_layers=model_config['transformer']['n_layers_time'],
     n_heads=model_config['transformer']['n_heads'],
-    use_cls_token=model_config['transformer']['use_cls_token']
 ).to(device, dtype=model_config['dtype'])
 
 if model_config['electrode_embedding']['type'] == 'learned' or model_config['electrode_embedding']['type'] == 'zero':
@@ -67,13 +66,9 @@ else:
     ).to(device, dtype=model_config['dtype'])
 
 for subject in all_subjects.values():
+    log(f"Adding subject {subject.subject_identifier} to electrode data embeddings...", priority=0)
     this_subject_trials = [trial_id for (sub_id, trial_id) in training_config['train_subject_trials'] if sub_id == subject.subject_identifier]
     electrode_data_embeddings.add_subject(subject, subject.get_sampling_rate(this_subject_trials[0]))
-    log(f"Adding subject {subject.subject_identifier} to electrode data embeddings...", priority=0)
-    if model_config['init_normalization']:
-        for trial_id in this_subject_trials:
-            log(f"Initializing normalization for subject {subject.subject_identifier} trial {trial_id}...", priority=1, indent=1)
-            electrode_data_embeddings.initialize_normalization(subject, trial_id, init_normalization_window_to=int(subject.get_sampling_rate(trial_id) * 60 * 5))
 electrode_data_embeddings = electrode_data_embeddings.to(device, dtype=model_config['dtype']) # moving to device again to ensure the new parameters are on the correct device
 
 log(f"Loading dataloaders...", priority=0)
@@ -89,8 +84,9 @@ train_dataloader, test_dataloader = load_dataloaders(
 )
 
 eval_subject_trials = [(all_subjects[subject_identifier], trial_id) for subject_identifier, trial_id in training_config['eval_subject_trials']]
+eval_tasks = ['speech', 'volume', 'gpt2_surprisal', 'word_part_speech']
 evaluation = FrozenModelEvaluation_SS_SM(
-    ['speech', 'volume', 'gpt2_surprisal', 'word_part_speech'], eval_subject_trials, 
+    eval_tasks, eval_subject_trials, 
     training_config['data_dtype'], training_config['batch_size'] * 2, # Can have a bigger batch size here if that speeds things up
     electrode_embeddings.embeddings_map,
     num_workers_eval=cluster_config['num_workers_eval'],
@@ -113,6 +109,9 @@ model_config['n_params'] = {
     'total': n_model_params + n_embed_params
 }
 
+np.random.seed(training_config['random_seed'])
+electrode_subset = np.random.permutation(124)[:training_config['n_electrodes_subset']]
+
 optimizers = []
 if training_config['optimizer'] == 'Muon':
     #all_params = list(model.parameters())
@@ -133,36 +132,38 @@ elif training_config['lr_schedule'] == 'cosine':
     for optimizer in optimizers:
         schedulers.append(torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=training_config['n_epochs'] * len(train_dataloader)))
 
-def calculate_loss_function(batch):
-    electrode_embedded_data = electrode_data_embeddings.forward(batch['data'], batch['electrode_index'])
+def calculate_loss_function(batch, output_accuracy=True):
+    # batch['data'] shape: (batch_size, n_electrodes, n_timebins)
+    # batch['electrode_index'] shape: (batch_size, n_electrodes)
+    embedded_data = electrode_data_embeddings.forward(batch['data'], batch['electrode_index']) # shape: (batch_size, n_electrodes, n_timebins, d_model)
+    batch_size, n_electrodes, n_timebins, d_model = embedded_data.shape
 
-    batch_size, n_electrodes, n_timebins, d_model = electrode_embedded_data.shape
+    embedded_data = embedded_data[:, electrode_subset, :, :]
 
-    permutation = torch.randperm(n_electrodes)
-    electrode_embedded_data = electrode_embedded_data[:, permutation]
 
-    n_electrodes_per_stream = int(n_electrodes * training_config['p_electrodes_per_stream'] * training_config['p_unmasked'])
-    #print(f"n_electrodes_per_stream: {n_electrodes_per_stream}")
+    output = model(embedded_data[:, :, :-1, :]) # shape: (batch_size, n_electrodes, n_timebins-1, d_model)
+    target = embedded_data[:, :, 1:, :] # shape: (batch_size, n_electrodes, n_timebins-1, d_model)
 
-    o1_e, o1_t = model(electrode_embedded_data[:, :n_electrodes_per_stream, :, :]) # shape: (batch_size, n_timebins, d_model)
-    o2_e, o2_t = model(electrode_embedded_data[:, -n_electrodes_per_stream:, :, :]) # shape: (batch_size, n_timebins, d_model)
-    
-    if training_config['projection_type'] == 'random_batch':
-        random_matrix = torch.randn(d_model, d_model, device=model.device, dtype=model_config['dtype']) / (d_model ** 0.5)
-        o1_t = torch.matmul(o1_t, random_matrix)
-        o2_t = torch.matmul(o2_t, random_matrix)
-        o1_e = torch.matmul(o1_e, random_matrix)
-        o2_e = torch.matmul(o2_e, random_matrix)
+    if training_config['normalize_features']:
+        output = output / (torch.norm(output, dim=-1, keepdim=True) + 0.001)
+        target = target / (torch.norm(target, dim=-1, keepdim=True) + 0.001)
 
-    similarity_1 = torch.matmul(o1_t[:, :-training_config['future_bin_idx']].permute(1, 0, 2), o2_e[:, training_config['future_bin_idx']:].permute(1, 2, 0)) * (model.temperature_param)
-    expanded_arange = torch.arange(batch_size).unsqueeze(0).repeat(n_timebins-training_config['future_bin_idx'], 1).to(model.device, dtype=torch.long).reshape(-1)
-    loss = torch.nn.functional.cross_entropy(similarity_1.view(-1, batch_size), expanded_arange)
+    similarity = output.permute(1, 2, 0, 3) @ target.permute(1, 2, 3, 0) # shape: (n_electrodes, n_timebins-1, batch_size, batch_size)
 
-    if training_config['symmetric_loss']:
-        similarity_2 = torch.matmul(o2_t[:, :-training_config['future_bin_idx']].permute(1, 0, 2), o1_e[:, training_config['future_bin_idx']:].permute(1, 2, 0)) * (model.temperature_param)
-        loss += torch.nn.functional.cross_entropy(similarity_2.view(-1, batch_size), expanded_arange)
-        loss /= 2
-    
+    if training_config['use_temperature_param']:
+        similarity = similarity * torch.exp(model.temperature_param)
+
+    # print("Similarity:", similarity[0, 0])
+    # print("Embedded data:", embedded_data[0, 0, 0])
+    # print("Output:", output[0, 0, 0])
+    # exit()
+
+    expanded_arange = torch.arange(batch_size).unsqueeze(0).repeat(len(electrode_subset), n_timebins-1, 1).to(model.device, dtype=torch.long).reshape(-1)
+    loss = torch.nn.functional.cross_entropy(similarity.view(-1, batch_size), expanded_arange)
+
+    if output_accuracy:
+        accuracy = (similarity.view(-1, batch_size).argmax(dim=-1) == expanded_arange).float().mean()
+        return {'contrastive': loss, 'accuracy': accuracy}
     return {'contrastive': loss}
 
 def calculate_pretrain_test_loss():
@@ -171,6 +172,12 @@ def calculate_pretrain_test_loss():
     for batch in test_dataloader:
         batch['data'] = batch['data'].to(model.device, dtype=model_config['dtype'], non_blocking=True)
         batch['electrode_index'] = batch['electrode_index'].to(model.device, dtype=torch.long, non_blocking=True)
+
+        normalized_batch = batch['data']
+        normalized_batch = normalized_batch - torch.mean(normalized_batch, dim=[0, 2], keepdim=True)
+        normalized_batch = normalized_batch / (torch.std(normalized_batch, dim=[0, 2], keepdim=True) + 1) # note values are in range [-180, 180]
+        batch['data'] = normalized_batch
+
         loss = calculate_loss_function(batch)
         for key, value in loss.items():
             if key not in losses: losses[key] = 0
@@ -205,9 +212,14 @@ for epoch_i in range(training_config['n_epochs']):
     # Main training loop
     epoch_losses = {}
     for batch_idx, batch in enumerate(train_dataloader):
-        batch['data'] = batch['data'].to(device, dtype=model_config['dtype'], non_blocking=True)
+        batch['data'] = batch['data'].to(device, dtype=model_config['dtype'], non_blocking=True) # (batch_size, n_electrodes, n_timesamples)
         batch['electrode_index'] = batch['electrode_index'].to(device, dtype=torch.long, non_blocking=True)
         subject_identifier, trial_id = batch['subject_trial'][0]
+
+        normalized_batch = batch['data']
+        normalized_batch = normalized_batch - torch.mean(normalized_batch, dim=[0, 2], keepdim=True)
+        normalized_batch = normalized_batch / (torch.std(normalized_batch, dim=[0, 2], keepdim=True) + 1) # note values are in range [-180, 180]
+        batch['data'] = normalized_batch
 
         for optimizer in optimizers: optimizer.zero_grad()
 
@@ -217,7 +229,7 @@ for epoch_i in range(training_config['n_epochs']):
             if key not in epoch_losses: epoch_losses[key] = 0
             epoch_losses[key] += loss.item()
 
-        loss = sum(loss_dict.values()) / len(loss_dict)
+        loss = loss_dict['contrastive'] #sum(loss_dict.values()) / len(loss_dict)
         loss.backward()
         for optimizer in optimizers: optimizer.step()
         for scheduler in schedulers: scheduler.step()
@@ -232,18 +244,18 @@ for epoch_i in range(training_config['n_epochs']):
             **{f"batch_{k}": v.item() for k, v in loss_dict.items()}
         })
 
-        log(f"Epoch {epoch_i+1}/{training_config['n_epochs']}, Batch {batch_idx+1}/{len(train_dataloader)} ({subject_identifier}_{trial_id}), LR: {optimizers[0].param_groups[0]['lr']:.6f}, Loss: {loss.item():.4f}", priority=0)
+        log(f"Epoch {epoch_i+1}/{training_config['n_epochs']}, Batch {batch_idx+1}/{len(train_dataloader)} ({subject_identifier}_{trial_id}), LR: {optimizers[0].param_groups[0]['lr']:.6f}, Loss: {loss.item():.4f}, Temperature: {torch.exp(model.temperature_param).item():.4f}", priority=0)
     for key, loss in epoch_losses.items():
         epoch_losses[key] /= len(train_dataloader)
 
     # Evaluate the model
     model.eval()
     eval_results = {f"train_{k}": v for k, v in epoch_losses.items()}
-    eval_results['train_loss'] = sum(epoch_losses.values()) / len(epoch_losses)
+    #eval_results['train_loss'] = sum(epoch_losses.values()) / len(epoch_losses)
     with torch.no_grad():
         test_loss_dict = calculate_pretrain_test_loss()
         eval_results.update({f"test_{k}": v.item() for k, v in test_loss_dict.items()})
-        eval_results['test_loss'] = sum(test_loss_dict.values()).item() / len(test_loss_dict)
+        #eval_results['test_loss'] = sum(test_loss_dict.values()).item() / len(test_loss_dict)
         if (epoch_i+1) % cluster_config['eval_model_every_n_epochs'] == 0:
             evaluation_results_strings = evaluation.evaluate_on_all_metrics(model, electrode_data_embeddings, log_priority=1, quick_eval=True)
             eval_results.update(evaluation_results_strings)

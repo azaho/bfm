@@ -10,7 +10,7 @@ from .braintreebank_subject import BrainTreebankSubject
 
 single_float_variables_name_remapping = {
     "pitch": "enhanced_pitch", #"pitch",
-    "volume": "enhanced_volume", #"rms",
+    "volume": "rms", #"enhanced_volume", #"rms",
     "frame_brightness": "mean_pixel_brightness",
     "global_flow": "max_global_magnitude",
     "local_flow": "max_vector_magnitude",
@@ -74,7 +74,8 @@ class BrainTreebankSubjectTrialBenchmarkDataset(Dataset):
         self.n_classes = 0
 
         if self.lite:
-            self.electrode_indices_subset = [subject.electrode_labels.index(e) for e in subject.get_lite_electrodes() if e in subject.electrode_labels]
+            lite_electrodes = BTBENCH_LITE_ELECTRODES[subject.subject_identifier]
+            self.electrode_indices_subset = [subject.electrode_labels.index(e) for e in lite_electrodes if e in subject.electrode_labels]
 
         eval_name_remapped = eval_name
         if eval_name in single_float_variables_name_remapping: eval_name_remapped = single_float_variables_name_remapping[eval_name]

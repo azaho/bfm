@@ -11,41 +11,30 @@ class Rotary(torch.nn.Module):
     def __init__(self, dim, base=100):
         super().__init__()
         self.inv_freq = 1.0 / (base ** (torch.arange(0, dim, 2).float() / dim))
-        self.seq_len_cached = None
-        self.positions_cached = None
-        self.cos_cached = None
-        self.sin_cached = None
-
     def forward(self, x, positions=None):
         seq_len = x.shape[1]
         if positions is None:
             positions = torch.arange(seq_len, device=x.device)
         
-        # Reset cache if positions change or seq_len changes
-        if (self.positions_cached is None 
-            or self.seq_len_cached != seq_len 
-            or not torch.equal(positions.flatten(), self.positions_cached)):
-            
-            self.seq_len_cached = seq_len
-            self.positions_cached = positions.flatten()
-            
-            # Use provided positions instead of arange
-            freqs = torch.outer(positions.flatten(), self.inv_freq.to(x.device)).to(x.device)
-            self.cos_cached = freqs.cos().to(x.dtype)
-            self.sin_cached = freqs.sin().to(x.dtype)
-            
-            # Reshape to match batch dimension if needed
-            if positions.ndim > 1:
-                self.cos_cached = self.cos_cached.view(*positions.shape, -1)
-                self.sin_cached = self.sin_cached.view(*positions.shape, -1)
-            
-        return self.cos_cached[None, :, None, :], self.sin_cached[None, :, None, :]
+        # Calculate frequencies directly without caching
+        # positions shape: (batch_size, seq_len)
+        freqs = torch.outer(positions.flatten(), self.inv_freq.to(x.device)).to(x.device)
+        cos = freqs.cos().to(x.dtype)
+        sin = freqs.sin().to(x.dtype)
+        
+        # Reshape to match batch dimension if needed
+        if positions.ndim > 1:
+            cos = cos.view(*positions.shape, -1)
+            sin = sin.view(*positions.shape, -1)
+        
+        return cos.unsqueeze(-2), sin.unsqueeze(-2)
 
 def apply_rotary_emb(x, cos, sin):
     assert x.ndim == 4 # multihead attention
     d = x.shape[3]//2
     x1 = x[..., :d]
     x2 = x[..., d:]
+    
     y1 = x1 * cos + x2 * sin
     y2 = x1 * (-sin) + x2 * cos
     return torch.cat([y1, y2], 3).type_as(x)
@@ -63,18 +52,24 @@ class CausalSelfAttention(nn.Module):
         self.c_q = nn.Linear(self.n_embd, self.n_embd, bias=False)
         self.c_k = nn.Linear(self.n_embd, self.n_embd, bias=False)
         self.c_v = nn.Linear(self.n_embd, self.n_embd, bias=False)
-        # output projection
         self.c_proj = nn.Linear(self.n_embd, self.n_embd, bias=False)
         self.rotary = Rotary(self.head_dim, base=self.rope_base)
 
-        self.orthogonalize()  ### XXX - orthogonal init
-    
+        #self.zero_init()  # Initialize weights to zero
+        self.orthogonalize() # Orthogonal init
+        
     def orthogonalize(self):
         self.c_q.weight.data = orthogonalize(self.c_q.weight.data)
         self.c_k.weight.data = orthogonalize(self.c_k.weight.data)
         self.c_v.weight.data = orthogonalize(self.c_v.weight.data)
         self.c_proj.weight.data = orthogonalize(self.c_proj.weight.data)  ### XXX - NOT using modded-nanogpt's zero-init for proj, for now
         # self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
+    
+    def zero_init(self):
+        self.c_q.weight.data.zero_()
+        self.c_k.weight.data.zero_()
+        self.c_v.weight.data.zero_()
+        self.c_proj.weight.data.zero_()
 
     def forward(self, x, attention_mask=None, positions=None):
         B, T, C = x.size()
@@ -102,12 +97,17 @@ class MLP(nn.Module):
         super().__init__()
         self.c_fc    = nn.Linear(d_model, 4 * d_model, bias=False)
         self.c_proj  = nn.Linear(4 * d_model, d_model, bias=False)
-        self.orthogonalize()  ### XXX - orthogonal init
+        #self.zero_init()  # Initialize weights to zero
+        self.orthogonalize() # Orthogonal init
 
     def orthogonalize(self):
         self.c_fc.weight.data = orthogonalize(self.c_fc.weight.data)
         self.c_proj.weight.data = orthogonalize(self.c_proj.weight.data)  ### XXX - NOT using modded-nanogpt's zero-init for proj, for now
         # self.c_proj.weight.data.zero_() # zero init suggested by @Grad62304977
+
+    def zero_init(self):
+        self.c_fc.weight.data.zero_()
+        self.c_proj.weight.data.zero_()
 
     def forward(self, x):
         x = self.c_fc(x)
@@ -131,6 +131,11 @@ class Block(nn.Module):
 class Transformer(BFModule):
     def __init__(self, d_input=64, d_model=192, d_output=192, n_layer=10, n_head=12, causal=True, rope=True, cls_token=True, rope_base=1024):
         super().__init__()
+
+        assert d_input == d_output, "The identity transformer requires d_input == d_output"
+        assert not cls_token, "The identity transformer does not support cls tokens"
+
+
         self.d_input = d_input
         self.n_layer = n_layer
         self.n_head = n_head 
@@ -142,11 +147,21 @@ class Transformer(BFModule):
 
         self.cls_token = nn.Parameter(torch.randn(d_model)) if cls_token else None
 
-        self.embed = nn.Linear(d_input, d_model, bias=False) # XXX --- removed bias; if add bias back, change rms norm to layernorm in block
+        self.residual_linear = nn.Linear(d_input, d_output, bias=False)
+
+        self.embed = nn.Linear(d_input, d_model, bias=False)
         self.blocks = nn.ModuleList([Block(n_layer, d_model, n_head, causal, rope, rope_base) for _ in range(n_layer)])
         self.output_proj = nn.Linear(d_model, d_output, bias=False)
 
-        self.orthogonalize()  ### XXX - orthogonal init
+        #self.zero_init()  # Initialize weights to zero
+        self.orthogonalize() # Orthogonal init
+        self.output_proj.weight.data.zero_() # Init just the output to zero
+
+        self.residual_linear.weight.data = torch.eye(self.d_input)
+    
+    def zero_init(self):
+        self.embed.weight.data.zero_()
+        self.output_proj.weight.data.zero_()
     
     def orthogonalize(self):
         self.embed.weight.data = orthogonalize(self.embed.weight.data)
@@ -155,6 +170,8 @@ class Transformer(BFModule):
     def forward(self, x, attention_mask=None, positions=None):
         # x is of shape (batch_size, seq_len, d_input)
         batch_size, seq_len, d_input = x.shape
+
+        x_original = x
 
         x = self.embed(x)  # shape: (batch_size, seq_len, d_model)
 
@@ -184,4 +201,13 @@ class Transformer(BFModule):
         
         x = self.output_proj(x) # shape: (batch_size, seq_len (+1), d_output)
 
-        return x
+        return self.residual_linear(x_original) + x
+    
+
+if __name__ == "__main__":
+    transformer = Transformer(d_input=16, d_model=192, d_output=16, n_layer=2, n_head=12, causal=True, rope=True, cls_token=False, rope_base=1024)
+    x = torch.randn(10, 100, 16)
+    y = transformer(x)
+    print(x.shape, y.shape)
+    print(x-y)
+

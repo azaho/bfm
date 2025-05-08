@@ -1,8 +1,10 @@
 from torch.utils.data import DataLoader
 import sklearn.metrics
 from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
 import numpy as np
 from btbench.btbench_train_test_splits import generate_splits_SS_SM
+from btbench.btbench_config import BTBENCH_LITE_ELECTRODES
 from train_utils import log
 import torch
 
@@ -14,7 +16,8 @@ class FrozenModelEvaluation_SS_SM():
                  # regression parameters
                  regression_random_state=42,  regression_solver='lbfgs', 
                  regression_tol=1e-3,
-                 regression_max_iter=10000):
+                 regression_max_iter=10000,
+                 lite=True, electrode_subset=None):
         """
         Args:
             eval_names (list): List of evaluation metric names to use (e.g. ["volume", "word_gap"])
@@ -28,6 +31,7 @@ class FrozenModelEvaluation_SS_SM():
         self.all_subject_identifiers = set([subject.subject_identifier for subject in self.all_subjects])
         self.dtype = dtype
         self.batch_size = batch_size
+        self.lite = lite
         
         self.feature_aggregation_method = feature_aggregation_method
 
@@ -38,19 +42,19 @@ class FrozenModelEvaluation_SS_SM():
         self.num_workers_eval = num_workers_eval
         self.prefetch_factor = prefetch_factor
 
-        evaluation_datasets = {}
+        self.evaluation_datasets = {}
         for eval_name in self.eval_names:
             for subject, trial_id in self.subject_trials:
-                splits = generate_splits_SS_SM(subject, trial_id, eval_name, dtype=self.dtype)
-                evaluation_datasets[(eval_name, subject.subject_identifier, trial_id)] = splits
-        self.evaluation_datasets = evaluation_datasets
-
+                splits = generate_splits_SS_SM(subject, trial_id, eval_name, dtype=self.dtype, lite=self.lite, start_neural_data_before_word_onset=0, end_neural_data_after_word_onset=2048)
+                self.evaluation_datasets[(eval_name, subject.subject_identifier, trial_id)] = splits
+                
         self.all_subject_electrode_indices = {}
         for subject in self.all_subjects:
             self.all_subject_electrode_indices[subject.subject_identifier] = []
-            for electrode_label in subject.get_electrode_labels():
+            for electrode_label in BTBENCH_LITE_ELECTRODES[subject.subject_identifier] if self.lite else subject.get_electrode_labels():
                 key = (subject.subject_identifier, electrode_label)
-                self.all_subject_electrode_indices[subject.subject_identifier].append(embeddings_map[key])
+                if key in embeddings_map: # If the electrodes were subset to exclude this one, ignore it
+                    self.all_subject_electrode_indices[subject.subject_identifier].append(embeddings_map[key])
             self.all_subject_electrode_indices[subject.subject_identifier] = torch.tensor(self.all_subject_electrode_indices[subject.subject_identifier])
 
     def _evaluate_on_dataset(self, model, electrode_embedding_class, subject, train_dataset, test_dataset, log_priority=0):
@@ -64,11 +68,19 @@ class FrozenModelEvaluation_SS_SM():
         log('generating frozen train features', priority=log_priority, indent=2)
         for i, (batch_input, batch_label) in enumerate(train_dataloader):
             log(f'generating frozen features for batch {i} of {len(train_dataloader)}', priority=log_priority, indent=3)
-            batch_input = batch_input.to(device, dtype=dtype, non_blocking=True)
+            batch_input = batch_input.to(device, dtype=dtype, non_blocking=True) # shape (batch_size, n_electrodes, n_samples)
+
+            # normalize the data
+            batch_input = batch_input - torch.mean(batch_input, dim=[0, 2], keepdim=True)
+            batch_input = batch_input / (torch.std(batch_input, dim=[0, 2], keepdim=True) + 1)
+
             electrode_indices = self.all_subject_electrode_indices[subject_identifier].to(device, dtype=torch.long, non_blocking=True)
             electrode_indices = electrode_indices.unsqueeze(0).expand(batch_input.shape[0], -1) # Add the batch dimension to the electrode indices
             electrode_embedded_data = electrode_embedding_class.forward(batch_input, electrode_indices)
+            
             features = model.generate_frozen_evaluation_features(electrode_embedded_data, feature_aggregation_method=self.feature_aggregation_method)
+            #features = batch_input.reshape(batch_input.shape[0], -1)
+            #features = electrode_embedded_data.reshape(batch_input.shape[0], -1)
             log(f'done generating frozen features for batch {i} of {len(train_dataloader)}', priority=log_priority, indent=3)
             X_train.append(features.detach().cpu().float().numpy())
             y_train.append(batch_label.numpy())
@@ -76,12 +88,20 @@ class FrozenModelEvaluation_SS_SM():
         X_test, y_test = [], []
         log('generating frozen test features', priority=log_priority, indent=2)
         for i, (batch_input, batch_label) in enumerate(test_dataloader):
-            batch_input = batch_input.to(device, dtype=dtype, non_blocking=True)
             log(f'generating frozen features for batch {i} of {len(test_dataloader)}', priority=log_priority, indent=3)
+            batch_input = batch_input.to(device, dtype=dtype, non_blocking=True)
+
+            # normalize the data
+            batch_input = batch_input - torch.mean(batch_input, dim=[0, 2], keepdim=True)
+            batch_input = batch_input / (torch.std(batch_input, dim=[0, 2], keepdim=True) + 1)
+
             electrode_indices = self.all_subject_electrode_indices[subject_identifier].to(device, dtype=torch.long, non_blocking=True)
             electrode_indices = electrode_indices.unsqueeze(0).expand(batch_input.shape[0], -1) # Add the batch dimension to the electrode indices
             electrode_embedded_data = electrode_embedding_class.forward(batch_input, electrode_indices)
+
             features = model.generate_frozen_evaluation_features(electrode_embedded_data, feature_aggregation_method=self.feature_aggregation_method)
+            #features = batch_input.reshape(batch_input.shape[0], -1)
+            #features = electrode_embedded_data.reshape(batch_input.shape[0], -1)
             log(f'done generating frozen features for batch {i} of {len(test_dataloader)}', priority=log_priority, indent=3)
             X_test.append(features.detach().cpu().float().numpy())
             y_test.append(batch_label.numpy())
@@ -101,6 +121,12 @@ class FrozenModelEvaluation_SS_SM():
             solver=self.regression_solver, 
             tol=self.regression_tol
         )
+
+        # Standardize the features
+        log('standardizing features', priority=log_priority, indent=2)
+        scaler = StandardScaler()
+        X_train = scaler.fit_transform(X_train)
+        X_test = scaler.transform(X_test)
 
         log('fitting regressor', priority=log_priority, indent=2)
         regressor.fit(X_train, y_train)
@@ -146,7 +172,7 @@ class FrozenModelEvaluation_SS_SM():
             if quick_eval: break
         return np.mean(auroc_list), np.mean(accuracy_list)
     
-    def evaluate_on_all_metrics(self, model, electrode_embedding_class, log_priority=0, quick_eval=False):
+    def evaluate_on_all_metrics(self, model, electrode_embedding_class, log_priority=0, quick_eval=False, only_keys_containing=None):
         log('evaluating on all metrics', priority=log_priority, indent=1)
         evaluation_results = {}
         for subject in self.all_subjects:
@@ -159,6 +185,9 @@ class FrozenModelEvaluation_SS_SM():
         
         evaluation_results_strings = self._format_evaluation_results_strings(evaluation_results)
         log('done evaluating on all metrics', priority=log_priority, indent=1)
+
+        if only_keys_containing is not None:
+            evaluation_results_strings = {k: v for k, v in evaluation_results_strings.items() if only_keys_containing in k}
         return evaluation_results_strings
 
     def _format_evaluation_results_strings(self, evaluation_results):
