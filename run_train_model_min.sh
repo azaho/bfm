@@ -4,9 +4,9 @@
 #SBATCH --cpus-per-task=16 
 #SBATCH --gres=gpu:1
 #SBATCH --constraint=40GB
-#SBATCH --mem=240G
+#SBATCH --mem=96G
 #SBATCH -t 16:00:00      
-#SBATCH --array=1-4
+#SBATCH --array=1-2
 #SBATCH --output logs/%A_%a.out
 #SBATCH --error logs/%A_%a.err
 #SBATCH -p normal
@@ -16,11 +16,10 @@ export TMPDIR=/om2/scratch/tmp
 n_in_parallel=1
 
 train_subject_trial_options=(
-    "btbank1_0,btbank2_1,btbank2_2,btbank2_3,btbank2_5,btbank2_6,btbank3_2,btbank4_2,btbank5_0,btbank6_0,btbank6_1,btbank6_4,btbank8_0,btbank9_0,btbank1_1,btbank2_0,btbank3_1,btbank4_0,btbank7_0,btbank10_0"
-    "btbank1_0,btbank2_1,btbank2_2,btbank2_3,btbank2_5,btbank2_6,btbank3_2,btbank4_2,btbank5_0,btbank6_0,btbank6_1,btbank6_4,btbank8_0,btbank9_0,btbank1_2,btbank3_2,btbank4_1,btbank7_1,btbank10_1"
+    "btbank3_0"
 )
 eval_subject_trials="btbank3_1" #,btbank3_1,btbank3_2"
-random_string_options=("BBFM4_2")
+random_string_options=("BBFM_M_1")
 
 n_electrodes_subset_options=(50) #(1 2 4 8 16 32 64 124)
 weight_decay_options=(0.0)
@@ -30,7 +29,7 @@ init_identity_options=(1)
 future_bin_idx_options=(1 2)
 bin_encoder_options=("linear") # "transformer")
 
-wandb_project="BBFM_tests"
+wandb_project="BBFM_min_tests"
 
 sample_timebin_size=0.125 #0.0625
 

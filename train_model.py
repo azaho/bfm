@@ -6,7 +6,7 @@ from torch.amp import autocast, GradScaler, autocast_mode
 import gc
 
 from muon import Muon
-from model_model_old import GranularModel, LinearBinTransformer, CrossModel, BinTransformer
+from model_model import GranularModel, LinearBinTransformer, CrossModel, BinTransformer
 from model_electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit
 from dataset import load_dataloaders, load_subjects
 from evaluation_btbench import FrozenModelEvaluation_SS_SM
@@ -249,12 +249,12 @@ def calculate_loss_function(batch, output_accuracy=True):
         losses['accuracy_b'] = accuracy_b
 
     _, output_b_cls = model(bin_transformed_data_copy[:, electrodes_b, future_bin_idx:, :], embeddings[:, electrodes_b, :], return_cls_token=True)
-    if training_config['normalize_features']:
+    if training_config['normalize_features']: # XXX removing normalization of the output features here
         output_a_cls = output_a_cls / (torch.norm(output_a_cls, dim=-1, keepdim=True) + 0.001)
         output_b_cls = output_b_cls / (torch.norm(output_b_cls, dim=-1, keepdim=True) + 0.001)
     similarity = output_a_cls.permute(1, 2, 0, 3) @ output_b_cls.permute(1, 2, 3, 0) # shape: (n_electrodes, n_timebins-1, batch_size, batch_size)
     if training_config['use_temperature_param']:
-        similarity = similarity * torch.minimum(torch.exp(model.temperature_param2), torch.tensor(training_config['max_temperature_param'], device=model.device, dtype=model.dtype))
+        similarity = similarity * torch.minimum(torch.exp(model.temperature_param), torch.tensor(training_config['max_temperature_param'], device=model.device, dtype=model.dtype)) # XXX going back to temp1 for both
     expanded_arange_cls = torch.arange(batch_size).unsqueeze(0).repeat(model.n_cls_tokens, n_timebins-future_bin_idx, 1).to(model.device, dtype=torch.long).reshape(-1)
     loss_cls = torch.nn.functional.cross_entropy(similarity.view(-1, batch_size), expanded_arange_cls)
     losses['contrastive_cls'] = loss_cls
@@ -370,7 +370,7 @@ eval_bin_transformer = evaluation.evaluate_on_all_metrics(model, bin_transformer
 eval_results.update(eval_bin_transformer)
 print("eval_full_model", eval_full_model)
 print("eval_bin_transformer", eval_bin_transformer)
-if wandb: wandb.log(eval_results, step=0)
+if wandb: wandb.log(eval_results, step=1)
 del eval_full_model, eval_bin_transformer
 torch.cuda.empty_cache()
 gc.collect()
@@ -463,7 +463,7 @@ for epoch_i in range(training_config['n_epochs']):
         time_remaining = (time.time() - epoch_start_time) * (training_config['n_epochs'] - (epoch_i + 1))
         days = int(time_remaining // (24 * 3600))
         log(f"Epoch {epoch_i+1}/{training_config['n_epochs']}, Estimated time remaining: {days}d, {time.strftime('%H:%M:%S', time.gmtime(time_remaining % (24 * 3600)))}", priority=0)
-    if wandb: wandb.log(eval_results, step=epoch_i+1)
+    if wandb: wandb.log(eval_results, step=epoch_i+2) # XXX adding step=1 to the first log
     training_statistics_store[-1].update(eval_results)
 
     # Save the model

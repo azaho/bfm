@@ -199,6 +199,8 @@ class GranularModel(BFModel):
         positions = torch.arange(n_timebins, device=self.device, dtype=torch.long).unsqueeze(0).unsqueeze(0).repeat(batch_size, n_electrodes, 1) # shape: (batch_size, n_electrodes, n_timebins)
         embeddings = embeddings.unsqueeze(-2).repeat(1, 1, n_timebins, 1) # shape: (batch_size, n_electrodes, n_timebins, d_model)
 
+        embeddings = embeddings * 0 # XXX removing all embeddings
+
 
         if masked_tokens is not None:
             embeddings = embeddings + self.mask_token.reshape(1, 1, 1, -1) * masked_tokens.unsqueeze(-1)

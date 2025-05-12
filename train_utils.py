@@ -22,13 +22,13 @@ def get_default_configs(random_string, wandb_project):
         'warmup_steps': 100,
         
         # MINI-BFM on braintreebank
-        'train_subject_trials': [('btbank3', 1)],#, ('btbank3', 1)], #[("btbank1", 0), ("btbank1", 1), ("btbank2", 4), ("btbank2", 5), ("btbank3", 1), ("btbank3", 2), ("btbank7", 1), ("btbank10", 1)],
-        'eval_subject_trials': [('btbank3', 0)], #[("btbank1", 2), ("btbank2", 6), ("btbank3", 0), ("btbank7", 0), ("btbank10", 0)],
+        'train_subject_trials': [('btbank3', 0)],#, ('btbank3', 1)], #[("btbank1", 0), ("btbank1", 1), ("btbank2", 4), ("btbank2", 5), ("btbank3", 1), ("btbank3", 2), ("btbank7", 1), ("btbank10", 1)],
+        'eval_subject_trials': [('btbank3', 1)], #[("btbank1", 2), ("btbank2", 6), ("btbank3", 0), ("btbank7", 0), ("btbank10", 0)],
 
         'n_electrodes_subset': 50,
 
         'normalize_features': True,
-        'use_temperature_param': True,
+        'use_temperature_param': False,
         'max_temperature_param': 1000.0, # Clipping the temperature parameter at this value during training
         
         'data_dtype': torch.bfloat16,
@@ -73,7 +73,7 @@ def get_default_configs(random_string, wandb_project):
     }
     cluster_config = {
         'save_model_every_n_epochs': 1,
-        'eval_model_every_n_epochs': 1,
+        'eval_model_every_n_epochs': 2,
 
         'wandb_project': wandb_project,
         'timestamp': time.strftime("%Y%m%d_%H%M%S"),
