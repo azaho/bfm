@@ -1,6 +1,35 @@
 import torch
 import torch.nn as nn
-from model_transformers import BFModule
+
+class BFModule(nn.Module):
+    """
+    This module is a base class for all modules that need to be compatible with this project.
+    It ensures that the module stores its current device and dtype.
+    """
+    def __init__(self):
+        super().__init__()
+        self._device = None
+        self._dtype = None
+    def to(self, *args, **kwargs):
+        output = super().to(*args, **kwargs)
+        # Extract device and dtype from args/kwargs
+        device = next((torch.device(arg) for arg in args if isinstance(arg, (torch.device, str))), 
+                     kwargs.get('device', None))
+        dtype = next((arg for arg in args if isinstance(arg, torch.dtype)),
+                    kwargs.get('dtype', None))
+        if device is not None: self._device = device 
+        if dtype is not None: self._dtype = dtype
+        return output
+    @property
+    def device(self):
+        if self._device is None:
+            self._device = next(self.parameters()).device
+        return self._device
+    @property 
+    def dtype(self):
+        if self._dtype is None:
+            self._dtype = next(self.parameters()).dtype
+        return self._dtype
 
 class BFModel(BFModule):
     """Base model class for brain-feature models.
@@ -185,9 +214,9 @@ class GranularModel(BFModel):
         self.temperature_param2 = nn.Parameter(torch.tensor(0.0))
         
         if n_cls_tokens > 0:
-            self.cls_token_embeddings = nn.Parameter(torch.zeros(n_cls_tokens, d_model)) # batch_size, n_cls_tokens, 1, d_model
+            self.cls_token_embeddings = nn.Parameter(torch.zeros(1, n_cls_tokens, 1, d_model)) # batch_size, n_cls_tokens, 1, d_model
 
-        self.mask_token = nn.Parameter(torch.zeros(1, d_model))
+        self.mask_token = nn.Parameter(torch.zeros(1, 1, 1, d_model))
 
     def forward(self, electrode_data, embeddings, masked_tokens=None, return_cls_token=False):
         # electrode_data is of shape (batch_size, n_electrodes, n_timebins, sample_timebin_size)
@@ -201,11 +230,11 @@ class GranularModel(BFModel):
 
 
         if masked_tokens is not None:
-            embeddings = embeddings + self.mask_token.reshape(1, 1, 1, -1) * masked_tokens.unsqueeze(-1)
+            embeddings = embeddings + self.mask_token * masked_tokens.unsqueeze(-1)
 
         if self.n_cls_tokens > 0:
             # Create cls tokens for each timebin
-            cls_token_embeddings = self.cls_token_embeddings.unsqueeze(0).unsqueeze(2).repeat(batch_size, 1, n_timebins, 1)  # shape: (batch_size, n_cls_tokens, n_timebins, d_model)
+            cls_token_embeddings = self.cls_token_embeddings.repeat(batch_size, 1, n_timebins, 1)  # shape: (batch_size, n_cls_tokens, n_timebins, d_model)
             cls_token_positions = torch.arange(n_timebins, device=self.device, dtype=torch.long).unsqueeze(0).unsqueeze(0).repeat(batch_size, self.n_cls_tokens, 1) # shape: (batch_size, n_cls_tokens, n_timebins)
             
             embeddings = torch.cat([cls_token_embeddings, embeddings], dim=1)

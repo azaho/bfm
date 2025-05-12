@@ -114,31 +114,31 @@ class EmbedderLinear(BFModule):
     def forward(self, x):
         return self.linear_embedding(x)
 
-from hilbert_decode import hilbert_decode
-class EmbedderHilbert(BFModule):
-    def __init__(self, d_model, d_hilbert=4, d_input=1, resolution=3, range=(-3, 3)):
-        super().__init__()
-        self.d_model = d_model
-        self.d_hilbert = d_hilbert
-        self.d_input = d_input
-        self.linear_projection = nn.Linear(d_hilbert, d_model, bias=False) if d_model > 0 else lambda x: x
-        self.bits_per_dimension = resolution
-        self.range = range
+# from hilbert_decode import hilbert_decode
+# class EmbedderHilbert(BFModule):
+#     def __init__(self, d_model, d_hilbert=4, d_input=1, resolution=3, range=(-3, 3)):
+#         super().__init__()
+#         self.d_model = d_model
+#         self.d_hilbert = d_hilbert
+#         self.d_input = d_input
+#         self.linear_projection = nn.Linear(d_hilbert, d_model, bias=False) if d_model > 0 else lambda x: x
+#         self.bits_per_dimension = resolution
+#         self.range = range
 
-    def forward(self, x):
-        # x is of shape (batch_size, seq_len, n_channels, d_input)
-        # output is of shape (batch_size, seq_len, n_channels, d_model)
-        batch_size, seq_len, n_channels, d_input = x.shape
-        assert d_input == 1, "d_input must be 1, EmbedderHilbert only supports single input channel"
-        x = x.squeeze(-1)
+#     def forward(self, x):
+#         # x is of shape (batch_size, seq_len, n_channels, d_input)
+#         # output is of shape (batch_size, seq_len, n_channels, d_model)
+#         batch_size, seq_len, n_channels, d_input = x.shape
+#         assert d_input == 1, "d_input must be 1, EmbedderHilbert only supports single input channel"
+#         x = x.squeeze(-1)
 
-        # Clamp to range first, then normalize to [0, 1]
-        x = torch.clamp(x, self.range[0], self.range[1])
-        x = (x - self.range[0]) / (self.range[1] - self.range[0])
+#         # Clamp to range first, then normalize to [0, 1]
+#         x = torch.clamp(x, self.range[0], self.range[1])
+#         x = (x - self.range[0]) / (self.range[1] - self.range[0])
 
-        max_h = 2**(self.d_hilbert*self.bits_per_dimension)
-        x = hilbert_decode(x * max_h, self.d_hilbert, self.bits_per_dimension).to(x.device, x.dtype) / max_h**0.5
-        return self.linear_projection(x)
+#         max_h = 2**(self.d_hilbert*self.bits_per_dimension)
+#         x = hilbert_decode(x * max_h, self.d_hilbert, self.bits_per_dimension).to(x.device, x.dtype) / max_h**0.5
+#         return self.linear_projection(x)
 
 class Model(BFModule):
     def __init__():

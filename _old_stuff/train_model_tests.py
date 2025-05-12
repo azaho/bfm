@@ -2,11 +2,11 @@ import torch
 import wandb, os, json
 import time
 import numpy as np
+from torch.amp import autocast, GradScaler, autocast_mode
 
 from muon import Muon
-from model_model import GranularModel
-from model_electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeDataEmbeddingFFT, ElectrodeDataEmbedding, ElectrodeDataEmbeddingTransformer
-
+from model_model import GranularModel, BinTransformer
+from model_electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit
 from dataset import load_dataloaders, load_subjects
 from evaluation_btbench import FrozenModelEvaluation_SS_SM
 from train_utils import log, update_dir_name, update_random_seed, convert_dtypes, parse_configs_from_args, get_default_configs, get_shared_memory_info
@@ -26,9 +26,21 @@ log(f"Loading subjects...", priority=0)
 all_subjects = load_subjects(training_config['train_subject_trials'], training_config['eval_subject_trials'], training_config['data_dtype'], 
                              cache=cluster_config['cache_subjects'], allow_corrupted=False)
 
+n_downsample_factor = 1
+
 log(f"Loading model...", priority=0)
+bin_transformer = BinTransformer(
+    first_kernel=int(model_config['sample_timebin_size']*2048)//16, 
+    d_model=192,#model_config['transformer']['d_model'],
+    n_layers=4,
+    n_heads=8,
+    overall_sampling_rate=2048,
+    sample_timebin_size=model_config['sample_timebin_size'],
+    n_downsample_factor=n_downsample_factor
+).to(device, dtype=model_config['dtype'])
+
 model = GranularModel(
-    int(model_config['sample_timebin_size'] * 2048),
+    int(model_config['sample_timebin_size'] * 2048 // n_downsample_factor),
     model_config['transformer']['d_model'],  
     n_layers=model_config['transformer']['n_layers_time'],
     n_heads=model_config['transformer']['n_heads'],
@@ -65,20 +77,24 @@ electrode_embeddings = electrode_embeddings.to(device, dtype=model_config['dtype
 #         electrode_embeddings, model_config['sample_timebin_size'], model_config['transformer']['d_model'], 
 #         overall_sampling_rate=next(iter(all_subjects.values())).get_sampling_rate(0) # XXX remove this once figured out how to be flexible here regarding the sampling rate
 #     ).to(device, dtype=model_config['dtype'])
-electrode_data_embeddings = ElectrodeDataEmbeddingTransformer(
-    electrode_embeddings, model_config['sample_timebin_size'], 
-    first_kernel=int(model_config['sample_timebin_size']*2048)//16,
-    d_model=model_config['transformer']['d_model'],
-    n_layers=10,
-    n_heads=8
-).to(device, dtype=model_config['dtype'])
+
+np.random.seed(training_config['random_seed'])
+electrode_subset = np.random.permutation(124)[:training_config['n_electrodes_subset']]
+
+electrode_subset = list(np.random.choice(all_subjects['btbank3'].get_electrode_labels(), size=training_config['n_electrodes_subset'], replace=False))
+if 'T1cIe11' not in electrode_subset:
+    electrode_subset.append('T1cIe11')
+
+all_subjects['btbank3'].set_electrode_subset(electrode_subset)
+eval_electrode_subset = {
+    'btbank3': ['T1cIe11'],
+}
 
 for subject in all_subjects.values():
-    log(f"Adding subject {subject.subject_identifier} to electrode data embeddings...", priority=0)
-    subject.set_electrode_subset(['T1cIe11'])
+    log(f"Adding subject {subject.subject_identifier} to electrode embeddings...", priority=0)
     this_subject_trials = [trial_id for (sub_id, trial_id) in training_config['train_subject_trials'] if sub_id == subject.subject_identifier]
-    electrode_data_embeddings.add_subject(subject, subject.get_sampling_rate(this_subject_trials[0]))
-electrode_data_embeddings = electrode_data_embeddings.to(device, dtype=model_config['dtype']) # moving to device again to ensure the new parameters are on the correct device
+    electrode_embeddings.add_subject(subject)
+electrode_embeddings = electrode_embeddings.to(device, dtype=model_config['dtype']) # moving to device again to ensure the new parameters are on the correct device
 
 log(f"Loading dataloaders...", priority=0)
 n_samples = model_config['max_n_timebins'] * model_config['sample_timebin_size']
@@ -93,25 +109,30 @@ train_dataloader, test_dataloader = load_dataloaders(
 )
 
 eval_subject_trials = [(all_subjects[subject_identifier], trial_id) for subject_identifier, trial_id in training_config['eval_subject_trials']]
-eval_tasks = ['onset', 'gpt2_surprisal', 'volume', 'word_part_speech', 'pitch', 'speech']
+eval_tasks = ['onset', 'gpt2_surprisal', 'volume']#, 'word_part_speech', 'pitch', 'speech']
 evaluation = FrozenModelEvaluation_SS_SM(
     eval_tasks, eval_subject_trials, 
     training_config['data_dtype'], training_config['batch_size'] * 2, # Can have a bigger batch size here if that speeds things up
     electrode_embeddings.embeddings_map,
     num_workers_eval=cluster_config['num_workers_eval'],
     prefetch_factor=cluster_config['prefetch_factor'],
-    feature_aggregation_method=cluster_config['eval_aggregation_method']
+    feature_aggregation_method=cluster_config['eval_aggregation_method'],
+    electrode_subset=eval_electrode_subset
 )
 
+# After model initialization
+amp_dtype = model_config['amp_dtype']
+use_amp = model_config['use_mixed_precision'] and torch.cuda.is_available()
+scaler = None  # No scaler needed for bfloat16
 
-log(f"Evaluating model...", priority=0)
-print(evaluation.evaluate_on_all_metrics(model, electrode_data_embeddings, log_priority=1, quick_eval=False, only_keys_containing='auroc/average'))
+# log(f"Evaluating model...", priority=0)
+# print(evaluation.evaluate_on_all_metrics(model, bin_transformer, electrode_embeddings, log_priority=1, quick_eval=False, only_keys_containing='auroc/average'))
 
-all_params = list(model.parameters()) + list(electrode_data_embeddings.parameters())
+all_params = list(model.parameters()) + list(bin_transformer.parameters()) + list(electrode_embeddings.parameters())
 # filter to only include parameters that require grad
 #all_params = [p for p in all_params if p.requires_grad]
-n_model_params = sum(p.numel() for p in model.parameters())
-n_embed_params = sum(p.numel() for p in electrode_data_embeddings.parameters())
+n_model_params = sum(p.numel() for p in model.parameters()) + sum(p.numel() for p in bin_transformer.parameters())
+n_embed_params = sum(p.numel() for p in electrode_embeddings.parameters())
 log(f"Model parameters: {n_model_params:,}", priority=0)
 log(f"Embedding parameters: {n_embed_params:,}", priority=0)
 log(f"Total parameters: {n_model_params + n_embed_params:,}", priority=0)
@@ -120,10 +141,6 @@ model_config['n_params'] = {
     'embeddings': n_embed_params,
     'total': n_model_params + n_embed_params
 }
-
-np.random.seed(training_config['random_seed'])
-electrode_subset = np.random.permutation(124)[:training_config['n_electrodes_subset']]
-electrode_subset = [0]
 
 optimizers = []
 if training_config['optimizer'] == 'Muon':
@@ -148,13 +165,15 @@ elif training_config['lr_schedule'] == 'cosine':
 def calculate_loss_function(batch, output_accuracy=True):
     # batch['data'] shape: (batch_size, n_electrodes, n_timebins)
     # batch['electrode_index'] shape: (batch_size, n_electrodes)
-    embedded_data = electrode_data_embeddings.forward(batch['data'], batch['electrode_index']) # shape: (batch_size, n_electrodes, n_timebins, d_model)
-    batch_size, n_electrodes, n_timebins, d_model = embedded_data.shape
+    embeddings = electrode_embeddings.forward(batch['electrode_index']) # shape: (batch_size, n_electrodes, d_model)
+    bin_transformed_data = bin_transformer(batch['data']) # shape: (batch_size, n_electrodes, n_timebins, sample_timebin_size*SR//n_downsample_factor)
 
-    embedded_data = embedded_data[:, electrode_subset, :, :]
 
-    output = model(embedded_data[:, :, :-1, :]) # shape: (batch_size, n_electrodes, n_timebins-1, d_model)
-    target = embedded_data[:, :, 1:, :] # shape: (batch_size, n_electrodes, n_timebins-1, d_model)
+    batch_size, n_electrodes, n_timebins, sample_timebin_size = bin_transformed_data.shape #batch['data'].shape
+    batch['data'] = batch['data'].reshape(batch_size, n_electrodes, n_timebins, sample_timebin_size)
+
+    output = model(bin_transformed_data[:, :, :-1, :], embeddings) # shape: (batch_size, n_electrodes, n_timebins-1, sample_timebin_size*SR//n_downsample_factor)
+    target = bin_transformed_data[:, :, 1:, :] # shape: (batch_size, n_electrodes, n_timebins-1, sample_timebin_size*SR//n_downsample_factor)
 
     if training_config['normalize_features']:
         output = output / (torch.norm(output, dim=-1, keepdim=True) + 0.001)
@@ -191,6 +210,7 @@ def calculate_pretrain_test_loss():
         batch['data'] = normalized_batch
 
         loss = calculate_loss_function(batch)
+        
         for key, value in loss.items():
             if key not in losses: losses[key] = 0
             losses[key] += value
@@ -206,12 +226,23 @@ if cluster_config['save_model_every_n_epochs'] > 0:  # Only save if we're saving
         'eval_results': {},  # Empty since no evaluation has happened yet
         'epoch': 0,
         'model_state_dict': model.state_dict(),
-        'electrode_data_embeddings_state_dict': electrode_data_embeddings.state_dict(),
+        'bin_transformer_state_dict': bin_transformer.state_dict(),
+        'electrode_embeddings_state_dict': electrode_embeddings.state_dict(),
         'optimizer_state_dicts': [optimizer.state_dict() for optimizer in optimizers],
         'training_config': convert_dtypes(training_config),
         'model_config': convert_dtypes(model_config), 
         'cluster_config': convert_dtypes(cluster_config),
     }, model_path)
+
+# After model initialization
+def check_requires_grad(model):
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            log(f"Warning: Parameter {name} does not require gradients!", priority=0)
+
+check_requires_grad(model)
+check_requires_grad(bin_transformer)
+check_requires_grad(electrode_embeddings)
 
 training_statistics_store = []
 if wandb: 
@@ -219,8 +250,10 @@ if wandb:
     config={"training_config": training_config, "model_config": model_config, "cluster_config": cluster_config}, settings=wandb.Settings(init_timeout=480))
 for epoch_i in range(training_config['n_epochs']):
     epoch_start_time = time.time()
-    model.train()
 
+    model.train()
+    bin_transformer.train()
+    electrode_embeddings.train()
     # Main training loop
     epoch_losses = {}
     for batch_idx, batch in enumerate(train_dataloader):
@@ -235,16 +268,23 @@ for epoch_i in range(training_config['n_epochs']):
 
         for optimizer in optimizers: optimizer.zero_grad()
 
-        loss_dict = calculate_loss_function(batch)
+        # Use autocast with specified dtype
+        if use_amp:
+            with autocast(device_type='cuda', dtype=amp_dtype, enabled=use_amp):
+                loss_dict = calculate_loss_function(batch)
+                loss = loss_dict['contrastive']
+            loss.backward()  # Direct backward pass without scaling
+        else:
+            log(f"Using standard backward pass", priority=0)
+            loss_dict = calculate_loss_function(batch)
+            loss = loss_dict['contrastive']
+            loss.backward()
 
-        for key, loss in loss_dict.items():
-            if key not in epoch_losses: epoch_losses[key] = 0
-            epoch_losses[key] += loss.item()
+        for optimizer in optimizers:
+            optimizer.step()
 
-        loss = loss_dict['contrastive'] #sum(loss_dict.values()) / len(loss_dict)
-        loss.backward()
-        for optimizer in optimizers: optimizer.step()
-        for scheduler in schedulers: scheduler.step()
+        for scheduler in schedulers:
+            scheduler.step()
 
         training_statistics_store.append({
             'epoch': epoch_i+1,
@@ -256,13 +296,15 @@ for epoch_i in range(training_config['n_epochs']):
             **{f"batch_{k}": v.item() for k, v in loss_dict.items()}
         })
 
-        if batch_idx % 100 == 0:
+        if batch_idx % 1 == 0:
             log(f"Epoch {epoch_i+1}/{training_config['n_epochs']}, Batch {batch_idx+1}/{len(train_dataloader)} ({subject_identifier}_{trial_id}), LR: {optimizers[0].param_groups[0]['lr']:.6f}, Loss: {loss.item():.4f}, Temperature: {torch.exp(model.temperature_param).item():.4f}", priority=0)
     for key, loss in epoch_losses.items():
         epoch_losses[key] /= len(train_dataloader)
 
     # Evaluate the model
     model.eval()
+    bin_transformer.eval()
+    electrode_embeddings.eval()
     eval_results = {f"train_{k}": v for k, v in epoch_losses.items()}
     #eval_results['train_loss'] = sum(epoch_losses.values()) / len(epoch_losses)
     with torch.no_grad():
@@ -271,7 +313,7 @@ for epoch_i in range(training_config['n_epochs']):
         log(f"Test loss: {test_loss_dict['contrastive']:.4f}, Test Accuracy: {test_loss_dict['accuracy']:.4f}", priority=0)
         #eval_results['test_loss'] = sum(test_loss_dict.values()).item() / len(test_loss_dict)
         if (epoch_i+1) % cluster_config['eval_model_every_n_epochs'] == 0:
-            evaluation_results_strings = evaluation.evaluate_on_all_metrics(model, electrode_data_embeddings, log_priority=1, quick_eval=False, only_keys_containing='auroc/average')
+            evaluation_results_strings = evaluation.evaluate_on_all_metrics(model, bin_transformer, electrode_embeddings, log_priority=1, quick_eval=False, only_keys_containing='auroc/average')
             eval_results.update(evaluation_results_strings)
             print(evaluation_results_strings)
         time_remaining = (time.time() - epoch_start_time) * (training_config['n_epochs'] - (epoch_i + 1))
@@ -290,7 +332,8 @@ for epoch_i in range(training_config['n_epochs']):
             'eval_results': eval_results,
             'epoch': epoch_i,
             'model_state_dict': model.state_dict(),
-            'electrode_data_embeddings_state_dict': electrode_data_embeddings.state_dict(),
+            'bin_transformer_state_dict': bin_transformer.state_dict(),
+            'electrode_embeddings_state_dict': electrode_embeddings.state_dict(),
             'optimizer_state_dicts': [optimizer.state_dict() for optimizer in optimizers],
             'training_config': convert_dtypes(training_config),
             'model_config': convert_dtypes(model_config), 

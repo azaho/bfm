@@ -7,6 +7,8 @@ from btbench.btbench_train_test_splits import generate_splits_SS_SM
 from btbench.btbench_config import BTBENCH_LITE_ELECTRODES
 from train_utils import log
 import torch
+import gc
+import torch.cuda
 
 # Evaluation class for Same Subject Same Movie (SS-SM), on btbench evals
 class FrozenModelEvaluation_SS_SM():
@@ -17,7 +19,9 @@ class FrozenModelEvaluation_SS_SM():
                  regression_random_state=42,  regression_solver='lbfgs', 
                  regression_tol=1e-3,
                  regression_max_iter=10000,
-                 lite=True, electrode_subset=None):
+                 lite=True, electrode_subset=None,
+                 max_n_electrodes=None,
+                 max_float_precision=3):
         """
         Args:
             eval_names (list): List of evaluation metric names to use (e.g. ["volume", "word_gap"])
@@ -32,7 +36,8 @@ class FrozenModelEvaluation_SS_SM():
         self.dtype = dtype
         self.batch_size = batch_size
         self.lite = lite
-        
+        self.max_n_electrodes = max_n_electrodes
+        self.max_float_precision = max_float_precision
         self.feature_aggregation_method = feature_aggregation_method
 
         self.regression_max_iter = regression_max_iter
@@ -56,8 +61,22 @@ class FrozenModelEvaluation_SS_SM():
                 if key in embeddings_map: # If the electrodes were subset to exclude this one, ignore it
                     self.all_subject_electrode_indices[subject.subject_identifier].append(embeddings_map[key])
             self.all_subject_electrode_indices[subject.subject_identifier] = torch.tensor(self.all_subject_electrode_indices[subject.subject_identifier])
+        
+        # XXX Surely there is a better way to do this
+        self.all_subject_electrode_subset_indices = None
+        if electrode_subset is not None:
+            self.all_subject_electrode_subset_indices = {}
+            for subject in self.all_subjects:
+                if subject.subject_identifier not in electrode_subset:
+                    continue
+                self.all_subject_electrode_subset_indices[subject.subject_identifier] = []
+                for electrode_label in electrode_subset[subject.subject_identifier]:
+                    key = (subject.subject_identifier, electrode_label)
+                    if key in embeddings_map: # If the electrodes were subset to exclude this one, ignore it
+                        self.all_subject_electrode_subset_indices[subject.subject_identifier].append(list(self.all_subject_electrode_indices[subject.subject_identifier]).index(embeddings_map[key]))
+                self.all_subject_electrode_subset_indices[subject.subject_identifier] = torch.tensor(self.all_subject_electrode_subset_indices[subject.subject_identifier])
 
-    def _evaluate_on_dataset(self, model, electrode_embedding_class, subject, train_dataset, test_dataset, log_priority=0):
+    def _evaluate_on_dataset(self, model, bin_transformer, electrode_embeddings, subject, train_dataset, test_dataset, log_priority=0, only_bin_transformer=False):
         subject_identifier = subject.subject_identifier
         train_dataloader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers_eval, 
                                       prefetch_factor=self.prefetch_factor, pin_memory=True)
@@ -69,43 +88,90 @@ class FrozenModelEvaluation_SS_SM():
         for i, (batch_input, batch_label) in enumerate(train_dataloader):
             log(f'generating frozen features for batch {i} of {len(train_dataloader)}', priority=log_priority, indent=3)
             batch_input = batch_input.to(device, dtype=dtype, non_blocking=True) # shape (batch_size, n_electrodes, n_samples)
+            if self.all_subject_electrode_subset_indices is not None and subject_identifier in self.all_subject_electrode_subset_indices:
+                batch_input = batch_input[:, self.all_subject_electrode_subset_indices[subject_identifier], :]
+            if self.max_n_electrodes is not None:
+                every_nth_electrode = 2 * batch_input.shape[1] // self.max_n_electrodes
+                batch_input = batch_input[:, ::every_nth_electrode, :]
 
             # normalize the data
             batch_input = batch_input - torch.mean(batch_input, dim=[0, 2], keepdim=True)
             batch_input = batch_input / (torch.std(batch_input, dim=[0, 2], keepdim=True) + 1)
+            #electrode_data = batch_input.reshape(bin_transformer(batch_input).shape) # 
+            electrode_data = bin_transformer(batch_input) # shape (batch_size, n_electrodes, n_samples)
 
-            electrode_indices = self.all_subject_electrode_indices[subject_identifier].to(device, dtype=torch.long, non_blocking=True)
-            electrode_indices = electrode_indices.unsqueeze(0).expand(batch_input.shape[0], -1) # Add the batch dimension to the electrode indices
-            electrode_embedded_data = electrode_embedding_class.forward(batch_input, electrode_indices)
-            
-            features = model.generate_frozen_evaluation_features(electrode_embedded_data, feature_aggregation_method=self.feature_aggregation_method)
+            if not only_bin_transformer:
+                electrode_indices = self.all_subject_electrode_indices[subject_identifier].to(device, dtype=torch.long, non_blocking=True)
+                electrode_indices = electrode_indices.unsqueeze(0).expand(batch_input.shape[0], -1) # Add the batch dimension to the electrode indices
+                if self.all_subject_electrode_subset_indices is not None and subject_identifier in self.all_subject_electrode_subset_indices:
+                    electrode_indices = electrode_indices[:, self.all_subject_electrode_subset_indices[subject_identifier]]
+                if self.max_n_electrodes is not None:
+                    electrode_indices = electrode_indices[:, ::every_nth_electrode]
+                embeddings = electrode_embeddings.forward(electrode_indices)
+                features = model.generate_frozen_evaluation_features(electrode_data, embeddings, feature_aggregation_method=self.feature_aggregation_method)
+            else:
+                features = electrode_data.reshape(batch_input.shape[0], -1)
+
             #features = batch_input.reshape(batch_input.shape[0], -1)
             #features = electrode_embedded_data.reshape(batch_input.shape[0], -1)
             log(f'done generating frozen features for batch {i} of {len(train_dataloader)}', priority=log_priority, indent=3)
             X_train.append(features.detach().cpu().float().numpy())
             y_train.append(batch_label.numpy())
+            
+            # Clear GPU cache after each batch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            del features, batch_input, electrode_data
+            if not only_bin_transformer:
+                del embeddings, electrode_indices
 
         X_test, y_test = [], []
         log('generating frozen test features', priority=log_priority, indent=2)
         for i, (batch_input, batch_label) in enumerate(test_dataloader):
             log(f'generating frozen features for batch {i} of {len(test_dataloader)}', priority=log_priority, indent=3)
             batch_input = batch_input.to(device, dtype=dtype, non_blocking=True)
+            if self.all_subject_electrode_subset_indices is not None and subject_identifier in self.all_subject_electrode_subset_indices:
+                batch_input = batch_input[:, self.all_subject_electrode_subset_indices[subject_identifier], :]
+            if self.max_n_electrodes is not None:
+                every_nth_electrode = 2 * batch_input.shape[1] // self.max_n_electrodes
+                batch_input = batch_input[:, ::every_nth_electrode, :]
 
             # normalize the data
             batch_input = batch_input - torch.mean(batch_input, dim=[0, 2], keepdim=True)
             batch_input = batch_input / (torch.std(batch_input, dim=[0, 2], keepdim=True) + 1)
+            #electrode_data = batch_input.reshape(bin_transformer(batch_input).shape) # bin_transformer(batch_input) # shape (batch_size, n_electrodes, n_samples)
+            electrode_data = bin_transformer(batch_input) # shape (batch_size, n_electrodes, n_samples)
 
-            electrode_indices = self.all_subject_electrode_indices[subject_identifier].to(device, dtype=torch.long, non_blocking=True)
-            electrode_indices = electrode_indices.unsqueeze(0).expand(batch_input.shape[0], -1) # Add the batch dimension to the electrode indices
-            electrode_embedded_data = electrode_embedding_class.forward(batch_input, electrode_indices)
+            if not only_bin_transformer:
+                electrode_indices = self.all_subject_electrode_indices[subject_identifier].to(device, dtype=torch.long, non_blocking=True)
+                electrode_indices = electrode_indices.unsqueeze(0).expand(batch_input.shape[0], -1) # Add the batch dimension to the electrode indices
+                if self.all_subject_electrode_subset_indices is not None and subject_identifier in self.all_subject_electrode_subset_indices:
+                    electrode_indices = electrode_indices[:, self.all_subject_electrode_subset_indices[subject_identifier]]
+                if self.max_n_electrodes is not None:
+                    electrode_indices = electrode_indices[:, ::every_nth_electrode]
+                embeddings = electrode_embeddings.forward(electrode_indices)
+                features = model.generate_frozen_evaluation_features(electrode_data, embeddings, feature_aggregation_method=self.feature_aggregation_method)
+            else:
+                features = electrode_data.reshape(batch_input.shape[0], -1)
 
-            features = model.generate_frozen_evaluation_features(electrode_embedded_data, feature_aggregation_method=self.feature_aggregation_method)
             #features = batch_input.reshape(batch_input.shape[0], -1)
             #features = electrode_embedded_data.reshape(batch_input.shape[0], -1)
             log(f'done generating frozen features for batch {i} of {len(test_dataloader)}', priority=log_priority, indent=3)
             X_test.append(features.detach().cpu().float().numpy())
             y_test.append(batch_label.numpy())
-        log('done generating frozen features', priority=log_priority, indent=2)
+            
+            # Clear GPU cache after each batch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            del features, batch_input, electrode_data
+            if not only_bin_transformer:
+                del embeddings, electrode_indices
+
+        # Clear dataloaders
+        del train_dataloader, test_dataloader
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         log("creating numpy arrays", priority=log_priority, indent=2)
         X_train = np.concatenate(X_train)
@@ -163,16 +229,16 @@ class FrozenModelEvaluation_SS_SM():
         log('done evaluating', priority=log_priority, indent=2)
         return auroc, accuracy
     
-    def _evaluate_on_metric_cv(self, model, electrode_embedding_class, subject, train_datasets, test_datasets, log_priority=0, quick_eval=False):
+    def _evaluate_on_metric_cv(self, model, bin_transformer, electrode_embeddings, subject, train_datasets, test_datasets, log_priority=0, quick_eval=False, only_bin_transformer=False):
         auroc_list, accuracy_list = [], []
         for train_dataset, test_dataset in zip(train_datasets, test_datasets):
-            auroc, accuracy = self._evaluate_on_dataset(model, electrode_embedding_class, subject, train_dataset, test_dataset, log_priority=log_priority)
+            auroc, accuracy = self._evaluate_on_dataset(model, bin_transformer, electrode_embeddings, subject, train_dataset, test_dataset, log_priority=log_priority, only_bin_transformer=only_bin_transformer)
             auroc_list.append(auroc)
             accuracy_list.append(accuracy)
             if quick_eval: break
         return np.mean(auroc_list), np.mean(accuracy_list)
     
-    def evaluate_on_all_metrics(self, model, electrode_embedding_class, log_priority=0, quick_eval=False, only_keys_containing=None):
+    def evaluate_on_all_metrics(self, model, bin_transformer, electrode_embeddings, log_priority=0, quick_eval=False, only_bin_transformer=False, key_prefix="", only_keys_containing=None):
         log('evaluating on all metrics', priority=log_priority, indent=1)
         evaluation_results = {}
         for subject in self.all_subjects:
@@ -180,12 +246,19 @@ class FrozenModelEvaluation_SS_SM():
                 trial_ids = [trial_id for _subject, trial_id in self.subject_trials if _subject.subject_identifier == subject.subject_identifier]
                 for trial_id in trial_ids:
                     splits = self.evaluation_datasets[(eval_name, subject.subject_identifier, trial_id)]
-                    auroc, accuracy = self._evaluate_on_metric_cv(model, electrode_embedding_class, subject, splits[0], splits[1], log_priority=log_priority+1, quick_eval=quick_eval)
+                    auroc, accuracy = self._evaluate_on_metric_cv(model, bin_transformer, electrode_embeddings, subject, splits[0], splits[1], log_priority=log_priority+1, quick_eval=quick_eval, only_bin_transformer=only_bin_transformer)
                     evaluation_results[(eval_name, subject.subject_identifier, trial_id)] = (auroc, accuracy)
         
         evaluation_results_strings = self._format_evaluation_results_strings(evaluation_results)
         log('done evaluating on all metrics', priority=log_priority, indent=1)
 
+        # Clear any remaining references
+        del evaluation_results
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        evaluation_results_strings = {f"{key_prefix}{k}": v for k, v in evaluation_results_strings.items()}
         if only_keys_containing is not None:
             evaluation_results_strings = {k: v for k, v in evaluation_results_strings.items() if only_keys_containing in k}
         return evaluation_results_strings
@@ -214,4 +287,7 @@ class FrozenModelEvaluation_SS_SM():
             if len(auroc_values) > 0:
                 evaluation_results_strings[f"eval_auroc/average_{eval_name}"] = np.mean(auroc_values).item()
                 evaluation_results_strings[f"eval_acc/average_{eval_name}"] = np.mean(acc_values).item()
+
+        for key, value in evaluation_results_strings.items():
+            evaluation_results_strings[key] = round(value, self.max_float_precision)
         return evaluation_results_strings

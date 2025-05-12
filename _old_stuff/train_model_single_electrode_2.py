@@ -2,6 +2,9 @@
 from train_model_single_electrode_new_lin import *
 import json
 
+import btbench.btbench_config as btbench_config
+from btbench.braintreebank_subject import BrainTreebankSubject as BTBench_BrainTreebankSubject
+
 def save_checkpoint(step, training_logs, model, embed, unembed, inverter, save_dir, filename_base):
     """Save both training logs and model checkpoint in a single function"""
     # Save training logs
@@ -25,12 +28,11 @@ def save_checkpoint(step, training_logs, model, embed, unembed, inverter, save_d
             'trial_id': trial_id,
             'window_size': window_size,
             'd_embed': d_embed,
-            'resolution': resolution,
             'n_steps': n_steps,
             'batch_size': batch_size,
             'initial_lr': initial_lr,
-            'electrode_subset': electrode_subset,
-            'eval_electrode_index': eval_electrode_index
+            'eval_electrode_indices': [eval_electrode_index],
+            'n_samples_per_bin': n_samples_per_bin
         }
     }
     torch.save(save_dict, model_save_path)
@@ -40,56 +42,79 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 log(f'Using device: {device}')
 dtype = torch.float32
 
-subject_id, trial_id = (3, 1) # changed from 3, 0
+train_subject_trials = [st for st in btbench_config.BTBENCH_FULL_SUBJECT_TRIALS if st not in btbench_config.BTBENCH_LITE_SUBJECT_TRIALS]
+train_subject_trials = [(3, 1), (1, 0)]
 window_size = 2048
-subject = BrainTreebankSubject(subject_id, cache=True)
 
-log(f'Subject: {subject.subject_identifier}, Trial: {trial_id}, loading data...')
-electrode_subset = subject.electrode_labels
-eval_electrode_index = electrode_subset.index('T1cIe11')
-subject.set_electrode_subset(electrode_subset)
-dataset = SubjectTrialDataset_SingleElectrode(subject, trial_id, window_size=window_size, dtype=dtype, unsqueeze_electrode_dimension=False, electrodes_subset=electrode_subset)
-log("Data shape: " + str(dataset[0]['data'].shape))
-
-log("Loading the eval trial...")
-subject.load_neural_data(0)
+all_subjects = {}
+log("Loading the train subjects...")
+for subject_id, trial_id in train_subject_trials:
+    if subject_id not in all_subjects:
+        all_subjects[subject_id] = BrainTreebankSubject(subject_id, cache=True)
+    subject = all_subjects[subject_id]
+    log(f'Subject: {subject.subject_identifier}, Trial: {trial_id}, loading data...', indent=1)
+    subject.load_neural_data(trial_id)
 log("Done.")
 
+datasets = []
+log("Loading the train datasets...")
+for subject_id, trial_id in train_subject_trials:
+    subject = all_subjects[subject_id]
+    log(f"Loading subject {subject_id}, trial {trial_id}...", indent=1)
+    dataset = SubjectTrialDataset_SingleElectrode(subject, trial_id, window_size=window_size, dtype=dtype, unsqueeze_electrode_dimension=False)
+    datasets.append(dataset)
+dataset = torch.utils.data.ConcatDataset(datasets)
+log("Done.")
+
+log("Data shape: " + str(dataset[0]['data'].shape) + "; Length: " + str(len(dataset)))
+
+eval_subject_id, eval_trial_id = 3, 0
+eval_subject = all_subjects[eval_subject_id]
+eval_tasks = ["gpt2_surprisal"]
+eval_electrode_index = eval_subject.electrode_labels.index('T1cIe11')
+
 # %%
-d_embed = 128
-n_steps = 3000
-batch_size = 128
-log_every_step = min(300, n_steps//10)
+d_embed = 192
+n_steps = 12000
+batch_size = 256 # up from 128
+log_every_step = min(100, n_steps//10)
+save_every_step = min(1000, n_steps//10)
+eval_every_step = 300
 
 # Get resolution from argparse
 import argparse
 parser = argparse.ArgumentParser(description='Train model for single electrode')
-parser.add_argument('--resolution', type=int, default=10, help='Resolution for embedder')
+parser.add_argument('--n_samples_per_bin', type=int, default=1, help='Number of samples per bin')
 args = parser.parse_args()
-resolution = args.resolution
+n_samples_per_bin = args.n_samples_per_bin
 
-save_dir = "eval_results/juno/"
+n_samples_inverter = 100
+mean_collapse_factor = 128//n_samples_per_bin
+
+save_dir = "eval_results/juno4/"
 os.makedirs(save_dir, exist_ok=True)
 
-filename_base = f'{subject.subject_identifier}_{trial_id}_embed{d_embed}_resolution{resolution}'
+filename_base = f'{subject.subject_identifier}_{trial_id}_embed{d_embed}_nspb{n_samples_per_bin}'
 
 log(f'Creating models...')
 import itertools
 dataloader = iter(torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True))
 dataloader = iter(itertools.cycle(dataloader))
 
-embed = EmbedderDiscretized(d_model=d_embed, resolution=resolution, range=(-3, 3))
-unembed = EmbedderDiscretized(d_model=d_embed, resolution=resolution, range=(-3, 3))
+embed = EmbedderLinear(d_model=d_embed, d_input=n_samples_per_bin)
+unembed = EmbedderLinear(d_model=d_embed, d_input=n_samples_per_bin)
 
-model = ContrastiveModel(d_input=n_samples_per_bin, embed=embed, unembed=unembed).to(device, dtype=dtype)
+model = ContrastiveModel(d_input=n_samples_per_bin, embed=embed, unembed=unembed,
+                         d_model=d_embed, n_layers=6, n_heads=12).to(device, dtype=dtype)
 masker = NoneMasker()
 
 # Create samples from 10 random indices of the dataset
 samples = torch.cat([dataset[random.randint(0, len(dataset)-1)]['data'].flatten() for _ in range(n_samples_inverter)])
 inverter = DistributionInverter(samples=samples).to(device, dtype=dtype)
 
-evaluation = ModelEvaluation_BTBench(model, inverter, [(subject, 0)], ["speech", "gpt2_surprisal"], feature_aggregation_method='concat', 
-                                        mean_collapse_factor=mean_collapse_factor, eval_electrode_index=eval_electrode_index)
+evaluation = ModelEvaluation_BTBench(model, inverter, [(eval_subject, eval_trial_id)], eval_tasks, feature_aggregation_method='concat', 
+                                        mean_collapse_factor=mean_collapse_factor, eval_electrode_indices=[eval_electrode_index], n_samples_per_bin=n_samples_per_bin,
+                                        lite=True)
 
 log(f'Training model...')
 initial_lr = 0.003
@@ -111,7 +136,7 @@ else:
     #schedulers = [torch.optim.lr_scheduler.LinearLR(optimizers[0], start_factor=1.0, end_factor=0.0, total_iters=n_steps)]
 
 log("Evaluating the model before training...")
-evaluation_results = evaluation.evaluate()
+evaluation_results = evaluation.evaluate(only_keys_containing='auroc/average')
 log(evaluation_results, indent=2)
 evaluation_results['step'] = 0
 evaluation_results['train_loss'] = -1
@@ -146,15 +171,16 @@ for batch in dataloader:
         current_lr = optimizers[-1].param_groups[0]['lr']
         log(f"Step {step}, Loss: {loss.item():.4f}, LR: {current_lr:.6f}")
         
+    if step % eval_every_step == 0:
         # Add evaluation results
-        evaluation_results = evaluation.evaluate()
+        evaluation_results = evaluation.evaluate(only_keys_containing='auroc/average')
         log_dict.update(evaluation_results)
         log(log_dict, indent=2)
         
     training_logs.append(log_dict)
     
     # Save training results to file
-    if step % log_every_step == 0 or step == n_steps:
+    if step % save_every_step == 0 or step == n_steps:
         save_checkpoint(
             step=step,
             training_logs=training_logs,

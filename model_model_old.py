@@ -1,6 +1,35 @@
 import torch
 import torch.nn as nn
-from model_transformers import BFModule
+
+class BFModule(nn.Module):
+    """
+    This module is a base class for all modules that need to be compatible with this project.
+    It ensures that the module stores its current device and dtype.
+    """
+    def __init__(self):
+        super().__init__()
+        self._device = None
+        self._dtype = None
+    def to(self, *args, **kwargs):
+        output = super().to(*args, **kwargs)
+        # Extract device and dtype from args/kwargs
+        device = next((torch.device(arg) for arg in args if isinstance(arg, (torch.device, str))), 
+                     kwargs.get('device', None))
+        dtype = next((arg for arg in args if isinstance(arg, torch.dtype)),
+                    kwargs.get('dtype', None))
+        if device is not None: self._device = device 
+        if dtype is not None: self._dtype = dtype
+        return output
+    @property
+    def device(self):
+        if self._device is None:
+            self._device = next(self.parameters()).device
+        return self._device
+    @property 
+    def dtype(self):
+        if self._dtype is None:
+            self._dtype = next(self.parameters()).dtype
+        return self._dtype
 
 class BFModel(BFModule):
     """Base model class for brain-feature models.
@@ -185,47 +214,47 @@ class GranularModel(BFModel):
         self.temperature_param2 = nn.Parameter(torch.tensor(0.0))
         
         if n_cls_tokens > 0:
-            self.cls_token_embeddings = nn.Parameter(torch.zeros(n_cls_tokens, d_model)) # batch_size, n_cls_tokens, 1, d_model
+            self.cls_token_embeddings = nn.Parameter(torch.zeros(n_cls_tokens, d_model))
 
         self.mask_token = nn.Parameter(torch.zeros(1, d_model))
 
     def forward(self, electrode_data, embeddings, masked_tokens=None, return_cls_token=False):
         # electrode_data is of shape (batch_size, n_electrodes, n_timebins, sample_timebin_size)
         # embeddings is of shape (batch_size, n_electrodes, d_model)
-        # masked_tokens is of shape (batch_size, n_electrodes, n_timebins)
         assert not return_cls_token or self.n_cls_tokens > 0, "Cannot return CLS tokens if n_cls_tokens is 0"
 
         batch_size, n_electrodes, n_timebins, sample_timebin_size = electrode_data.shape
-        positions = torch.arange(n_timebins, device=self.device, dtype=torch.long).unsqueeze(0).unsqueeze(0).repeat(batch_size, n_electrodes, 1) # shape: (batch_size, n_electrodes, n_timebins)
+        electrode_data = electrode_data.transpose(1, 2) # shape: (batch_size, n_timebins, n_electrodes, sample_timebin_size)
+        electrode_data = electrode_data.reshape(batch_size, n_electrodes * n_timebins, sample_timebin_size)
+        positions = torch.arange(n_timebins, device=self.device, dtype=torch.long).repeat(batch_size, n_electrodes, 1).reshape(batch_size, n_electrodes * n_timebins)
         embeddings = embeddings.unsqueeze(-2).repeat(1, 1, n_timebins, 1) # shape: (batch_size, n_electrodes, n_timebins, d_model)
 
 
         if masked_tokens is not None:
             embeddings = embeddings + self.mask_token.reshape(1, 1, 1, -1) * masked_tokens.unsqueeze(-1)
 
+
+        embeddings = embeddings.reshape(batch_size, n_electrodes * n_timebins, self.d_model)
+
         if self.n_cls_tokens > 0:
             # Create cls tokens for each timebin
-            cls_token_embeddings = self.cls_token_embeddings.unsqueeze(0).unsqueeze(2).repeat(batch_size, 1, n_timebins, 1)  # shape: (batch_size, n_cls_tokens, n_timebins, d_model)
-            cls_token_positions = torch.arange(n_timebins, device=self.device, dtype=torch.long).unsqueeze(0).unsqueeze(0).repeat(batch_size, self.n_cls_tokens, 1) # shape: (batch_size, n_cls_tokens, n_timebins)
-            
+            cls_token_embeddings = self.cls_token_embeddings.unsqueeze(0).unsqueeze(1).repeat(batch_size, n_timebins, 1, 1)  # shape: (batch_size, n_timebins, n_cls_tokens, d_model)
+            cls_token_embeddings = cls_token_embeddings.reshape(batch_size, n_timebins * self.n_cls_tokens, self.d_model)
+            cls_token_positions = torch.arange(n_timebins, device=self.device, dtype=torch.long).repeat_interleave(self.n_cls_tokens).repeat(batch_size, 1)
+
             embeddings = torch.cat([cls_token_embeddings, embeddings], dim=1)
             positions = torch.cat([cls_token_positions, positions], dim=1)
-            electrode_data = torch.cat([torch.zeros(batch_size, self.n_cls_tokens, n_timebins, sample_timebin_size, device=self.device, dtype=self.dtype), electrode_data], dim=1)
+            electrode_data = torch.cat([torch.zeros(batch_size, n_timebins * self.n_cls_tokens, sample_timebin_size, device=self.device, dtype=self.dtype), electrode_data], dim=1)
 
-        new_n_electrodes = electrode_data.shape[1] # might have changed if we added cls tokens
-        electrode_data = electrode_data.reshape(batch_size, new_n_electrodes * n_timebins, sample_timebin_size)
-        embeddings = embeddings.reshape(batch_size, new_n_electrodes * n_timebins, self.d_model)
-        positions = positions.reshape(batch_size, new_n_electrodes * n_timebins)
-    
         total_output = self.transformer(electrode_data, positions=positions, embeddings=embeddings) # shape: (batch_size, n_electrodes * n_timebins, d_model)
         
         if self.n_cls_tokens > 0:
             electrode_output = total_output[:, n_timebins * self.n_cls_tokens:, :]
-            cls_output = total_output[:, :n_timebins * self.n_cls_tokens, :].reshape(batch_size, self.n_cls_tokens, n_timebins, sample_timebin_size)
+            cls_output = total_output[:, :n_timebins * self.n_cls_tokens, :].reshape(batch_size, n_timebins, self.n_cls_tokens, sample_timebin_size).transpose(1, 2)
         else:
             electrode_output = total_output
         
-        electrode_output = electrode_output.reshape(batch_size, n_electrodes, n_timebins, sample_timebin_size) # shape: (batch_size, n_electrodes, n_timebins, d_model) # XXX Can probably avoid this transpose since I'm passing in positions and creating a mask
+        electrode_output = electrode_output.reshape(batch_size, n_timebins, n_electrodes, sample_timebin_size).transpose(1, 2) # shape: (batch_size, n_electrodes, n_timebins, d_model) # XXX Can probably avoid this transpose since I'm passing in positions and creating a mask
 
         if return_cls_token and self.n_cls_tokens > 0:
             return electrode_output, cls_output

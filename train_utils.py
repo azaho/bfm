@@ -12,24 +12,26 @@ def get_default_configs(random_string, wandb_project):
         'optimizer': 'Muon',
         'batch_size': 100,
         'learning_rate': 0.003,
-        'weight_decay': 0.0,
+        'weight_decay': 0.0001, #0.0
         'p_electrodes_per_stream': 0.5,
         'symmetric_loss': True,
         'future_bin_idx': 1,
         'projection_type': None, # None, 'random_batch'
         'p_unmasked': 1.0,
-        'lr_schedule': "None", # none, linear, cosine
+        'lr_schedule': "linear", # none, linear, cosine
+        'warmup_steps': 100,
         
         # MINI-BFM on braintreebank
-        'train_subject_trials': [('btbank3', 2), ('btbank3', 1)], #[("btbank1", 0), ("btbank1", 1), ("btbank2", 4), ("btbank2", 5), ("btbank3", 1), ("btbank3", 2), ("btbank7", 1), ("btbank10", 1)],
+        'train_subject_trials': [('btbank3', 1)],#, ('btbank3', 1)], #[("btbank1", 0), ("btbank1", 1), ("btbank2", 4), ("btbank2", 5), ("btbank3", 1), ("btbank3", 2), ("btbank7", 1), ("btbank10", 1)],
         'eval_subject_trials': [('btbank3', 0)], #[("btbank1", 2), ("btbank2", 6), ("btbank3", 0), ("btbank7", 0), ("btbank10", 0)],
 
-        'n_electrodes_subset': 80,
+        'n_electrodes_subset': 50,
 
         'normalize_features': True,
         'use_temperature_param': True,
+        'max_temperature_param': 1000.0, # Clipping the temperature parameter at this value during training
         
-        'data_dtype': torch.float32,
+        'data_dtype': torch.bfloat16,
 
         'random_string': random_string,
     }
@@ -39,18 +41,22 @@ def get_default_configs(random_string, wandb_project):
         'sample_timebin_size': 0.125, # in seconds
         'max_frequency_bin': 64, # XXX Todo: make this based on frequency and not bin number
         'max_n_timebins': 8,
-        'max_n_electrodes': 128,
+        'max_n_electrodes': 80,
 
         'init_normalization': True, # XXX rename to a more sensible name later
+        'init_identity': True,
 
         'electrode_embedding': {
             'type': 'learned', # coordinate_init, noisy_coordinate, learned, zero
             'coordinate_noise_std': 0.0, # only relevant for noisy_coordinate type; note coordinates are normalized to be within [0,1]
             'embedding_dim': None,
             'spectrogram': False,
+            'spectrogram_power': False,
         },
 
         'dtype': torch.float32,
+
+        'bin_encoder': "linear", # "linear" or "transformer"
 
         'transformer': {
             'd_model': 192,
@@ -61,9 +67,12 @@ def get_default_configs(random_string, wandb_project):
             'momentum': 0.99,
             'use_cls_token': True,
         },
+
+        'use_mixed_precision': True,
+        'amp_dtype': torch.bfloat16,  # must be bfloat16 because scaler is not existing
     }
     cluster_config = {
-        'save_model_every_n_epochs': 20,
+        'save_model_every_n_epochs': 1,
         'eval_model_every_n_epochs': 1,
 
         'wandb_project': wandb_project,
@@ -76,6 +85,7 @@ def get_default_configs(random_string, wandb_project):
         'prefetch_factor': 2,
 
         'resume_run': False,
+        'quick_eval': True,
 
         'eval_aggregation_method': 'concat', # 'mean', 'concat'
     }
@@ -111,13 +121,17 @@ def parse_configs_from_args(training_config, model_config, cluster_config):
     parser.add_argument('--p_electrodes_per_stream', type=float, default=None, help='Proportion of electrodes per stream')
     parser.add_argument('--symmetric_loss', type=int, default=None, help='Whether to use symmetric pretraining')
     parser.add_argument('--spectrogram', type=int, default=None, help='Whether to use spectrogram')
+    parser.add_argument('--spectrogram_power', type=int, default=None, help='Whether to use spectrogram power')
     parser.add_argument('--future_bin_idx', type=int, default=None, help='Future bin index')
     parser.add_argument('--eval_aggregation_method', type=str, default=None, help='Feature aggregation method')
     parser.add_argument('--use_cls_token', type=int, default=None, help='Whether to use CLS token')
     parser.add_argument('--lr_schedule', type=str, default=None, help='Learning rate schedule (none, linear, cosine)')
+    parser.add_argument('--warmup_steps', type=int, default=None, help='Warmup steps')
     
     # Other model config
     parser.add_argument('--init_normalization', type=int, default=None, help='Whether to use initial normalization')
+    parser.add_argument('--init_identity', type=int, default=None, help='Whether to use identity initialization')
+    parser.add_argument('--bin_encoder', type=str, default=None, help='Bin encoder (linear, transformer)')
 
     # Electrode embedding config
     parser.add_argument('--electrode_embedding_type', type=str, default=None, help='Type of electrode embedding')
@@ -158,6 +172,8 @@ def parse_configs_from_args(training_config, model_config, cluster_config):
         training_config['p_electrodes_per_stream'] = args.p_electrodes_per_stream
     if args.init_normalization is not None:
         model_config['init_normalization'] = bool(args.init_normalization)
+    if args.init_identity is not None:
+        model_config['init_identity'] = bool(args.init_identity)
     if args.cache_subjects is not None:
         cluster_config['cache_subjects'] = bool(args.cache_subjects)
     if args.random_string is not None:
@@ -172,6 +188,8 @@ def parse_configs_from_args(training_config, model_config, cluster_config):
         model_config['electrode_embedding']['embedding_dim'] = args.embedding_dim
     if args.max_frequency_bin is not None:
         model_config['max_frequency_bin'] = args.max_frequency_bin if args.max_frequency_bin != -1 else None
+    if args.bin_encoder is not None:
+        model_config['bin_encoder'] = args.bin_encoder
     if args.train_subject_trials is not None:
         train_subject_trials = []
         for subject_trial in args.train_subject_trials.replace(" ", "").split(","):
@@ -200,6 +218,8 @@ def parse_configs_from_args(training_config, model_config, cluster_config):
         model_config['max_n_timebins'] = args.max_n_timebins
     if args.spectrogram is not None:
         model_config['electrode_embedding']['spectrogram'] = bool(args.spectrogram)
+    if args.spectrogram_power is not None:
+        model_config['electrode_embedding']['spectrogram_power'] = bool(args.spectrogram_power)
     if args.n_epochs is not None:
         training_config['n_epochs'] = args.n_epochs
     if args.momentum is not None:
@@ -224,6 +244,8 @@ def parse_configs_from_args(training_config, model_config, cluster_config):
         training_config['normalize_features'] = bool(args.normalize_features)
     if args.use_temperature_param is not None:
         training_config['use_temperature_param'] = bool(args.use_temperature_param)
+    if args.warmup_steps is not None:
+        training_config['warmup_steps'] = args.warmup_steps
 
 max_log_priority = 1
 def log(message, priority=0, indent=0):
@@ -259,15 +281,21 @@ def update_dir_name(model_config, training_config, cluster_config):
         dir_name += f"_nf"
     if not training_config['use_temperature_param']:
         dir_name += f"_nUTP"
-    
+
+    if model_config['bin_encoder'] != "linear":
+        dir_name += f"_be{model_config['bin_encoder'].upper()[0]}"
     if not cluster_config['cache_subjects']:
         dir_name += f"_nCS"
     if not model_config['init_normalization']:
         dir_name += f"_nIN"
+    if not model_config['init_identity']:
+        dir_name += f"_nII"
     if not training_config['symmetric_loss']:
         dir_name += f"_nSL"
     if not model_config['electrode_embedding']['spectrogram']:
         dir_name += f"_nSP"
+    if model_config['electrode_embedding']['spectrogram_power']:
+        dir_name += f"_nSPP"
     if cluster_config['eval_aggregation_method'] != 'concat':
         dir_name += f"_ea{cluster_config['eval_aggregation_method'][0].upper()}"
     if training_config['projection_type'] is not None:
@@ -316,6 +344,8 @@ def update_dir_name(model_config, training_config, cluster_config):
     dir_name += f"_r{training_config['random_string']}"
     if training_config['lr_schedule'] != "None":
         dir_name += f"_lr{training_config['lr_schedule'][0].upper()}"
+    if training_config['warmup_steps'] != 0:
+        dir_name += f"_ws{training_config['warmup_steps']}"
     cluster_config['dir_name'] = dir_name
     return dir_name
 

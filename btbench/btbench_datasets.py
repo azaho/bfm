@@ -10,7 +10,7 @@ from .braintreebank_subject import BrainTreebankSubject
 
 single_float_variables_name_remapping = {
     "pitch": "enhanced_pitch", #"pitch",
-    "volume": "rms", #"enhanced_volume", #"rms",
+    "volume": "enhanced_volume", #"rms",
     "frame_brightness": "mean_pixel_brightness",
     "global_flow": "max_global_magnitude",
     "local_flow": "max_vector_magnitude",
