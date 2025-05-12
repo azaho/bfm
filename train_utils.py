@@ -28,7 +28,7 @@ def get_default_configs(random_string, wandb_project):
         'n_electrodes_subset': 50,
 
         'normalize_features': True,
-        'use_temperature_param': False,
+        'use_temperature_param': True,
         'max_temperature_param': 1000.0, # Clipping the temperature parameter at this value during training
         
         'data_dtype': torch.bfloat16,
