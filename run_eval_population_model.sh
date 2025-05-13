@@ -6,7 +6,7 @@
 #SBATCH --exclude=dgx001,dgx002
 #SBATCH --mem=96G
 #SBATCH -t 16:00:00         # total run time limit (HH:MM:SS) (increased to 24 hours)
-#SBATCH --array=1-1  # 285 if doing mini btbench
+#SBATCH --array=1-228  # 285 if doing mini btbench
 #SBATCH --output eval_logs/%A_%a.out # STDOUT
 #SBATCH --error eval_logs/%A_%a.err # STDERR
 #SBATCH -p use-everything
