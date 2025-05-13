@@ -27,7 +27,7 @@ class ElectrodeEmbedding(BFModule):
         return len(self.embeddings_map)
     def _initialize_embeddings(self, initial_capacity):
         self.embeddings = nn.Embedding(initial_capacity, self.d_model)
-        self.embeddings.weight.data.zero_()
+        self.embeddings.weight.data.zero_() # XXX do not zero out the embeddings
     def _ensure_capacity(self, needed_size):
         if needed_size >= self._get_current_capacity():
             new_capacity = needed_size #max(self._get_current_capacity() * 2, needed_size + 1)

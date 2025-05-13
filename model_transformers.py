@@ -200,7 +200,7 @@ class Transformer(BFModule):
         self.embed.weight.data = orthogonalize(self.embed.weight.data)
         self.output_proj.weight.data = orthogonalize(self.output_proj.weight.data)
 
-    def forward(self, x, attention_mask=None, positions=None, embeddings=None):
+    def forward(self, x, attention_mask=None, positions=None, embeddings=None, strict_positions=False):
         # x is of shape (batch_size, seq_len, d_input)
         batch_size, seq_len, d_input = x.shape
 
@@ -213,7 +213,10 @@ class Transformer(BFModule):
 
 
         if attention_mask is None and positions is not None: # XXX this overwrites the "Causal" parameter
-            attention_mask = positions.unsqueeze(2) >= positions.unsqueeze(1) # Causal mask given the positions
+            if strict_positions:
+                attention_mask = positions.unsqueeze(2) == positions.unsqueeze(1) # Causal mask given the positions
+            else:
+                attention_mask = positions.unsqueeze(2) >= positions.unsqueeze(1) # Causal mask given the positions
 
 
         if self.cls_token is not None:

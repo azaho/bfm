@@ -6,20 +6,20 @@
 #SBATCH --constraint=40GB
 #SBATCH --mem=240G
 #SBATCH -t 16:00:00      
-#SBATCH --array=1-4
+#SBATCH --array=1-2
 #SBATCH --output logs/%A_%a.out
 #SBATCH --error logs/%A_%a.err
 #SBATCH -p normal
 source .venv/bin/activate
 export TMPDIR=/om2/scratch/tmp
 
-n_in_parallel=6
+n_in_parallel=2
 
 train_subject_trial_options=(
     "btbank3_0"
 )
 eval_subject_trials="btbank3_1" #,btbank3_1,btbank3_2"
-random_string_options=("BBFM_MM3_SP")
+random_string_options=("BBFM_X1")
 
 n_electrodes_subset_options=(50) #(1 2 4 8 16 32 64 124)
 weight_decay_options=(0.0)
@@ -27,12 +27,12 @@ lr_schedule_options=("linear")
 warmup_steps_options=(100) # XXX going back to fast warmup
 init_identity_options=(1)
 future_bin_idx_options=(1)
-bin_encoder_options=("linear") # "transformer")
-use_temperature_param_options=(1)
+bin_encoder_options=("transformer") # "transformer")
+use_temperature_param_options=(0)
 show_a_embedding_options=(0.0 0.1 0.5)
 show_b_embedding_options=(1.0)
-separate_unembed_options=(0 1)
-p_masked_timebins_options=(0.0 0.25 0.5 0.75)
+separate_unembed_options=(1)
+p_masked_timebins_options=(0.5 0.7 0.8 0.9)
 
 wandb_project="BBFM_min_tests"
 
@@ -80,7 +80,7 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
     echo "Job $((i+1)) - RS: $random_string, NES: $n_electrodes_subset, WD: $weight_decay, LRS: $lr_schedule, WSS: $warmup_steps, II: $init_identity, FBIN: $future_bin_idx, BE: $bin_encoder, SE: $separate_unembed, UT: $use_temperature_param, SA: $show_a_embedding, SB: $show_b_embedding, PMT: $p_masked_timebins"
     
     # note: change train_model_fbi_combined.py to train_model.py for the non-combined version
-    python -u train_model.py  --cache_subjects 1 \
+    python -u train_model_new.py  --cache_subjects 1 \
         --num_workers_dataloaders 2 \
         --batch_size 100 \
         --random_string $random_string \

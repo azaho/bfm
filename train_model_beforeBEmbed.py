@@ -249,7 +249,7 @@ def calculate_loss_function(batch, output_accuracy=True):
         losses['accuracy_b'] = accuracy_b
 
     _, output_b_cls = model(bin_transformed_data_copy[:, electrodes_b, future_bin_idx:, :], embeddings[:, electrodes_b, :], return_cls_token=True)
-    if training_config['normalize_features'] and False: # XXX removing normalization of the output features here
+    if training_config['normalize_features']: # XXX removing normalization of the output features here
         output_a_cls = output_a_cls / (torch.norm(output_a_cls, dim=-1, keepdim=True) + 0.001)
         output_b_cls = output_b_cls / (torch.norm(output_b_cls, dim=-1, keepdim=True) + 0.001)
     similarity = output_a_cls.permute(1, 2, 0, 3) @ output_b_cls.permute(1, 2, 3, 0) # shape: (n_electrodes, n_timebins-1, batch_size, batch_size)

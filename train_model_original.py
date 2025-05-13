@@ -38,6 +38,14 @@ if model_config['bin_encoder'] == "linear":
         sample_timebin_size=model_config['sample_timebin_size'],
         identity_init=model_config['init_identity']
     )
+    bin_unembed_transformer = bin_embed_transformer
+    if model_config['separate_unembed']:
+        bin_unembed_transformer = LinearBinTransformer(
+            overall_sampling_rate=2048,
+            sample_timebin_size=model_config['sample_timebin_size'],
+            identity_init=model_config['init_identity'],
+            reverse=True
+        )
 elif model_config['bin_encoder'] == "transformer":
     bin_embed_transformer = BinTransformer(
         first_kernel=int(model_config['sample_timebin_size']*2048)//16, 
@@ -50,25 +58,16 @@ elif model_config['bin_encoder'] == "transformer":
         identity_init=model_config['init_identity']
     ).to(device, dtype=model_config['dtype'])
     bin_unembed_transformer = bin_embed_transformer
-    
-bin_unembed_transformer = bin_embed_transformer
-if model_config['separate_unembed']:
-    bin_unembed_transformer = LinearBinTransformer(
-        overall_sampling_rate=2048,
-        sample_timebin_size=model_config['sample_timebin_size'],
-        identity_init=model_config['init_identity'],
-        reverse=True
-    )
 bin_unembed_transformer = bin_unembed_transformer.to(device, dtype=model_config['dtype'])
 bin_embed_transformer = bin_embed_transformer.to(device, dtype=model_config['dtype'])
 
-model = GranularModel(
-    int(model_config['sample_timebin_size'] * 2048 // n_downsample_factor),
-    model_config['transformer']['d_model'],  
-    n_layers=model_config['transformer']['n_layers_time'],
+model = TransformerModel(
+    d_model=model_config['transformer']['d_model'],
+    d_output=None,
+    n_layers_electrode=model_config['transformer']['n_layers_electrode'],
+    n_layers_time=model_config['transformer']['n_layers_time'],
     n_heads=model_config['transformer']['n_heads'],
-    identity_init=model_config['init_identity'],
-    n_cls_tokens=1
+    use_cls_token=True
 ).to(device, dtype=model_config['dtype'])
 
 if model_config['electrode_embedding']['type'] == 'learned' or model_config['electrode_embedding']['type'] == 'zero':

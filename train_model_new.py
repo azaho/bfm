@@ -41,8 +41,8 @@ if model_config['bin_encoder'] == "linear":
 elif model_config['bin_encoder'] == "transformer":
     bin_embed_transformer = BinTransformer(
         first_kernel=int(model_config['sample_timebin_size']*2048)//16, 
-        d_model=64,#model_config['transformer']['d_model'],
-        n_layers=2,
+        d_model=model_config['transformer']['d_model_bin'],
+        n_layers=model_config['transformer']['n_layers_electrode'],
         n_heads=4,
         overall_sampling_rate=2048,
         sample_timebin_size=model_config['sample_timebin_size'],
@@ -66,7 +66,7 @@ model = GranularModel(
     int(model_config['sample_timebin_size'] * 2048 // n_downsample_factor),
     model_config['transformer']['d_model'],  
     n_layers=model_config['transformer']['n_layers_time'],
-    n_heads=model_config['transformer']['n_heads'],
+    n_heads=6, #model_config['transformer']['n_heads'],
     identity_init=model_config['init_identity'],
     n_cls_tokens=1
 ).to(device, dtype=model_config['dtype'])
@@ -292,10 +292,10 @@ def calculate_loss_function(batch, output_accuracy=True):
         similarity = similarity * torch.minimum(torch.exp(model.temperature_param), torch.tensor(training_config['max_temperature_param'], device=model.device, dtype=model.dtype)) # XXX going back to temp1 for both
     expanded_arange_cls = torch.arange(batch_size).unsqueeze(0).repeat(model.n_cls_tokens, n_timebins-future_bin_idx, 1).to(model.device, dtype=torch.long).reshape(-1)
     loss_cls = torch.nn.functional.cross_entropy(similarity.view(-1, batch_size), expanded_arange_cls)
-    losses['contrastive_cls'] = loss_cls
+    losses['contrastive_cls'] = torch.tensor(0, device=model.device, dtype=model.dtype) #  loss_cls
     if output_accuracy:
         accuracy_cls = (similarity.view(-1, batch_size).argmax(dim=-1) == expanded_arange_cls).float().mean()
-        losses['accuracy_cls'] = accuracy_cls
+        losses['accuracy_cls'] = torch.tensor(0, device=model.device, dtype=model.dtype) # accuracy_cls
 
     return losses
 
@@ -396,21 +396,21 @@ del baseline_loss
 torch.cuda.empty_cache()
 gc.collect()
 
-log(f"Evaluating model...", priority=0)
-bin_embed_transformer.eval()
-model.eval()
-electrode_embeddings.eval()
-eval_results = {}
-eval_full_model = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, log_priority=1, quick_eval=cluster_config['quick_eval'], only_keys_containing='auroc/average')
-eval_results.update(eval_full_model)
-eval_bin_transformer = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, log_priority=1, quick_eval=cluster_config['quick_eval'], only_bin_transformer=True, only_keys_containing='auroc/average', key_prefix="bin_")
-eval_results.update(eval_bin_transformer)
-print("eval_full_model", eval_full_model)
-print("eval_bin_transformer", eval_bin_transformer)
-if wandb: wandb.log(eval_results, step=1)
-del eval_full_model, eval_bin_transformer
-torch.cuda.empty_cache()
-gc.collect()
+# log(f"Evaluating model...", priority=0)
+# bin_embed_transformer.eval()
+# model.eval()
+# electrode_embeddings.eval()
+# eval_results = {}
+# eval_full_model = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, log_priority=1, quick_eval=cluster_config['quick_eval'], only_keys_containing='auroc/average')
+# eval_results.update(eval_full_model)
+# eval_bin_transformer = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, log_priority=1, quick_eval=cluster_config['quick_eval'], only_bin_transformer=True, only_keys_containing='auroc/average', key_prefix="bin_")
+# eval_results.update(eval_bin_transformer)
+# print("eval_full_model", eval_full_model)
+# print("eval_bin_transformer", eval_bin_transformer)
+# if wandb: wandb.log(eval_results, step=1)
+# del eval_full_model, eval_bin_transformer
+# torch.cuda.empty_cache()
+# gc.collect()
 
 training_statistics_store = []
 for epoch_i in range(training_config['n_epochs']):

@@ -28,7 +28,7 @@ class BFModel(BFModule):
 
 
 class LinearBinTransformer(BFModule):
-    def __init__(self, overall_sampling_rate=2048, sample_timebin_size=0.125, identity_init=True):
+    def __init__(self, overall_sampling_rate=2048, sample_timebin_size=0.125, identity_init=True, reverse=False):
         super(LinearBinTransformer, self).__init__()
         self.overall_sampling_rate = overall_sampling_rate
         self.sample_timebin_size = sample_timebin_size
@@ -36,7 +36,9 @@ class LinearBinTransformer(BFModule):
 
         if identity_init:
             self.linear.weight.data = torch.eye(int(overall_sampling_rate*sample_timebin_size)).to(self.device, dtype=self.dtype)
-
+            if reverse:
+                self.linear.weight.data = self.linear.weight.data.flip(dims=(0,))
+        
     def forward(self, electrode_data):
         # (batch_size, n_electrodes, n_samples)
         batch_size, n_electrodes, n_samples = electrode_data.shape
@@ -142,7 +144,7 @@ class TransformerModel(BFModel):
                                             rope=True, cls_token=False)
         self.temperature_param = nn.Parameter(torch.tensor(1.0))
 
-    def forward(self, embedded_electrode_data, only_electrode_output=False):
+    def forward(self, embedded_electrode_data, only_electrode_output=False, only_cls_token=True):
         # electrode_embeddings is of shape (n_electrodes, d_model)
         # embedded_electrode_data is of shape (batch_size, n_electrodes, n_timebins, d_model)
 
@@ -151,21 +153,23 @@ class TransformerModel(BFModel):
 
         electrode_output = self.electrode_transformer(electrode_data.reshape(batch_size * n_timebins, n_electrodes, d_model)) # shape: (batch_size*n_timebins, n_electrodes+1, d_model)
         if self.use_cls_token:
-            electrode_output = electrode_output[:, -1:, :].view(batch_size, n_timebins, d_model) # just the CLS token. Shape: (batch_size, n_timebins, d_model)
+            electrode_output_for_time_transformer = electrode_output[:, -1:, :].view(batch_size, n_timebins, d_model) # just the CLS token. Shape: (batch_size, n_timebins, d_model)
         else:
-            electrode_output = electrode_output[:, 0:1, :].view(batch_size, n_timebins, d_model) # (just the first token, which can be anything)
+            electrode_output_for_time_transformer = electrode_output[:, 0:1, :].view(batch_size, n_timebins, d_model) # (just the first token, which can be anything)
+        if only_cls_token:
+            electrode_output = electrode_output_for_time_transformer
         if only_electrode_output:
             return electrode_output, None
         
-        time_output = self.time_transformer(electrode_output) # shape: (batch_size, n_timebins, d_model)
+        time_output = self.time_transformer(electrode_output_for_time_transformer) # shape: (batch_size, n_timebins, d_model)
         return electrode_output, time_output
     
     def generate_frozen_evaluation_features(self, electrode_embedded_data, feature_aggregation_method='concat'):
         batch_size, n_electrodes, n_timebins, d_model = electrode_embedded_data.shape
         if feature_aggregation_method == 'concat':
-            return self(electrode_embedded_data, only_electrode_output=True)[0].reshape(batch_size, -1)
+            return self(electrode_embedded_data, only_electrode_output=True, only_cls_token=False)[0].reshape(batch_size, -1)
         elif feature_aggregation_method == 'mean':
-            return self(electrode_embedded_data, only_electrode_output=True)[0].mean(dim=1)
+            return self(electrode_embedded_data, only_electrode_output=True, only_cls_token=False)[0].mean(dim=1)
         else:
             raise ValueError(f"Invalid feature aggregation method: {feature_aggregation_method}")
 
@@ -189,7 +193,7 @@ class GranularModel(BFModel):
 
         self.mask_token = nn.Parameter(torch.zeros(1, d_model))
 
-    def forward(self, electrode_data, embeddings, masked_tokens=None, return_cls_token=False):
+    def forward(self, electrode_data, embeddings, masked_tokens=None, return_cls_token=False, strict_positions=False):
         # electrode_data is of shape (batch_size, n_electrodes, n_timebins, sample_timebin_size)
         # embeddings is of shape (batch_size, n_electrodes, d_model)
         # masked_tokens is of shape (batch_size, n_electrodes, n_timebins)
@@ -197,10 +201,9 @@ class GranularModel(BFModel):
 
         batch_size, n_electrodes, n_timebins, sample_timebin_size = electrode_data.shape
         positions = torch.arange(n_timebins, device=self.device, dtype=torch.long).unsqueeze(0).unsqueeze(0).repeat(batch_size, n_electrodes, 1) # shape: (batch_size, n_electrodes, n_timebins)
-        embeddings = embeddings.unsqueeze(-2).repeat(1, 1, n_timebins, 1) # shape: (batch_size, n_electrodes, n_timebins, d_model)
-
-        embeddings = embeddings * 0 # XXX removing all embeddings
-
+        
+        if len(embeddings.shape) == 3:
+            embeddings = embeddings.unsqueeze(-2).repeat(1, 1, n_timebins, 1) # shape: (batch_size, n_electrodes, n_timebins, d_model)
 
         if masked_tokens is not None:
             embeddings = embeddings + self.mask_token.reshape(1, 1, 1, -1) * masked_tokens.unsqueeze(-1)
@@ -219,7 +222,7 @@ class GranularModel(BFModel):
         embeddings = embeddings.reshape(batch_size, new_n_electrodes * n_timebins, self.d_model)
         positions = positions.reshape(batch_size, new_n_electrodes * n_timebins)
     
-        total_output = self.transformer(electrode_data, positions=positions, embeddings=embeddings) # shape: (batch_size, n_electrodes * n_timebins, d_model)
+        total_output = self.transformer(electrode_data, positions=positions, embeddings=embeddings, strict_positions=strict_positions) # shape: (batch_size, n_electrodes * n_timebins, d_model)
         
         if self.n_cls_tokens > 0:
             electrode_output = total_output[:, n_timebins * self.n_cls_tokens:, :]
