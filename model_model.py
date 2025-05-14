@@ -81,7 +81,7 @@ class BinTransformer(BFModule):
         super(BinTransformer, self).__init__()
         self.transformer = Transformer(d_input=first_kernel//n_downsample_factor, d_model=d_model, d_output=first_kernel//n_downsample_factor, 
                                             n_layer=n_layers, n_head=n_heads, causal=True, 
-                                            rope=True, cls_token=False, rope_base=int(overall_sampling_rate*sample_timebin_size)*n_downsample_factor//first_kernel, identity_init=identity_init)
+                                            rope=True, rope_base=int(overall_sampling_rate*sample_timebin_size)*n_downsample_factor//first_kernel, identity_init=identity_init)
         self.first_kernel = first_kernel
         self.sample_timebin_size = sample_timebin_size
         self.overall_sampling_rate = overall_sampling_rate  
@@ -118,7 +118,7 @@ class BinTransformer(BFModule):
         return electrode_data
 
 
-from model_transformers import Transformer, CrossAttentionTransformer
+from model_transformers import Transformer
 class GranularModel(BFModel):
     def __init__(self, sample_timebin_size, d_model, n_layers=5, n_heads=12, identity_init=True, n_cls_tokens=0):
         super().__init__()
@@ -129,9 +129,8 @@ class GranularModel(BFModel):
 
         self.transformer = Transformer(d_input=self.sample_timebin_size, d_model=d_model, d_output=self.sample_timebin_size, 
                                             n_layer=n_layers, n_head=n_heads, causal=True, 
-                                            rope=True, cls_token=False, identity_init=identity_init)
+                                            rope=True, identity_init=identity_init)
         self.temperature_param = nn.Parameter(torch.tensor(0.0))
-        self.temperature_param2 = nn.Parameter(torch.tensor(0.0))
         
         if n_cls_tokens > 0:
             self.cls_token_embeddings = nn.Parameter(torch.zeros(n_cls_tokens, d_model)) # batch_size, n_cls_tokens, 1, d_model

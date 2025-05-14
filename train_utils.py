@@ -35,7 +35,7 @@ def get_default_configs(random_string, wandb_project):
         'p_show_b_embedding': 1.0,
 
         'p_unmasked_electrodes': 0.5, # XXX TODO, not added to the codebase yet properly
-        'p_masked_timebins': 0.5, # this is implemented tho
+        'p_masked_timebins': 0.0, # this is implemented tho
         
         'data_dtype': torch.bfloat16,
 
@@ -81,7 +81,7 @@ def get_default_configs(random_string, wandb_project):
     }
     cluster_config = {
         'save_model_every_n_epochs': 1,
-        'eval_model_every_n_epochs': 2,
+        'eval_model_every_n_epochs': 6,
 
         'wandb_project': wandb_project,
         'timestamp': time.strftime("%Y%m%d_%H%M%S"),

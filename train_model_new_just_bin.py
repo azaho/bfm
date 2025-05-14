@@ -58,7 +58,7 @@ if model_config['separate_unembed']:
         overall_sampling_rate=2048,
         sample_timebin_size=model_config['sample_timebin_size'],
         identity_init=model_config['init_identity'],
-        reverse=True
+        reverse=(training_config['future_bin_idx'] > 0)
     )
 bin_unembed_transformer = bin_unembed_transformer.to(device, dtype=model_config['dtype'])
 bin_embed_transformer = bin_embed_transformer.to(device, dtype=model_config['dtype'])
@@ -142,7 +142,7 @@ train_dataloader, test_dataloader = load_dataloaders(
 
 eval_subject_trials = [(all_subjects[subject_identifier], trial_id) for subject_identifier, trial_id in training_config['eval_subject_trials']]
 #eval_tasks = ['gpt2_surprisal', 'volume', 'word_part_speech', 'pitch', 'speech']
-eval_tasks = ['gpt2_surprisal', 'volume', 'speech']
+eval_tasks = ['gpt2_surprisal', 'speech']
 evaluation = FrozenModelEvaluation_SS_SM(
     eval_tasks, eval_subject_trials, 
     training_config['data_dtype'], training_config['batch_size'], # Can have a bigger batch size here if that speeds things up
@@ -236,14 +236,20 @@ def calculate_loss_function(batch, output_accuracy=True):
 
     masked_batch_data = batch['data'].clone()
 
-    zero_time_indices = np.random.choice(n_timebins, size=int(n_timebins*(1-training_config['p_masked_timebins'])), replace=False)
+    zero_time_indices = np.random.choice(n_timebins, size=int(n_timebins*training_config['p_masked_timebins']), replace=False)
     masked_batch_data[:, :, zero_time_indices, :] = 0
 
-    bin_embed_transformed_data = bin_embed_transformer(masked_batch_data[:, :, :-future_bin_idx]) # shape: (batch_size, n_electrodes, n_timebins-future_bin_idx, d_model_bin)
-    
+    if future_bin_idx > 0:
+        masked_batch_data = masked_batch_data[:, :, :-future_bin_idx]
+        unmasked_batch_data = batch['data'][:, :, future_bin_idx:]
+    else:
+        masked_batch_data = masked_batch_data
+        unmasked_batch_data = batch['data']
+
+    bin_embed_transformed_data = bin_embed_transformer(masked_batch_data) # shape: (batch_size, n_electrodes, n_timebins-future_bin_idx, d_model_bin)
     assert model_config['separate_unembed']
-    bin_unembed_transformed_data = bin_unembed_transformer(batch['data'][:, :, future_bin_idx:]) # shape: (batch_size, n_electrodes, n_timebins-future_bin_idx, d_model_bin)
-    
+    bin_unembed_transformed_data = bin_unembed_transformer(unmasked_batch_data) # shape: (batch_size, n_electrodes, n_timebins-future_bin_idx, d_model_bin)
+
     output = bin_embed_transformed_data
     target = bin_unembed_transformed_data
     if training_config['normalize_features']:
@@ -285,8 +291,8 @@ def calculate_persistence_baseline_loss():
         n_timebins = batch['data'].shape[2]
 
 
-        output = torch.flip(batch['data'][:, :, :-future_bin_idx, :], dims=[-1])
-        target = batch['data'][:, :, future_bin_idx:, :]
+        output = torch.flip(batch['data'][:, :, :-future_bin_idx, :], dims=[-1]) if future_bin_idx > 0 else batch['data'][:, :, :, :]
+        target = batch['data'][:, :, future_bin_idx:, :] if future_bin_idx > 0 else batch['data'][:, :, :, :]
 
         if training_config['normalize_features']:
             output = output / (torch.norm(output, dim=-1, keepdim=True) + 0.001)
@@ -360,21 +366,21 @@ del baseline_loss
 torch.cuda.empty_cache()
 gc.collect()
 
-log(f"Evaluating model...", priority=0)
-bin_embed_transformer.eval()
-model.eval()
-electrode_embeddings.eval()
-eval_results = {}
-eval_full_model = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, log_priority=1, quick_eval=cluster_config['quick_eval'], only_keys_containing='auroc/average')
-eval_results.update(eval_full_model)
-eval_bin_transformer = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, log_priority=1, quick_eval=cluster_config['quick_eval'], only_bin_transformer=True, only_keys_containing='auroc/average', key_prefix="bin_")
-eval_results.update(eval_bin_transformer)
-print("eval_full_model", eval_full_model)
-print("eval_bin_transformer", eval_bin_transformer)
-if wandb: wandb.log(eval_results, step=1)
-del eval_full_model, eval_bin_transformer
-torch.cuda.empty_cache()
-gc.collect()
+# log(f"Evaluating model...", priority=0)
+# bin_embed_transformer.eval()
+# model.eval()
+# electrode_embeddings.eval()
+# eval_results = {}
+# eval_full_model = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, log_priority=1, quick_eval=cluster_config['quick_eval'], only_keys_containing='auroc/average')
+# eval_results.update(eval_full_model)
+# eval_bin_transformer = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, log_priority=1, quick_eval=cluster_config['quick_eval'], only_bin_transformer=True, only_keys_containing='auroc/average', key_prefix="bin_")
+# eval_results.update(eval_bin_transformer)
+# print("eval_full_model", eval_full_model)
+# print("eval_bin_transformer", eval_bin_transformer)
+# if wandb: wandb.log(eval_results, step=1)
+# del eval_full_model, eval_bin_transformer
+# torch.cuda.empty_cache()
+# gc.collect()
 
 training_statistics_store = []
 for epoch_i in range(training_config['n_epochs']):
