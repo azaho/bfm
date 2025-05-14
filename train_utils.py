@@ -67,7 +67,7 @@ def get_default_configs(random_string, wandb_project):
 
         'transformer': {
             'd_model': 192,
-            'd_model_bin': 64,
+            'd_model_bin': 192,
             'n_heads': 12,
             'n_layers_electrode': 5,
             'n_layers_time': 5,

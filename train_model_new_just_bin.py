@@ -6,7 +6,7 @@ from torch.amp import autocast, GradScaler, autocast_mode
 import gc
 
 from muon import Muon
-from model_model import GranularModel, LinearBinTransformer, CrossModel, BinTransformer, LinearKernelTransformer
+from model_model import GranularModel, LinearBinTransformer, BinTransformer, LinearKernelTransformer
 from model_electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit
 from dataset import load_dataloaders, load_subjects
 from evaluation_btbench import FrozenModelEvaluation_SS_SM
@@ -43,7 +43,7 @@ elif model_config['bin_encoder'] == "transformer":
         first_kernel=int(model_config['sample_timebin_size']*2048)//16, 
         d_model=model_config['transformer']['d_model_bin'],
         n_layers=model_config['transformer']['n_layers_electrode'],
-        n_heads=4,
+        n_heads=12,
         overall_sampling_rate=2048,
         sample_timebin_size=model_config['sample_timebin_size'],
         n_downsample_factor=n_downsample_factor,
@@ -122,6 +122,7 @@ eval_electrode_subset = {
 }
 
 for subject in all_subjects.values():
+    subject.set_electrode_subset(['T1cIe11'])
     log(f"Adding subject {subject.subject_identifier} to electrode embeddings...", priority=0)
     this_subject_trials = [trial_id for (sub_id, trial_id) in training_config['train_subject_trials'] if sub_id == subject.subject_identifier]
     electrode_embeddings.add_subject(subject)
@@ -230,15 +231,19 @@ def calculate_loss_function(batch, output_accuracy=True):
     batch['electrode_index'] = batch['electrode_index'][:, random_electrodes]
 
     first_kernel = 16
-    batch['data'] = batch['data'].reshape(batch_size, n_electrodes, n_samples//first_kernel, first_kernel)
+    n_timebins = n_samples//first_kernel
+    batch['data'] = batch['data'].reshape(batch_size, n_electrodes, n_timebins, first_kernel)
 
+    masked_batch_data = batch['data'].clone()
 
-    bin_embed_transformed_data = bin_embed_transformer(batch['data'][:, :, :-future_bin_idx]) # shape: (batch_size, n_electrodes, n_timebins, sample_timebin_size*SR//n_downsample_factor)
-    if model_config['separate_unembed']:
-        bin_unembed_transformed_data = bin_unembed_transformer(batch['data'][:, :, future_bin_idx:]) # shape: (batch_size, n_electrodes, n_timebins, sample_timebin_size*SR//n_downsample_factor)
-    else:
-        bin_unembed_transformed_data = bin_embed_transformed_data.clone()[:, :, future_bin_idx:]
+    zero_time_indices = np.random.choice(n_timebins, size=int(n_timebins*(1-training_config['p_masked_timebins'])), replace=False)
+    masked_batch_data[:, :, zero_time_indices, :] = 0
 
+    bin_embed_transformed_data = bin_embed_transformer(masked_batch_data[:, :, :-future_bin_idx]) # shape: (batch_size, n_electrodes, n_timebins-future_bin_idx, d_model_bin)
+    
+    assert model_config['separate_unembed']
+    bin_unembed_transformed_data = bin_unembed_transformer(batch['data'][:, :, future_bin_idx:]) # shape: (batch_size, n_electrodes, n_timebins-future_bin_idx, d_model_bin)
+    
     output = bin_embed_transformed_data
     target = bin_unembed_transformed_data
     if training_config['normalize_features']:
@@ -355,21 +360,21 @@ del baseline_loss
 torch.cuda.empty_cache()
 gc.collect()
 
-# log(f"Evaluating model...", priority=0)
-# bin_embed_transformer.eval()
-# model.eval()
-# electrode_embeddings.eval()
-# eval_results = {}
-# eval_full_model = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, log_priority=1, quick_eval=cluster_config['quick_eval'], only_keys_containing='auroc/average')
-# eval_results.update(eval_full_model)
-# eval_bin_transformer = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, log_priority=1, quick_eval=cluster_config['quick_eval'], only_bin_transformer=True, only_keys_containing='auroc/average', key_prefix="bin_")
-# eval_results.update(eval_bin_transformer)
-# print("eval_full_model", eval_full_model)
-# print("eval_bin_transformer", eval_bin_transformer)
-# if wandb: wandb.log(eval_results, step=1)
-# del eval_full_model, eval_bin_transformer
-# torch.cuda.empty_cache()
-# gc.collect()
+log(f"Evaluating model...", priority=0)
+bin_embed_transformer.eval()
+model.eval()
+electrode_embeddings.eval()
+eval_results = {}
+eval_full_model = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, log_priority=1, quick_eval=cluster_config['quick_eval'], only_keys_containing='auroc/average')
+eval_results.update(eval_full_model)
+eval_bin_transformer = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, log_priority=1, quick_eval=cluster_config['quick_eval'], only_bin_transformer=True, only_keys_containing='auroc/average', key_prefix="bin_")
+eval_results.update(eval_bin_transformer)
+print("eval_full_model", eval_full_model)
+print("eval_bin_transformer", eval_bin_transformer)
+if wandb: wandb.log(eval_results, step=1)
+del eval_full_model, eval_bin_transformer
+torch.cuda.empty_cache()
+gc.collect()
 
 training_statistics_store = []
 for epoch_i in range(training_config['n_epochs']):

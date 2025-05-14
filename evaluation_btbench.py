@@ -92,15 +92,16 @@ class FrozenModelEvaluation_SS_SM():
                 batch_input = batch_input[:, self.all_subject_electrode_subset_indices[subject_identifier], :]
             if self.max_n_electrodes is not None:
                 every_nth_electrode = 2 * batch_input.shape[1] // self.max_n_electrodes
+                if every_nth_electrode == 0: every_nth_electrode = 1 # in case max_n_electrodes is larger than the number of electrodes
                 batch_input = batch_input[:, ::every_nth_electrode, :]
 
             # normalize the data
             batch_input = batch_input - torch.mean(batch_input, dim=[0, 2], keepdim=True)
             batch_input = batch_input / (torch.std(batch_input, dim=[0, 2], keepdim=True) + 1)
             #electrode_data = batch_input.reshape(bin_transformer(batch_input).shape) # 
-            electrode_data = bin_transformer(batch_input) # shape (batch_size, n_electrodes, n_samples)
 
             if not only_bin_transformer:
+                electrode_data = bin_transformer(batch_input) # shape (batch_size, n_electrodes, n_samples)
                 electrode_indices = self.all_subject_electrode_indices[subject_identifier].to(device, dtype=torch.long, non_blocking=True)
                 electrode_indices = electrode_indices.unsqueeze(0).expand(batch_input.shape[0], -1) # Add the batch dimension to the electrode indices
                 if self.all_subject_electrode_subset_indices is not None and subject_identifier in self.all_subject_electrode_subset_indices:
@@ -110,6 +111,7 @@ class FrozenModelEvaluation_SS_SM():
                 embeddings = electrode_embeddings.forward(electrode_indices)
                 features = model.generate_frozen_evaluation_features(electrode_data, embeddings, feature_aggregation_method=self.feature_aggregation_method)
             else:
+                electrode_data = bin_transformer.generate_frozen_evaluation_features(batch_input, None)
                 features = electrode_data.reshape(batch_input.shape[0], -1)
 
             #features = batch_input.reshape(batch_input.shape[0], -1)
@@ -134,15 +136,16 @@ class FrozenModelEvaluation_SS_SM():
                 batch_input = batch_input[:, self.all_subject_electrode_subset_indices[subject_identifier], :]
             if self.max_n_electrodes is not None:
                 every_nth_electrode = 2 * batch_input.shape[1] // self.max_n_electrodes
+                if every_nth_electrode == 0: every_nth_electrode = 1 # in case max_n_electrodes is larger than the number of electrodes
                 batch_input = batch_input[:, ::every_nth_electrode, :]
 
             # normalize the data
             batch_input = batch_input - torch.mean(batch_input, dim=[0, 2], keepdim=True)
             batch_input = batch_input / (torch.std(batch_input, dim=[0, 2], keepdim=True) + 1)
             #electrode_data = batch_input.reshape(bin_transformer(batch_input).shape) # bin_transformer(batch_input) # shape (batch_size, n_electrodes, n_samples)
-            electrode_data = bin_transformer(batch_input) # shape (batch_size, n_electrodes, n_samples)
 
             if not only_bin_transformer:
+                electrode_data = bin_transformer(batch_input) # shape (batch_size, n_electrodes, n_samples)
                 electrode_indices = self.all_subject_electrode_indices[subject_identifier].to(device, dtype=torch.long, non_blocking=True)
                 electrode_indices = electrode_indices.unsqueeze(0).expand(batch_input.shape[0], -1) # Add the batch dimension to the electrode indices
                 if self.all_subject_electrode_subset_indices is not None and subject_identifier in self.all_subject_electrode_subset_indices:
@@ -152,6 +155,7 @@ class FrozenModelEvaluation_SS_SM():
                 embeddings = electrode_embeddings.forward(electrode_indices)
                 features = model.generate_frozen_evaluation_features(electrode_data, embeddings, feature_aggregation_method=self.feature_aggregation_method)
             else:
+                electrode_data = bin_transformer.generate_frozen_evaluation_features(batch_input, None)
                 features = electrode_data.reshape(batch_input.shape[0], -1)
 
             #features = batch_input.reshape(batch_input.shape[0], -1)

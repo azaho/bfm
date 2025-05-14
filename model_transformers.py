@@ -200,7 +200,7 @@ class Transformer(BFModule):
         self.embed.weight.data = orthogonalize(self.embed.weight.data)
         self.output_proj.weight.data = orthogonalize(self.output_proj.weight.data)
 
-    def forward(self, x, attention_mask=None, positions=None, embeddings=None, strict_positions=False):
+    def forward(self, x, attention_mask=None, positions=None, embeddings=None, strict_positions=False, stop_at_block=None):
         # x is of shape (batch_size, seq_len, d_input)
         batch_size, seq_len, d_input = x.shape
 
@@ -240,8 +240,10 @@ class Transformer(BFModule):
                 cls_position = positions.max(dim=1, keepdim=True, device=positions.device)
                 positions = torch.cat([positions, cls_position], dim=1)
 
-        for block in self.blocks:
+        for block_i, block in enumerate(self.blocks):
             x = block(x, attention_mask=attention_mask, positions=positions)
+            if stop_at_block is not None and block_i+1 == stop_at_block:
+                return x
         
         x = self.output_proj(x) # shape: (batch_size, seq_len (+1), d_output)
 
