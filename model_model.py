@@ -49,9 +49,35 @@ class LinearBinTransformer(BFModule):
 
         return electrode_data
 
+class LinearKernelTransformer(BFModule):
+    def __init__(self, first_kernel=16, overall_sampling_rate=2048, sample_timebin_size=0.125, identity_init=True, reverse=False):
+        super(LinearKernelTransformer, self).__init__()
+        self.overall_sampling_rate = overall_sampling_rate
+        self.sample_timebin_size = sample_timebin_size
+        self.linear = nn.Linear(first_kernel, first_kernel, bias=False)
+        self.first_kernel = first_kernel
+
+        self.temperature_param = nn.Parameter(torch.tensor(0.0))
+
+        if identity_init:
+            self.linear.weight.data = torch.eye(first_kernel).to(self.device, dtype=self.dtype)
+            if reverse:
+                self.linear.weight.data = self.linear.weight.data.flip(dims=(0,))
+        
+    def forward(self, electrode_data):
+        # (batch_size, n_electrodes, n_samples)
+        batch_size, n_electrodes = electrode_data.shape[:2]
+        electrode_data = electrode_data.reshape(batch_size, n_electrodes, -1, self.first_kernel)
+        electrode_data = self.linear(electrode_data)
+        return electrode_data
+    
+    def generate_frozen_evaluation_features(self, electrode_data, embeddings, feature_aggregation_method='concat'):
+        batch_size = electrode_data.shape[0]
+        return self.forward(electrode_data).reshape(batch_size, -1)
+
 from model_transformers import Transformer
 class BinTransformer(BFModule):
-    def __init__(self, first_kernel=16, d_model=192, n_layers=5, n_heads=6, overall_sampling_rate=2048, sample_timebin_size=0.125, n_downsample_factor=1, identity_init=True):
+    def __init__(self, first_kernel=16, d_model=192, n_layers=5, n_heads=6, overall_sampling_rate=2048, sample_timebin_size=0.125, n_downsample_factor=1, identity_init=True, keep_kernel_dim=False):
         super(BinTransformer, self).__init__()
         self.transformer = Transformer(d_input=first_kernel//n_downsample_factor, d_model=d_model, d_output=first_kernel//n_downsample_factor, 
                                             n_layer=n_layers, n_head=n_heads, causal=True, 
@@ -59,19 +85,25 @@ class BinTransformer(BFModule):
         self.first_kernel = first_kernel
         self.n_downsample_factor = n_downsample_factor
         self.sample_timebin_size = sample_timebin_size
-        self.overall_sampling_rate = overall_sampling_rate
+        self.overall_sampling_rate = overall_sampling_rate  
+        self.keep_kernel_dim = keep_kernel_dim
     
     def forward(self, electrode_data):
         # (batch_size, n_electrodes, n_samples)
-        batch_size, n_electrodes, n_samples = electrode_data.shape
-        electrode_data = electrode_data.reshape(batch_size, n_electrodes, -1, int(self.overall_sampling_rate*self.sample_timebin_size))
-
-        batch_size, n_electrodes, n_timebins, sample_timebin_size = electrode_data.shape
-        electrode_data = electrode_data.reshape(batch_size, n_electrodes, n_timebins, -1, self.n_downsample_factor, self.first_kernel//self.n_downsample_factor)
-        electrode_data = electrode_data.reshape(batch_size, -1, self.first_kernel//self.n_downsample_factor)
+        batch_size, n_electrodes = electrode_data.shape[:2]
+        electrode_data = electrode_data.reshape(batch_size, n_electrodes, -1, self.n_downsample_factor, self.first_kernel//self.n_downsample_factor)
+        # Combine batch_size and n_electrodes dimensions
+        electrode_data = electrode_data.reshape(batch_size * n_electrodes, -1, self.first_kernel//self.n_downsample_factor)
+        #electrode_data = electrode_data.reshape(batch_size, -1, self.first_kernel//self.n_downsample_factor)
         electrode_data = self.transformer(electrode_data) 
-        electrode_data = electrode_data.reshape(batch_size, n_electrodes, n_timebins, -1, self.n_downsample_factor, self.first_kernel//self.n_downsample_factor).mean(axis=-2)
-        electrode_data = electrode_data.reshape(batch_size, n_electrodes, n_timebins, sample_timebin_size//self.n_downsample_factor)
+
+        electrode_data = electrode_data.reshape(batch_size, n_electrodes, -1, self.n_downsample_factor, self.first_kernel//self.n_downsample_factor).mean(dim=-2)
+        
+        if not self.keep_kernel_dim:
+            sample_timebin_size = int(self.overall_sampling_rate*self.sample_timebin_size)
+            electrode_data = electrode_data.reshape(batch_size, n_electrodes, -1, sample_timebin_size//self.n_downsample_factor)
+        else:
+            electrode_data = electrode_data.reshape(batch_size, n_electrodes, -1, self.first_kernel//self.n_downsample_factor)
         
         return electrode_data
     
