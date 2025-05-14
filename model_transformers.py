@@ -159,7 +159,7 @@ class Block(nn.Module):
         return x
 
 class Transformer(BFModule):
-    def __init__(self, d_input=64, d_model=192, d_output=192, n_layer=10, n_head=12, causal=True, rope=True, rope_base=1024, identity_init=True):
+    def __init__(self, d_input=64, d_model=192, d_output=192, n_layer=10, n_head=12, causal=True, rope=True, rope_base=1024):
         super().__init__()
 
         self.d_input = d_input
@@ -175,16 +175,8 @@ class Transformer(BFModule):
         self.blocks = nn.ModuleList([Block(n_layer, d_model, n_head, causal, rope, rope_base) for _ in range(n_layer)])
         self.output_proj = nn.Linear(d_model, d_output, bias=False)
 
-        self.residual_linear = nn.Linear(d_input, d_output, bias=False) if self.d_input > 0 else nn.Identity()
-
         #self.zero_init()  # Initialize weights to zero
         self.orthogonalize() # Orthogonal init
-
-        if identity_init:
-            self.output_proj.weight.data.zero_() # Init just the output to zero
-            self.residual_linear.weight.data = torch.eye(self.d_input)
-        else:
-            self.residual_linear.weight.data.zero_() # Init the residual linear to zero
     
     def zero_init(self):
         self.embed.weight.data.zero_()
@@ -197,8 +189,6 @@ class Transformer(BFModule):
     def forward(self, x, attention_mask=None, positions=None, embeddings=None, strict_positions=False, stop_at_block=None):
         # x is of shape (batch_size, seq_len, d_input)
         batch_size, seq_len, d_input = x.shape
-
-        x_original = x
 
         x = self.embed(x)  # shape: (batch_size, seq_len, d_model)
 
@@ -220,4 +210,4 @@ class Transformer(BFModule):
         
         x = self.output_proj(x) # shape: (batch_size, seq_len (+1), d_output)
 
-        return self.residual_linear(x_original) + x
+        return x

@@ -31,6 +31,7 @@ all_subjects = load_subjects(training_config['train_subject_trials'], training_c
 n_downsample_factor = 1
 assert n_downsample_factor == 1, "n_downsample_factor must be 1, not supported in the LinearBinTransformer class yet."
 
+first_kernel = 16
 log(f"Loading model...", priority=0)
 if model_config['bin_encoder'] == "linear":
     bin_embed_transformer = LinearBinTransformer(
@@ -40,25 +41,20 @@ if model_config['bin_encoder'] == "linear":
     )
 elif model_config['bin_encoder'] == "transformer":
     bin_embed_transformer = BinTransformer(
-        first_kernel=int(model_config['sample_timebin_size']*2048)//16, 
+        d_input=first_kernel,
         d_model=model_config['transformer']['d_model_bin'],
         n_layers=model_config['transformer']['n_layers_electrode'],
         n_heads=12,
         overall_sampling_rate=2048,
         sample_timebin_size=model_config['sample_timebin_size'],
-        n_downsample_factor=n_downsample_factor,
-        identity_init=model_config['init_identity'],
-        keep_kernel_dim=True
     ).to(device, dtype=model_config['dtype'])
     bin_unembed_transformer = bin_embed_transformer
     
 bin_unembed_transformer = bin_embed_transformer
 if model_config['separate_unembed']:
     bin_unembed_transformer = LinearKernelTransformer(
-        overall_sampling_rate=2048,
-        sample_timebin_size=model_config['sample_timebin_size'],
-        identity_init=model_config['init_identity'],
-        reverse=(training_config['future_bin_idx'] > 0)
+        d_input=first_kernel,
+        d_output=model_config['transformer']['d_model'],
     )
 bin_unembed_transformer = bin_unembed_transformer.to(device, dtype=model_config['dtype'])
 bin_embed_transformer = bin_embed_transformer.to(device, dtype=model_config['dtype'])
@@ -73,9 +69,8 @@ bin_embed_transformer = bin_embed_transformer.to(device, dtype=model_config['dty
 # ).to(device, dtype=model_config['dtype'])
 
 model = LinearKernelTransformer( # simple model just for now
-        overall_sampling_rate=2048,
-        sample_timebin_size=model_config['sample_timebin_size'],
-        identity_init=model_config['init_identity']
+        d_input=model_config['transformer']['d_model'],
+        d_output=model_config['transformer']['d_model'],
     ).to(device, dtype=model_config['dtype'])
 
 if model_config['electrode_embedding']['type'] == 'learned' or model_config['electrode_embedding']['type'] == 'zero':
@@ -118,11 +113,11 @@ electrode_embeddings = electrode_embeddings.to(device, dtype=model_config['dtype
 #     log(f"Subject {subject_identifier} has {len(electrode_subset)} temporal and parietal lobe electrodes", priority=0)
 
 eval_electrode_subset = {
-    #'btbank3': ['T1cIe11'],
+   # 'btbank3': ['T1cIe11'],
 }
 
 for subject in all_subjects.values():
-    subject.set_electrode_subset(['T1cIe11'])
+    #subject.set_electrode_subset(['T1cIe11'])
     log(f"Adding subject {subject.subject_identifier} to electrode embeddings...", priority=0)
     this_subject_trials = [trial_id for (sub_id, trial_id) in training_config['train_subject_trials'] if sub_id == subject.subject_identifier]
     electrode_embeddings.add_subject(subject)
@@ -440,7 +435,7 @@ for epoch_i in range(training_config['n_epochs']):
             **{f"batch_{k}": v.item() for k, v in loss_dict.items()}
         })
 
-        if batch_idx % 10 == 0:
+        if batch_idx % 40 == 0:
             losses_string = f" / ".join([f"{k.split('_')[1]}: {v:.4f}" for k, v in loss_dict.items() if 'accuracy' not in k])
             log(f"Epoch {epoch_i+1}/{training_config['n_epochs']}, Batch {batch_idx+1}/{len(train_dataloader)} ({subject_identifier}_{trial_id}), LR: {optimizers[0].param_groups[0]['lr']:.6f}, Loss: {loss.item():.4f} ({losses_string}), Temp {torch.exp(model.temperature_param).item():.4f}", priority=0)
         
@@ -467,12 +462,12 @@ for epoch_i in range(training_config['n_epochs']):
         accuracy_string = f" / ".join([f"{k.split('_')[1]}: {v:.4f}" for k, v in test_loss_dict.items() if 'accuracy' in k])
         log(f"Test loss: {eval_results['test_loss']:.4f} ({losses_string}), Accuracies: {accuracy_string}", priority=0)
         if (epoch_i+1) % cluster_config['eval_model_every_n_epochs'] == 0:
-            evaluation_results_strings = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, quick_eval=cluster_config['quick_eval'], only_keys_containing='auroc/average')
-            eval_results.update(evaluation_results_strings)
             evaluation_results_strings_bin_transformer = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, quick_eval=cluster_config['quick_eval'], only_bin_transformer=True, only_keys_containing='auroc/average', key_prefix="bin_")
             eval_results.update(evaluation_results_strings_bin_transformer)
-            print("eval_full_model", evaluation_results_strings)
-            print("eval_bin_transformer", evaluation_results_strings_bin_transformer)
+            log("eval_bin_transformer" + str(evaluation_results_strings_bin_transformer))
+            evaluation_results_strings = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, quick_eval=cluster_config['quick_eval'], only_keys_containing='auroc/average')
+            eval_results.update(evaluation_results_strings)
+            log("eval_full_model" + str(evaluation_results_strings))
             del evaluation_results_strings, evaluation_results_strings_bin_transformer
             torch.cuda.empty_cache()
             gc.collect()

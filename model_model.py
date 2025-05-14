@@ -50,24 +50,18 @@ class LinearBinTransformer(BFModule):
         return electrode_data
 
 class LinearKernelTransformer(BFModule):
-    def __init__(self, first_kernel=16, overall_sampling_rate=2048, sample_timebin_size=0.125, identity_init=True, reverse=False):
+    def __init__(self, d_input, d_output):
         super(LinearKernelTransformer, self).__init__()
-        self.overall_sampling_rate = overall_sampling_rate
-        self.sample_timebin_size = sample_timebin_size
-        self.linear = nn.Linear(first_kernel, first_kernel, bias=False)
-        self.first_kernel = first_kernel
+        self.d_input = d_input
+        self.d_output = d_output
+        self.linear = nn.Linear(d_input, d_output, bias=False)
 
         self.temperature_param = nn.Parameter(torch.tensor(0.0))
-
-        if identity_init:
-            self.linear.weight.data = torch.eye(first_kernel).to(self.device, dtype=self.dtype)
-            if reverse:
-                self.linear.weight.data = self.linear.weight.data.flip(dims=(0,))
         
     def forward(self, electrode_data):
         # (batch_size, n_electrodes, n_samples)
         batch_size, n_electrodes = electrode_data.shape[:2]
-        electrode_data = electrode_data.reshape(batch_size, n_electrodes, -1, self.first_kernel)
+        electrode_data = electrode_data.reshape(batch_size, n_electrodes, -1, self.d_input)
         electrode_data = self.linear(electrode_data)
         return electrode_data
     
@@ -77,41 +71,33 @@ class LinearKernelTransformer(BFModule):
 
 from model_transformers import Transformer
 class BinTransformer(BFModule):
-    def __init__(self, first_kernel=16, d_model=192, n_layers=5, n_heads=6, overall_sampling_rate=2048, sample_timebin_size=0.125, n_downsample_factor=1, identity_init=True, keep_kernel_dim=False):
+    def __init__(self, d_input, d_model=192, n_layers=5, n_heads=6, overall_sampling_rate=2048, sample_timebin_size=0.125):
         super(BinTransformer, self).__init__()
-        self.transformer = Transformer(d_input=first_kernel//n_downsample_factor, d_model=d_model, d_output=first_kernel//n_downsample_factor, 
+        self.transformer = Transformer(d_input=d_input, d_model=d_model, d_output=d_model, 
                                             n_layer=n_layers, n_head=n_heads, causal=True, 
-                                            rope=True, rope_base=int(overall_sampling_rate*sample_timebin_size)*n_downsample_factor//first_kernel, identity_init=identity_init)
-        self.first_kernel = first_kernel
+                                            rope=True, rope_base=int(overall_sampling_rate*sample_timebin_size))
         self.sample_timebin_size = sample_timebin_size
         self.overall_sampling_rate = overall_sampling_rate  
-        self.keep_kernel_dim = keep_kernel_dim
         self.n_layers = n_layers
+        self.d_input = d_input
+        self.d_model = d_model
     
     def forward(self, electrode_data):
         # (batch_size, n_electrodes, n_samples)
         batch_size, n_electrodes = electrode_data.shape[:2]
-        electrode_data = electrode_data.reshape(batch_size, n_electrodes, -1, self.first_kernel)
         # Combine batch_size and n_electrodes dimensions
-        electrode_data = electrode_data.reshape(batch_size * n_electrodes, -1, self.first_kernel)
-        #electrode_data = electrode_data.reshape(batch_size, -1, self.first_kernel//self.n_downsample_factor)
+        electrode_data = electrode_data.reshape(batch_size * n_electrodes, -1, self.d_input)
         electrode_data = self.transformer(electrode_data) 
 
-        electrode_data = electrode_data.reshape(batch_size, n_electrodes, -1, self.first_kernel)
-        
-        if not self.keep_kernel_dim:
-            sample_timebin_size = int(self.overall_sampling_rate*self.sample_timebin_size)
-            electrode_data = electrode_data.reshape(batch_size, n_electrodes, -1, sample_timebin_size)
-        
+        electrode_data = electrode_data.reshape(batch_size, n_electrodes, -1, self.d_model)
         return electrode_data
     
     def generate_frozen_evaluation_features(self, electrode_data, embeddings, feature_aggregation_method='concat'):
         # (batch_size, n_electrodes, n_samples)
         batch_size, n_electrodes = electrode_data.shape[:2]
-        electrode_data = electrode_data.reshape(batch_size, n_electrodes, -1, self.first_kernel)
+        electrode_data = electrode_data.reshape(batch_size, n_electrodes, -1, self.d_input)
         # Combine batch_size and n_electrodes dimensions
-        electrode_data = electrode_data.reshape(batch_size * n_electrodes, -1, self.first_kernel)
-        #electrode_data = electrode_data.reshape(batch_size, -1, self.first_kernel//self.n_downsample_factor)
+        electrode_data = electrode_data.reshape(batch_size * n_electrodes, -1, self.d_input)
         electrode_data = self.transformer(electrode_data, stop_at_block=self.n_layers) # shape: (batch_size * n_electrodes, n_timebins, d_model)
         
         electrode_data = electrode_data.reshape(batch_size, -1)
@@ -120,16 +106,15 @@ class BinTransformer(BFModule):
 
 from model_transformers import Transformer
 class GranularModel(BFModel):
-    def __init__(self, sample_timebin_size, d_model, n_layers=5, n_heads=12, identity_init=True, n_cls_tokens=0):
+    def __init__(self, d_input, d_model, n_layers=5, n_heads=12, identity_init=True, n_cls_tokens=0):
         super().__init__()
         self.d_model = d_model
-        self.sample_timebin_size = sample_timebin_size
         self.n_cls_tokens = n_cls_tokens
         self.n_layers = n_layers
 
-        self.transformer = Transformer(d_input=self.sample_timebin_size, d_model=d_model, d_output=self.sample_timebin_size, 
+        self.transformer = Transformer(d_input=d_input, d_model=d_model, d_output=d_model, 
                                             n_layer=n_layers, n_head=n_heads, causal=True, 
-                                            rope=True, identity_init=identity_init)
+                                            rope=True)
         self.temperature_param = nn.Parameter(torch.tensor(0.0))
         
         if n_cls_tokens > 0:
