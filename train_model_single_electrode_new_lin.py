@@ -187,7 +187,7 @@ from btbench.btbench_train_test_splits import generate_splits_SS_SM
 class ModelEvaluation_BTBench():
     def __init__(self, model, inverter, subject_trials, eval_names, batch_size=128, dtype=torch.float32, feature_aggregation_method='mean', 
                  mean_collapse_factor=1, start_neural_data_before_word_onset=0, end_neural_data_after_word_onset=2048, eval_electrode_indices=None, 
-                 n_samples_per_bin=1, lite=True, standardize=True):
+                 n_samples_per_bin=1, lite=True, standardize=True, regression_tol=1e-3, regression_solver='lbfgs'):
         self.model = model
         self.inverter = inverter
         self.subject_trials = subject_trials
@@ -202,6 +202,8 @@ class ModelEvaluation_BTBench():
         self.n_samples_per_bin = n_samples_per_bin
         self.lite = lite
         self.standardize = standardize
+        self.regression_tol = regression_tol
+        self.regression_solver = regression_solver
         self.subjects = {subject.subject_identifier: subject for subject, _ in subject_trials}
         
         # Create evaluation datasets
@@ -214,15 +216,25 @@ class ModelEvaluation_BTBench():
                                                lite=self.lite)
                 self.evaluation_datasets[(eval_name, subject.subject_identifier, trial_id)] = splits
 
-    def evaluate_on_dataset(self, train_dataset, test_dataset, electrode_index):
+    def evaluate_on_dataset(self, train_dataset, test_dataset, electrode_index, verbose=True):
+        if verbose:
+            log(f"Starting evaluation on dataset with electrode index {electrode_index}")
+            log(f"Creating dataloaders", indent=1)
+        
         train_dataloader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=False)
         test_dataloader = DataLoader(test_dataset, batch_size=self.batch_size, shuffle=False)
         
         device = next(self.model.parameters()).device
         
         # Get embeddings for train and test data
+        if verbose:
+            log(f"Processing training data ({len(train_dataset)} samples)", indent=1)
+        
         X_train, y_train = [], []
-        for batch_input, batch_label in train_dataloader:
+        for batch_idx, (batch_input, batch_label) in enumerate(train_dataloader):
+            if verbose and batch_idx % 10 == 0:
+                log(f"Processing training batch {batch_idx}/{len(train_dataloader)}", indent=2)
+                
             batch_input = batch_input.to(self.model.device, dtype=self.model.dtype)
             batch_size = batch_input.shape[0]
             window_size = batch_input.shape[2]
@@ -244,8 +256,15 @@ class ModelEvaluation_BTBench():
             elif self.feature_aggregation_method == 'concat':
                 X_train.append(x_embed.reshape(batch_size, -1).cpu().float().numpy())  # Concatenate across sequence length
             y_train.append(batch_label.numpy())        
+        
+        if verbose:
+            log(f"Processing test data ({len(test_dataset)} samples)", indent=1)
+            
         X_test, y_test = [], []
-        for batch_input, batch_label in test_dataloader:
+        for batch_idx, (batch_input, batch_label) in enumerate(test_dataloader):
+            if verbose and batch_idx % 10 == 0:
+                log(f"Processing test batch {batch_idx}/{len(test_dataloader)}", indent=2)
+                
             batch_input = batch_input.to(self.model.device, dtype=self.model.dtype)
             batch_size = batch_input.shape[0]
             window_size = batch_input.shape[2]
@@ -267,21 +286,32 @@ class ModelEvaluation_BTBench():
                 X_test.append(x_embed.reshape(batch_size, -1).cpu().float().numpy())
             y_test.append(batch_label.numpy())
 
+        if verbose:
+            log("Concatenating and preparing data for classification", indent=1)
+            
         X_train = np.concatenate(X_train)
         y_train = np.concatenate(y_train)
         X_test = np.concatenate(X_test)
         y_test = np.concatenate(y_test)
 
         if self.standardize:
+            if verbose:
+                log("Standardizing features", indent=2)
             scaler = StandardScaler()
             X_train = scaler.fit_transform(X_train)
             X_test = scaler.transform(X_test)
 
         # Train logistic regression classifier
-        clf = LogisticRegression(random_state=42, max_iter=10000)
+        if verbose:
+            log(f"Training logistic regression classifier with {X_train.shape[1]} features", indent=1)
+            
+        clf = LogisticRegression(random_state=42, max_iter=10000, tol=self.regression_tol, solver=self.regression_solver)
         clf.fit(X_train, y_train)
 
         # Get predictions and calculate metrics
+        if verbose:
+            log("Calculating evaluation metrics", indent=1)
+            
         test_probs = clf.predict_proba(X_test)
         accuracy = clf.score(X_test, y_test)
         
@@ -295,6 +325,9 @@ class ModelEvaluation_BTBench():
             auroc = sklearn.metrics.roc_auc_score(y_test_onehot, test_probs, multi_class='ovr', average='macro')
         else:
             auroc = sklearn.metrics.roc_auc_score(y_test_onehot, test_probs)
+        
+        if verbose:
+            log(f"Evaluation complete - AUROC: {auroc:.4f}, Accuracy: {accuracy:.4f}", indent=1)
             
         return auroc, accuracy
 
@@ -313,6 +346,7 @@ class ModelEvaluation_BTBench():
                             auroc, acc = self.evaluate_on_dataset(train_dataset, test_dataset, electrode_index)
                             auroc_list.append(auroc)
                             acc_list.append(acc)
+                            break
                         
                         mean_auroc = np.mean(auroc_list)
                         mean_acc = np.mean(acc_list)

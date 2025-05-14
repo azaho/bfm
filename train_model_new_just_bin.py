@@ -366,21 +366,28 @@ del baseline_loss
 torch.cuda.empty_cache()
 gc.collect()
 
-# log(f"Evaluating model...", priority=0)
-# bin_embed_transformer.eval()
-# model.eval()
-# electrode_embeddings.eval()
-# eval_results = {}
-# eval_full_model = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, log_priority=1, quick_eval=cluster_config['quick_eval'], only_keys_containing='auroc/average')
-# eval_results.update(eval_full_model)
-# eval_bin_transformer = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, log_priority=1, quick_eval=cluster_config['quick_eval'], only_bin_transformer=True, only_keys_containing='auroc/average', key_prefix="bin_")
-# eval_results.update(eval_bin_transformer)
-# print("eval_full_model", eval_full_model)
-# print("eval_bin_transformer", eval_bin_transformer)
-# if wandb: wandb.log(eval_results, step=1)
-# del eval_full_model, eval_bin_transformer
-# torch.cuda.empty_cache()
-# gc.collect()
+log(f"Evaluating model...", priority=0)
+bin_embed_transformer.eval()
+model.eval()
+electrode_embeddings.eval()
+eval_results = {}
+
+eval_raw = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, quick_eval=cluster_config['quick_eval'], only_keys_containing='auroc/average', raw_data=True, key_prefix="raw_")
+eval_results.update(eval_raw)
+print("eval_raw", eval_raw)
+
+eval_bin_transformer = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, quick_eval=cluster_config['quick_eval'], only_bin_transformer=True, only_keys_containing='auroc/average', key_prefix="bin_")
+eval_results.update(eval_bin_transformer)
+print("eval_bin_transformer", eval_bin_transformer)
+
+eval_full_model = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, quick_eval=cluster_config['quick_eval'], only_keys_containing='auroc/average')
+print("eval_full_model", eval_full_model)
+eval_results.update(eval_full_model)
+
+if wandb: wandb.log(eval_results, step=1)
+del eval_full_model, eval_bin_transformer
+torch.cuda.empty_cache()
+gc.collect()
 
 training_statistics_store = []
 for epoch_i in range(training_config['n_epochs']):
@@ -433,11 +440,11 @@ for epoch_i in range(training_config['n_epochs']):
             **{f"batch_{k}": v.item() for k, v in loss_dict.items()}
         })
 
-        if batch_idx % 1 == 0:
+        if batch_idx % 10 == 0:
             losses_string = f" / ".join([f"{k.split('_')[1]}: {v:.4f}" for k, v in loss_dict.items() if 'accuracy' not in k])
             log(f"Epoch {epoch_i+1}/{training_config['n_epochs']}, Batch {batch_idx+1}/{len(train_dataloader)} ({subject_identifier}_{trial_id}), LR: {optimizers[0].param_groups[0]['lr']:.6f}, Loss: {loss.item():.4f} ({losses_string}), Temp {torch.exp(model.temperature_param).item():.4f}", priority=0)
         
-        if batch_idx % 10 == 0:
+        if batch_idx % 20 == 0:
             del loss_dict, loss
             torch.cuda.empty_cache()
             gc.collect()
@@ -460,9 +467,9 @@ for epoch_i in range(training_config['n_epochs']):
         accuracy_string = f" / ".join([f"{k.split('_')[1]}: {v:.4f}" for k, v in test_loss_dict.items() if 'accuracy' in k])
         log(f"Test loss: {eval_results['test_loss']:.4f} ({losses_string}), Accuracies: {accuracy_string}", priority=0)
         if (epoch_i+1) % cluster_config['eval_model_every_n_epochs'] == 0:
-            evaluation_results_strings = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, log_priority=1, quick_eval=cluster_config['quick_eval'], only_keys_containing='auroc/average')
+            evaluation_results_strings = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, quick_eval=cluster_config['quick_eval'], only_keys_containing='auroc/average')
             eval_results.update(evaluation_results_strings)
-            evaluation_results_strings_bin_transformer = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, log_priority=1, quick_eval=cluster_config['quick_eval'], only_bin_transformer=True, only_keys_containing='auroc/average', key_prefix="bin_")
+            evaluation_results_strings_bin_transformer = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, quick_eval=cluster_config['quick_eval'], only_bin_transformer=True, only_keys_containing='auroc/average', key_prefix="bin_")
             eval_results.update(evaluation_results_strings_bin_transformer)
             print("eval_full_model", evaluation_results_strings)
             print("eval_bin_transformer", evaluation_results_strings_bin_transformer)
