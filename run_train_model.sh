@@ -21,7 +21,7 @@ train_subject_trial_options=(
     "btbank3_1"
 )
 eval_subject_trials="btbank3_0" #,btbank3_1,btbank3_2"
-random_string_options=("BBFM_XXXt")
+random_string_options=("BBFM_2C_X")
 
 max_n_electrodes_options=(45) #(1 2 4 8 16 32 64 124)
 weight_decay_options=(0.0)
@@ -94,7 +94,7 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
     echo "Job $((i+1)) - RS: $random_string, NES: $max_n_electrodes, WD: $weight_decay, LRS: $lr_schedule, WSS: $warmup_steps, II: $init_identity, FBIN: $future_bin_idx, BE: $bin_encoder, SE: $separate_unembed, UT: $use_temperature_param, SA: $show_a_embedding, SB: $show_b_embedding, PMT: $p_masked_timebins, MTP: $max_temperature_param, NLE: $n_layers_electrode, DMO: $d_model"
     
     # note: change train_model_fbi_combined.py to train_model.py for the non-combined version
-    python -u train_model_new.py  --cache_subjects 1 \
+    python -u train_model_new_just_bin.py  --cache_subjects 1 \
         --num_workers_dataloaders 4 \
         --batch_size 100 \
         --random_string $random_string \

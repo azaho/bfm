@@ -128,6 +128,7 @@ def parse_configs_from_args(training_config, model_config, cluster_config):
     parser.add_argument('--p_show_b_embedding', type=float, default=None, help='Proportion of B embedding to show')
     parser.add_argument('--separate_unembed', type=int, default=None, help='Whether to use separate unembed')
     parser.add_argument('--p_masked_timebins', type=float, default=None, help='Proportion of masked timebins')
+    parser.add_argument('--first_kernel', type=int, default=None, help='First kernel')
 
     # Training arguments
     parser.add_argument('--batch_size', type=int, default=None, help='Batch size for training')
@@ -274,6 +275,8 @@ def parse_configs_from_args(training_config, model_config, cluster_config):
         training_config['use_temperature_param'] = bool(args.use_temperature_param)
     if args.warmup_steps is not None:
         training_config['warmup_steps'] = args.warmup_steps
+    if args.first_kernel is not None:
+        model_config['first_kernel'] = args.first_kernel
 
 max_log_priority = 1
 def log(message, priority=0, indent=0):
@@ -380,6 +383,8 @@ def update_dir_name(model_config, training_config, cluster_config):
     # dir_name += f"_lr{training_config['learning_rate']}"
     if training_config['optimizer'] != 'Muon':
         dir_name += f"_opt{training_config['optimizer']}"
+    if model_config['first_kernel'] != 32:
+        dir_name += f"_fk{model_config['first_kernel']}"
     # if training_config['lr_schedule'] != "None":
     #     dir_name += f"_lr{training_config['lr_schedule'][0].upper()}"
     # if training_config['warmup_steps'] != 0:
