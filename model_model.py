@@ -75,7 +75,7 @@ class BinTransformer(BFModule):
         super(BinTransformer, self).__init__()
         self.transformer = Transformer(d_input=d_input, d_model=d_model, d_output=d_model, 
                                             n_layer=n_layers, n_head=n_heads, causal=True, 
-                                            rope=True, rope_base=int(overall_sampling_rate*sample_timebin_size))
+                                            rope=True, rope_base=128)
         self.sample_timebin_size = sample_timebin_size
         self.overall_sampling_rate = overall_sampling_rate  
         self.n_layers = n_layers
@@ -106,15 +106,17 @@ class BinTransformer(BFModule):
 
 from model_transformers import Transformer
 class GranularModel(BFModel):
-    def __init__(self, d_input, d_model, n_layers=5, n_heads=12, identity_init=True, n_cls_tokens=0):
+    def __init__(self, d_input, d_model, d_output, n_layers=5, n_heads=12, identity_init=True, n_cls_tokens=0):
         super().__init__()
         self.d_model = d_model
         self.n_cls_tokens = n_cls_tokens
         self.n_layers = n_layers
+        self.d_input = d_input
+        self.d_output = d_output
 
-        self.transformer = Transformer(d_input=d_input, d_model=d_model, d_output=d_model, 
+        self.transformer = Transformer(d_input=d_input, d_model=d_model, d_output=d_output, 
                                             n_layer=n_layers, n_head=n_heads, causal=True, 
-                                            rope=True)
+                                            rope=True, rope_base=128)
         self.temperature_param = nn.Parameter(torch.tensor(0.0))
         
         if n_cls_tokens > 0:
@@ -169,6 +171,7 @@ class GranularModel(BFModel):
     
     def generate_frozen_evaluation_features(self, electrode_data, embeddings, feature_aggregation_method='concat', just_return_cls_token=False):
         batch_size, n_electrodes, n_timebins, d_model = electrode_data.shape
+        electrode_data = electrode_data.reshape(batch_size, n_electrodes, -1, self.d_input) # if the input was passed without properly reshaping, do it here.
         #if just_return_cls_token is None: just_return_cls_token = (self.n_cls_tokens > 0)
         assert not just_return_cls_token or self.n_cls_tokens > 0, "Cannot return CLS tokens if n_cls_tokens is 0"
 
