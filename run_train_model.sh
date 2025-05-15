@@ -21,7 +21,7 @@ train_subject_trial_options=(
     "btbank3_1"
 )
 eval_subject_trials="btbank3_0" #,btbank3_1,btbank3_2"
-random_string_options=("BBFM_2C_X")
+random_string_options=("BBFM_2C_X2")
 
 max_n_electrodes_options=(45) #(1 2 4 8 16 32 64 124)
 weight_decay_options=(0.0)
@@ -30,10 +30,10 @@ warmup_steps_options=(100) # XXX going back to fast warmup
 init_identity_options=(0)
 future_bin_idx_options=(1)
 bin_encoder_options=("transformer") # "transformer")
-use_temperature_param_options=(0)
+use_temperature_param_options=(1)
 show_a_embedding_options=(0.0)
 show_b_embedding_options=(1.0)
-separate_unembed_options=(0 1)
+separate_unembed_options=(1)
 p_masked_timebins_options=(0.0 0.5)
 max_temperature_param_options=(1000.0)
 n_layers_electrode_options=(5)
