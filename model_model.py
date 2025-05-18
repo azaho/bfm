@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from model_transformers import BFModule
-
+import numpy as np
 class BFModel(BFModule):
     """Base model class for brain-feature models.
     
@@ -71,11 +71,11 @@ class LinearKernelTransformer(BFModule):
 
 from model_transformers import Transformer
 class BinTransformer(BFModule):
-    def __init__(self, d_input, d_model=192, n_layers=5, n_heads=6, overall_sampling_rate=2048, sample_timebin_size=0.125):
+    def __init__(self, d_input, d_model=192, n_layers=5, n_heads=6, overall_sampling_rate=2048, sample_timebin_size=0.125, dropout=0.1):
         super(BinTransformer, self).__init__()
         self.transformer = Transformer(d_input=d_input, d_model=d_model, d_output=d_model, 
                                             n_layer=n_layers, n_head=n_heads, causal=True, 
-                                            rope=True, rope_base=128)
+                                            rope=True, rope_base=128, dropout=dropout)
         self.sample_timebin_size = sample_timebin_size
         self.overall_sampling_rate = overall_sampling_rate  
         self.n_layers = n_layers
@@ -98,15 +98,94 @@ class BinTransformer(BFModule):
         electrode_data = electrode_data.reshape(batch_size, n_electrodes, -1, self.d_input)
         # Combine batch_size and n_electrodes dimensions
         electrode_data = electrode_data.reshape(batch_size * n_electrodes, -1, self.d_input)
+        electrode_data = electrode_data.reshape(batch_size, -1, self.d_input)
         electrode_data = self.transformer(electrode_data, stop_at_block=self.n_layers) # shape: (batch_size * n_electrodes, n_timebins, d_model)
         
         electrode_data = electrode_data.reshape(batch_size, -1)
         return electrode_data
 
+class FFTaker(BFModule):
+    def __init__(self, d_input, d_model=192, max_frequency_bin=64, power=True, output_transform=False):
+        super(FFTaker, self).__init__()
+        self.max_frequency_bin = max_frequency_bin
+        self.power = power
+        self.d_input = d_input
+        self.d_model = d_model
+        # Transform FFT output to match expected output dimension
+        self.output_transform = nn.Identity() if not output_transform else nn.Linear(max_frequency_bin if power else 2*max_frequency_bin, 
+                                                                            d_model)
+    
+    def forward(self, electrode_data, p_mask_frequencies=0, return_mask_frequency_indices=False):
+        # electrode_data is of shape (batch_size, n_electrodes, n_samples)
+        batch_size, n_electrodes = electrode_data.shape[:2]
+        electrode_data = electrode_data.reshape(batch_size, n_electrodes, -1, self.d_input)
+
+        batch_size, n_electrodes, n_timebins, samples_per_bin = electrode_data.shape
+        
+        # Calculate FFT for each timebin
+        x = electrode_data.reshape(-1, samples_per_bin)
+        x = x.to(dtype=torch.float32)  # Convert to float32 for FFT
+        x = torch.fft.rfft(x, dim=-1)  # Using rfft for real-valued input
+
+        # Pad or trim to max_frequency_bin dimension
+        if x.shape[1] < self.max_frequency_bin:
+            x = torch.nn.functional.pad(x, (0, self.max_frequency_bin - x.shape[1]))
+        else:
+            x = x[:, :self.max_frequency_bin]
+
+        x = x.reshape(batch_size, n_electrodes, n_timebins, -1)  # shape: (batch_size, n_electrodes, n_timebins, max_frequency_bin)
+        
+        if self.power:
+            # Calculate magnitude (equivalent to scipy.signal.stft's magnitude)
+            x = torch.abs(x)
+            # Convert to power
+            x = torch.log(x + 1e-5)
+        else:
+            x = torch.cat([torch.real(x), torch.imag(x)], dim=-1)  # shape: (batch_size, n_electrodes, n_timebins, 2*max_frequency_bin)
+
+        # Batchnorm after taking FFT
+        x = x - x.mean(dim=[0, 2], keepdim=True)
+        x = x / (x.std(dim=[0, 2], keepdim=True) + 1e-5)
+
+        n_frequencies = x.shape[-1]
+        mask_frequency_indices = np.random.choice(n_frequencies, size=int(np.ceil(n_frequencies*p_mask_frequencies)), replace=False)
+        x[:, :, :, mask_frequency_indices] = 0
+        
+        # Transform to match expected output dimension
+        x = self.output_transform(x)  # shape: (batch_size, n_electrodes, n_timebins, first_kernel//n_downsample_factor)
+        
+        if return_mask_frequency_indices:
+            return x.to(dtype=electrode_data.dtype), mask_frequency_indices  # Convert back to original dtype
+        else:
+            return x.to(dtype=electrode_data.dtype)
+class BrainBERT(BFModule):
+    def __init__(self, d_input=-1, d_model=192, d_output=192, n_layers=4, n_heads=8, dropout=0.1):
+        super().__init__()
+        self.d_model = d_model
+        self.n_layers = n_layers
+        self.d_output = d_output
+        self.d_input = d_input
+
+        self.transformer = Transformer(d_input=d_input, d_model=d_model, d_output=d_output, 
+                                            n_layer=n_layers, n_head=n_heads, causal=False, 
+                                            rope=True, rope_base=128, dropout=dropout)
+        self.temperature_param = nn.Parameter(torch.tensor(0.0))
+    
+    def forward(self, electrode_data, p_mask_freqencies=0):
+        batch_size, n_electrodes = electrode_data.shape[:2]
+        electrode_data = electrode_data.reshape(batch_size * n_electrodes, -1, self.d_input)
+        electrode_data = self.transformer(electrode_data)
+        return electrode_data.reshape(batch_size, n_electrodes, -1, self.d_output)
+    
+    def generate_frozen_evaluation_features(self, electrode_data, embeddings, feature_aggregation_method='concat'):
+        batch_size = electrode_data.shape[0]
+        electrode_data = self.forward(electrode_data)
+        return electrode_data.reshape(batch_size, -1) if feature_aggregation_method == 'concat' else electrode_data.mean(dim=[1, 2])
+        
 
 from model_transformers import Transformer
 class GranularModel(BFModel):
-    def __init__(self, d_input, d_model, d_output, n_layers=5, n_heads=12, identity_init=True, n_cls_tokens=0):
+    def __init__(self, d_input, d_model, d_output, n_layers=5, n_heads=12, identity_init=True, n_cls_tokens=0, dropout=0.1):
         super().__init__()
         self.d_model = d_model
         self.n_cls_tokens = n_cls_tokens
@@ -116,7 +195,7 @@ class GranularModel(BFModel):
 
         self.transformer = Transformer(d_input=d_input, d_model=d_model, d_output=d_output, 
                                             n_layer=n_layers, n_head=n_heads, causal=True, 
-                                            rope=True, rope_base=128)
+                                            rope=True, rope_base=128, dropout=dropout)
         self.temperature_param = nn.Parameter(torch.tensor(0.0))
         
         if n_cls_tokens > 0:

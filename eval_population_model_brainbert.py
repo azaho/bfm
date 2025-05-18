@@ -87,54 +87,31 @@ cluster_config = unconvert_dtypes(model_dict['cluster_config'])
 
 n_downsample_factor = 1
 
-from model_model import LinearBinTransformer, BinTransformer, LinearKernelTransformer
-# log(f"Loading model...", priority=0)
-# if model_config['bin_encoder'] == "linear":
-#     bin_embed_transformer = LinearBinTransformer(
-#         overall_sampling_rate=2048,
-#         sample_timebin_size=model_config['sample_timebin_size'],
-#         identity_init=model_config['init_identity']
-#     )
-# elif model_config['bin_encoder'] == "transformer":
-#     bin_embed_transformer = BinTransformer(
-#         d_input=model_config['first_kernel'],
-#         d_model=model_config['transformer']['d_model'],
-#         n_layers=model_config['transformer']['n_layers_electrode'],
-#         n_heads=12,
-#         overall_sampling_rate=2048,
-#         sample_timebin_size=model_config['sample_timebin_size'],
-#     ).to(device, dtype=model_config['dtype'])
-#     bin_unembed_transformer = bin_embed_transformer
-    
-# bin_unembed_transformer = bin_embed_transformer
-# if model_config['separate_unembed']:
-#     bin_unembed_transformer = LinearKernelTransformer(
-#         d_input=model_config['first_kernel'],
-#         d_output=model_config['transformer']['d_model'],
-#     )
-# bin_unembed_transformer = bin_unembed_transformer.to(device, dtype=model_config['dtype'])
-# bin_embed_transformer = bin_embed_transformer.to(device, dtype=model_config['dtype'])
-
+from model_model import FFTaker, BrainBERT, LinearKernelTransformer
 log(f"Loading model...", priority=0)
-if model_config['bin_encoder'] == "linear":
-    bin_embed_transformer = LinearBinTransformer(
-        overall_sampling_rate=2048,
-        sample_timebin_size=model_config['sample_timebin_size'],
-        identity_init=model_config['init_identity']
-    )
-elif model_config['bin_encoder'] == "transformer":
-    bin_embed_transformer = BinTransformer(
+if model_config['electrode_embedding']['spectrogram']:
+    bin_embed_transformer = FFTaker(
         d_input=model_config['first_kernel'],
         d_model=model_config['transformer']['d_model'],
-        n_layers=model_config['transformer']['n_layers_electrode'],
-        n_heads=12,
-        overall_sampling_rate=2048,
-        sample_timebin_size=model_config['sample_timebin_size'],
-    ).to(device, dtype=model_config['dtype'])
-    bin_unembed_transformer = bin_embed_transformer
+        max_frequency_bin=model_config['max_frequency_bin']
+    )
+else:
+    bin_embed_transformer = torch.nn.Identity()
+
+brainbert_d_input = model_config['first_kernel'] if not model_config['electrode_embedding']['spectrogram'] else model_config['max_frequency_bin']
+model = BrainBERT(
+    d_input=brainbert_d_input,
+    d_model=model_config['transformer']['d_model'],
+    d_output=model_config['transformer']['d_model'] if model_config['separate_unembed'] else brainbert_d_input,
+    n_layers=model_config['transformer']['n_layers_electrode'],
+    n_heads=model_config['transformer']['n_heads'],
+    dropout=model_config['transformer']['dropout']
+).to(device, dtype=model_config['dtype'])
+
 bin_embed_transformer = bin_embed_transformer.to(device, dtype=model_config['dtype'])
 
 bin_embed_transformer.load_state_dict(model_dict['bin_embed_transformer_state_dict'])
+model.load_state_dict(model_dict['model_state_dict'])
 
 def get_model_features(x, fs=2048, max_batch_size=100):
     """
@@ -152,12 +129,22 @@ def get_model_features(x, fs=2048, max_batch_size=100):
     x = x - torch.mean(x, dim=[0, 2], keepdim=True)
     x = x / (torch.std(x, dim=[0, 2], keepdim=True) + 1)
 
+
     with torch.no_grad():
         for i in range(0, batch_size, max_batch_size):
             log(f"Processing batch {i//max_batch_size+1} of {(batch_size-1)//max_batch_size+1}", priority=3, indent=2)
             batch_x = x[i:i+max_batch_size].to(device, dtype=model_config['dtype']) # shape: (batch_i, n_channels, n_samples)
+            batch_x_size = batch_x.shape[0]
+            batch_x = batch_x.reshape(batch_x_size, n_channels, -1, model_config['first_kernel'])
 
-            electrode_data = bin_embed_transformer(batch_x) # shape: (batch_i, n_channels, n_timebins, sample_timebin_size)
+            if model_config['electrode_embedding']['spectrogram']:
+                bin_embed_transformed_data, masked_frequency_indices = bin_embed_transformer(batch_x, p_mask_frequencies=0, return_mask_frequency_indices=True) # shape: (batch_size, n_electrodes, n_timebins, d_model)
+            else:
+                bin_embed_transformed_data = bin_embed_transformer(batch_x) # shape: (batch_size, n_electrodes, n_timebins, d_model or max_frequency_bin or first_kernel)
+
+            model_output = model(bin_embed_transformed_data) # shape: (batch_size, n_electrodes, n_timebins, d_model or max_frequency_bin or first_kernel)
+            electrode_data = model_output
+
             batch_i, n_channels, n_timebins, sample_timebin_size = electrode_data.shape
 
             log(f"Converting to numpy", priority=4, indent=3)

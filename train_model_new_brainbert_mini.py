@@ -6,7 +6,7 @@ from torch.amp import autocast, GradScaler, autocast_mode
 import gc
 
 from muon import Muon
-from model_model import GranularModel, LinearBinTransformer, BinTransformer, LinearKernelTransformer
+from model_model import GranularModel, LinearBinTransformer, BinTransformer, LinearKernelTransformer, FFTaker, BrainBERT
 from model_electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit
 from dataset import load_dataloaders, load_subjects
 from evaluation_btbench import FrozenModelEvaluation_SS_SM
@@ -32,42 +32,38 @@ n_downsample_factor = 1
 assert n_downsample_factor == 1, "n_downsample_factor must be 1, not supported in the LinearBinTransformer class yet."
 
 log(f"Loading model...", priority=0)
-if model_config['bin_encoder'] == "linear":
-    bin_embed_transformer = LinearBinTransformer(
-        overall_sampling_rate=2048,
-        sample_timebin_size=model_config['sample_timebin_size'],
-        identity_init=model_config['init_identity']
-    )
-elif model_config['bin_encoder'] == "transformer":
-    bin_embed_transformer = BinTransformer(
+if model_config['electrode_embedding']['spectrogram']:
+    bin_embed_transformer = FFTaker(
         d_input=model_config['first_kernel'],
         d_model=model_config['transformer']['d_model'],
-        n_layers=model_config['transformer']['n_layers_electrode'],
-        n_heads=12,
-        overall_sampling_rate=2048,
-        sample_timebin_size=model_config['sample_timebin_size'],
-        dropout=model_config['transformer']['dropout']
-    ).to(device, dtype=model_config['dtype'])
-    bin_unembed_transformer = bin_embed_transformer
-    
-bin_unembed_transformer = bin_embed_transformer
-if model_config['separate_unembed']:
-    bin_unembed_transformer = LinearKernelTransformer(
-        d_input=model_config['first_kernel'],
-        d_output=model_config['transformer']['d_model'],
+        max_frequency_bin=model_config['max_frequency_bin']
     )
 else:
-    bin_unembed_transformer = torch.nn.Identity()
+    bin_embed_transformer = torch.nn.Identity()
+    
+if model_config['electrode_embedding']['spectrogram']:
+    bin_unembed_transformer = FFTaker(
+        d_input=model_config['first_kernel'],
+        d_model=model_config['transformer']['d_model'],
+        max_frequency_bin=model_config['max_frequency_bin'],
+        output_transform=model_config['separate_unembed']
+    )
+else:
+    bin_unembed_transformer = torch.nn.Identity() if not model_config['separate_unembed'] else LinearKernelTransformer(
+                                                                                                    d_input=model_config['first_kernel'],
+                                                                                                    d_output=model_config['transformer']['d_model'],
+                                                                                                )
+    
 bin_unembed_transformer = bin_unembed_transformer.to(device, dtype=model_config['dtype'])
 bin_embed_transformer = bin_embed_transformer.to(device, dtype=model_config['dtype'])
 
-model = GranularModel(
-    model_config['transformer']['d_model'] * model_config['second_kernel'],
-    model_config['transformer']['d_model'], 
-    model_config['transformer']['d_model'] * model_config['second_kernel'] if model_config['separate_unembed'] else model_config['first_kernel'] * model_config['second_kernel'],
-    n_layers=model_config['transformer']['n_layers_time'],
+brainbert_d_input = model_config['first_kernel'] if not model_config['electrode_embedding']['spectrogram'] else model_config['max_frequency_bin']
+model = BrainBERT(
+    d_input=brainbert_d_input,
+    d_model=model_config['transformer']['d_model'],
+    d_output=model_config['transformer']['d_model'] if model_config['separate_unembed'] else brainbert_d_input,
+    n_layers=model_config['transformer']['n_layers_electrode'],
     n_heads=model_config['transformer']['n_heads'],
-    n_cls_tokens=0,
     dropout=model_config['transformer']['dropout']
 ).to(device, dtype=model_config['dtype'])
 
@@ -215,7 +211,7 @@ def calculate_loss_function(batch, output_accuracy=True):
     # batch['data'] shape: (batch_size, n_electrodes, n_timebins)
     # batch['electrode_index'] shape: (batch_size, n_electrodes)
     losses = {}
-    def _add_to_loss(output, target, loss_suffix):
+    def _add_to_loss_contrastive(output, target, loss_suffix):
         if training_config['normalize_features']:
             output_ = output / (torch.norm(output, dim=-1, keepdim=True) + 0.001)
             target_ = target / (torch.norm(target, dim=-1, keepdim=True) + 0.001)
@@ -227,6 +223,13 @@ def calculate_loss_function(batch, output_accuracy=True):
         losses[f'contrastive_{loss_suffix}'] = loss_bin
         if output_accuracy:
             accuracy_bin = (similarity[:, :, :, :].view(-1, batch_size).argmax(dim=-1) == expanded_arange_bin).float().mean()
+            losses[f'accuracy_{loss_suffix}'] = accuracy_bin
+        return losses
+    def _add_to_loss_l2(output, target, loss_suffix):
+        loss = (output-target).pow(2).mean()
+        losses[f'l2_{loss_suffix}'] = loss
+        if output_accuracy:
+            accuracy_bin = torch.tensor(0.0)
             losses[f'accuracy_{loss_suffix}'] = accuracy_bin
         return losses
 
@@ -243,49 +246,32 @@ def calculate_loss_function(batch, output_accuracy=True):
     batch['data'] = batch['data'].reshape(batch_size, n_electrodes, n_timebins, model_config['first_kernel'])
 
     masked_batch_data = batch['data'].clone()
-
-    zero_time_indices = np.random.choice(n_timebins, size=int(n_timebins*training_config['p_masked_timebins']), replace=False)
+    zero_time_indices = np.random.choice(n_timebins-future_bin_idx, size=int((n_timebins-future_bin_idx)*training_config['p_masked_timebins']), replace=False)
     mask = torch.ones_like(masked_batch_data)
     mask[:, :, zero_time_indices, :] = 0
     masked_batch_data = masked_batch_data * mask
 
-    bin_embed_transformed_data = bin_embed_transformer(masked_batch_data) # shape: (batch_size, n_electrodes, n_timebins, d_model)
-    bin_unembed_transformed_data = bin_unembed_transformer(batch['data']) # shape: (batch_size, n_electrodes, n_timebins, d_model or first_kernel)
+    if model_config['electrode_embedding']['spectrogram']:
+        bin_embed_transformed_data, masked_frequency_indices = bin_embed_transformer(masked_batch_data, p_mask_frequencies=training_config['p_masked_frequency_bins'], return_mask_frequency_indices=True) # shape: (batch_size, n_electrodes, n_timebins, d_model)
+    else:
+        bin_embed_transformed_data = bin_embed_transformer(masked_batch_data) # shape: (batch_size, n_electrodes, n_timebins, d_model or max_frequency_bin or first_kernel)
+    if model_config['electrode_embedding']['spectrogram']:
+        bin_unembed_transformed_data = bin_unembed_transformer(batch['data'], p_mask_frequencies=0) # shape: (batch_size, n_electrodes, n_timebins, d_model or max_frequency_bin or first_kernel)
+    else:
+        bin_unembed_transformed_data = bin_unembed_transformer(batch['data']) # shape: (batch_size, n_electrodes, n_timebins, d_model or max_frequency_bin or first_kernel)
 
-    # if future_bin_idx > 0:
-    #     _add_to_loss(output=bin_embed_transformed_data[:, :, :-future_bin_idx, :], target=bin_unembed_transformed_data[:, :, future_bin_idx:, :], loss_suffix='bin')
-    # else:
-    #     _add_to_loss(output=bin_embed_transformed_data, target=bin_unembed_transformed_data, loss_suffix='bin')
+    model_output = model(bin_embed_transformed_data) # shape: (batch_size, n_electrodes, n_timebins, d_model or max_frequency_bin or first_kernel)
 
-    # reshape 
-    bin_embed_transformed_data = bin_embed_transformed_data.reshape(batch_size, n_electrodes, (n_timebins)//model_config['second_kernel'], model_config['transformer']['d_model']*model_config['second_kernel'])
-    bin_unembed_transformed_data = bin_unembed_transformed_data.reshape(batch_size, n_electrodes, (n_timebins)//model_config['second_kernel'], model_config['transformer']['d_model']*model_config['second_kernel'] if model_config['separate_unembed'] else model_config['first_kernel']*model_config['second_kernel'])
-    embeddings = electrode_embeddings.forward(batch['electrode_index']).unsqueeze(-2).repeat(1, 1, (n_timebins)//model_config['second_kernel'], 1) # shape: (batch_size, n_electrodes, d_model, n_timebins-future_bin_idx)
+    _add_to_loss = _add_to_loss_l2 if training_config['loss_type'] == 'l2' else _add_to_loss_contrastive
 
-    if future_bin_idx > 0:
-        bin_embed_transformed_data = bin_embed_transformed_data[:, :, :-future_bin_idx, :].clone()
-        bin_unembed_transformed_data = bin_unembed_transformed_data[:, :, future_bin_idx:, :].clone()
-        embeddings = embeddings[:, :, :-future_bin_idx, :].clone()
-
-    # Split electrodes into two halves
-    electrodes_a = np.arange(n_electrodes//2)
-    electrodes_b = np.arange(n_electrodes//2, n_electrodes)
-    
-    # Create a new tensor instead of modifying in-place
-    modified_data = bin_embed_transformed_data.clone()
-    modified_data[:, electrodes_b, :, :] = 0  # Zero out the second half
-
-    # Process the first half (A electrodes)
-    model_output = model(modified_data, embeddings=embeddings)
-
-    model_output_a = model_output[:, electrodes_a, :, :].clone()
-    target_a = bin_unembed_transformed_data[:, electrodes_a, :, :].clone()
-
-    model_output_b = model_output[:, electrodes_b, :, :].clone()
-    target_b = bin_unembed_transformed_data[:, electrodes_b, :, :].clone()
-
-    _add_to_loss(output=model_output_a, target=target_a, loss_suffix='time_a')
-    _add_to_loss(output=model_output_b, target=target_b, loss_suffix='time_b')
+    if len(zero_time_indices) > 0:
+        _add_to_loss(output=model_output[:, :, zero_time_indices, :], target=bin_unembed_transformed_data[:, :, zero_time_indices+future_bin_idx, :], loss_suffix='time')
+    if model_config['electrode_embedding']['spectrogram'] and not model_config['separate_unembed']:
+        if len(masked_frequency_indices) > 0:
+            if future_bin_idx > 0:
+                _add_to_loss(output=model_output[:, :, :-future_bin_idx, masked_frequency_indices], target=bin_unembed_transformed_data[:, :, future_bin_idx:, masked_frequency_indices], loss_suffix='freq')
+            else:
+                _add_to_loss(output=model_output[:, :, :, masked_frequency_indices], target=bin_unembed_transformed_data[:, :, :, masked_frequency_indices], loss_suffix='freq')
     
     return losses
 
@@ -307,7 +293,7 @@ def calculate_persistence_baseline_loss(stop_at_batch=5):
         normalized_batch = normalized_batch / (torch.std(normalized_batch, dim=[0, 2], keepdim=True) + 1) # note values are in range [-180, 180]
         batch['data'] = normalized_batch
 
-        first_kernel = model_config['first_kernel']
+        first_kernel = 16
         sample_timebin_size = first_kernel #* int(2048//n_downsample_factor * model_config['sample_timebin_size'])
         batch['data'] = batch['data'].reshape(batch_size, n_electrodes, n_samples//sample_timebin_size, sample_timebin_size) # shape: (batch_size, n_electrodes, n_timebins, sample_timebin_size*SR//n_downsample_factor)
         n_timebins = batch['data'].shape[2]
@@ -377,40 +363,35 @@ if wandb:
     wandb.init(project=cluster_config['wandb_project'], name=cluster_config['wandb_name'], id=cluster_config['wandb_name'],
     config={"training_config": training_config, "model_config": model_config, "cluster_config": cluster_config}, settings=wandb.Settings(init_timeout=480))
     
-log(f"Calculating the baseline persistence loss...", priority=0)
-bin_embed_transformer.train()
-bin_unembed_transformer.train()
-model.train()
-electrode_embeddings.train()
-baseline_loss = calculate_persistence_baseline_loss()
-log(f"Baseline persistence loss: {baseline_loss['contrastive']:.4f}, Accuracy: {baseline_loss['accuracy']:.4f}", priority=0)
-del baseline_loss
+# log(f"Calculating the baseline persistence loss...", priority=0)
+# bin_embed_transformer.train()
+# bin_unembed_transformer.train()
+# model.train()
+# electrode_embeddings.train()
+# baseline_loss = calculate_persistence_baseline_loss()
+# log(f"Baseline persistence loss: {baseline_loss['contrastive']:.4f}, Accuracy: {baseline_loss['accuracy']:.4f}", priority=0)
+# del baseline_loss
+# torch.cuda.empty_cache()
+# gc.collect()
+
+log(f"Evaluating model...", priority=0)
+bin_embed_transformer.eval()
+model.eval()
+electrode_embeddings.eval()
+eval_results = {}
+
+eval_raw = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, quick_eval=cluster_config['quick_eval'], only_keys_containing='auroc/average', raw_data=True, key_prefix="raw_")
+eval_results.update(eval_raw)
+print("eval_raw", eval_raw)
+
+eval_full_model = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, quick_eval=cluster_config['quick_eval'], only_keys_containing='auroc/average')
+print("eval_full_model", eval_full_model)
+eval_results.update(eval_full_model)
+
+if wandb: wandb.log(eval_results, step=1)
+del eval_full_model
 torch.cuda.empty_cache()
 gc.collect()
-
-if not training_config['no_initial_init']:
-    log(f"Evaluating model...", priority=0)
-    bin_embed_transformer.eval()
-    model.eval()
-    electrode_embeddings.eval()
-    eval_results = {}
-
-    eval_raw = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, quick_eval=cluster_config['quick_eval'], only_keys_containing='auroc/average', raw_data=True, key_prefix="raw_")
-    eval_results.update(eval_raw)
-    print("eval_raw", eval_raw)
-
-    eval_bin_transformer = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, quick_eval=cluster_config['quick_eval'], only_bin_transformer=True, only_keys_containing='auroc/average', key_prefix="bin_")
-    eval_results.update(eval_bin_transformer)
-    print("eval_bin_transformer", eval_bin_transformer)
-
-    eval_full_model = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, quick_eval=cluster_config['quick_eval'], only_keys_containing='auroc/average')
-    print("eval_full_model", eval_full_model)
-    eval_results.update(eval_full_model)
-
-    if wandb: wandb.log(eval_results, step=1)
-    del eval_full_model, eval_bin_transformer
-    torch.cuda.empty_cache()
-    gc.collect()
 
 training_statistics_store = []
 for epoch_i in range(training_config['n_epochs']):
@@ -490,13 +471,10 @@ for epoch_i in range(training_config['n_epochs']):
         accuracy_string = f" / ".join([f"{k.split('_')[1]}: {v:.4f}" for k, v in test_loss_dict.items() if 'accuracy' in k])
         log(f"Test loss: {eval_results['test_loss']:.4f} ({losses_string}), Accuracies: {accuracy_string}", priority=0)
         if (epoch_i+1) % cluster_config['eval_model_every_n_epochs'] == 0:
-            evaluation_results_strings_bin_transformer = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, quick_eval=cluster_config['quick_eval'], only_bin_transformer=True, only_keys_containing='auroc/average', key_prefix="bin_")
-            eval_results.update(evaluation_results_strings_bin_transformer)
-            log("eval_bin_transformer" + str(evaluation_results_strings_bin_transformer))
             evaluation_results_strings = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, quick_eval=cluster_config['quick_eval'], only_keys_containing='auroc/average')
             eval_results.update(evaluation_results_strings)
             log("eval_full_model" + str(evaluation_results_strings))
-            del evaluation_results_strings, evaluation_results_strings_bin_transformer
+            del evaluation_results_strings
             torch.cuda.empty_cache()
             gc.collect()
         time_remaining = (time.time() - epoch_start_time) * (training_config['n_epochs'] - (epoch_i + 1))

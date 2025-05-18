@@ -70,7 +70,7 @@ def apply_rotary_emb(x, cos, sin):
     return torch.cat([y1, y2], 3).type_as(x)
 
 class CausalSelfAttention(nn.Module):
-    def __init__(self, d_model, n_head, causal, rope, rope_base):
+    def __init__(self, d_model, n_head, causal, rope, rope_base, dropout=0.1):
         super().__init__()
         self.n_head = n_head
         self.n_embd = d_model
@@ -84,6 +84,7 @@ class CausalSelfAttention(nn.Module):
         self.c_v = nn.Linear(self.n_embd, self.n_embd, bias=False)
         self.c_proj = nn.Linear(self.n_embd, self.n_embd, bias=False)
         self.rotary = Rotary(self.head_dim, base=self.rope_base)
+        self.dropout = nn.Dropout(dropout)
 
         #self.zero_init()  # Initialize weights to zero
         self.orthogonalize() # Orthogonal init
@@ -119,16 +120,18 @@ class CausalSelfAttention(nn.Module):
             scale=1/q.shape[-1]
         )
         y = y.transpose(1, 2).contiguous().view_as(x) # re-assemble all head outputs side by side
+        y = self.dropout(y)  # Add dropout after attention
         y = self.c_proj(y)
         return y
 
 class MLP(nn.Module):
-    def __init__(self, d_model):
+    def __init__(self, d_model, dropout=0.1):
         super().__init__()
         self.c_fc    = nn.Linear(d_model, 4 * d_model, bias=False)
         self.c_proj  = nn.Linear(4 * d_model, d_model, bias=False)
         #self.zero_init()  # Initialize weights to zero
         self.orthogonalize() # Orthogonal init
+        self.dropout = nn.Dropout(dropout)
 
     def orthogonalize(self):
         self.c_fc.weight.data = orthogonalize(self.c_fc.weight.data)
@@ -142,15 +145,16 @@ class MLP(nn.Module):
     def forward(self, x):
         x = self.c_fc(x)
         x = F.gelu(x)
+        x = self.dropout(x)  # Add dropout after activation
         x = self.c_proj(x)
         return x
 
 class Block(nn.Module):
-    def __init__(self, n_layer, d_model, n_head, causal, rope, rope_base):
+    def __init__(self, n_layer, d_model, n_head, causal, rope, rope_base, dropout=0.1):
         super().__init__()
         self.n_layer = n_layer
-        self.attn = CausalSelfAttention(d_model, n_head, causal, rope, rope_base)
-        self.mlp = MLP(d_model)
+        self.attn = CausalSelfAttention(d_model, n_head, causal, rope, rope_base, dropout)
+        self.mlp = MLP(d_model, dropout)
 
     def forward(self, x, attention_mask=None, positions=None):
         L = self.n_layer
@@ -159,7 +163,7 @@ class Block(nn.Module):
         return x
 
 class Transformer(BFModule):
-    def __init__(self, d_input=64, d_model=192, d_output=192, n_layer=10, n_head=12, causal=True, rope=True, rope_base=1024):
+    def __init__(self, d_input=64, d_model=192, d_output=192, n_layer=10, n_head=12, causal=True, rope=True, rope_base=1024, dropout=0.1):
         super().__init__()
 
         self.d_input = d_input
@@ -170,9 +174,10 @@ class Transformer(BFModule):
         self.causal = causal
         self.rope = rope
         self.rope_base = rope_base
+        self.dropout = nn.Dropout(dropout)
 
         self.embed = nn.Linear(d_input, d_model, bias=False) if self.d_input > 0 else nn.Identity()
-        self.blocks = nn.ModuleList([Block(n_layer, d_model, n_head, causal, rope, rope_base) for _ in range(n_layer)])
+        self.blocks = nn.ModuleList([Block(n_layer, d_model, n_head, causal, rope, rope_base, dropout) for _ in range(n_layer)])
         self.output_proj = nn.Linear(d_model, d_output, bias=False)
 
         #self.zero_init()  # Initialize weights to zero
@@ -190,7 +195,8 @@ class Transformer(BFModule):
         # x is of shape (batch_size, seq_len, d_input)
         batch_size, seq_len, d_input = x.shape
 
-        x = self.embed(x)  # shape: (batch_size, seq_len, d_model)
+        x = self.embed(x)
+        x = self.dropout(x)  # Add dropout after embedding
 
         if embeddings is not None:
             x = x + embeddings

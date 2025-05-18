@@ -36,17 +36,22 @@ def get_default_configs(random_string, wandb_project):
 
         'p_unmasked_electrodes': 0.5, # XXX TODO, not added to the codebase yet properly
         'p_masked_timebins': 0.0, # this is implemented tho
+        'p_masked_frequency_bins': 0.0, # this is implemented tho
         
         'data_dtype': torch.bfloat16,
 
+        'loss_type': 'contrastive', # 'contrastive', 'l2'
+
         'random_string': random_string,
+        
+        'no_initial_init': True,
     }
     model_config = {
         'name': 'M',
 
         'sample_timebin_size': 0.125, # in seconds
         'max_frequency_bin': 64, # XXX Todo: make this based on frequency and not bin number
-        'max_n_timebins': 8,
+        'max_n_timebins': 16,
         'max_n_electrodes': 80,
 
         'init_normalization': True, # XXX rename to a more sensible name later
@@ -128,7 +133,10 @@ def parse_configs_from_args(training_config, model_config, cluster_config):
     parser.add_argument('--p_show_b_embedding', type=float, default=None, help='Proportion of B embedding to show')
     parser.add_argument('--separate_unembed', type=int, default=None, help='Whether to use separate unembed')
     parser.add_argument('--p_masked_timebins', type=float, default=None, help='Proportion of masked timebins')
+    parser.add_argument('--p_masked_frequency_bins', type=float, default=None, help='Proportion of masked frequency bins')
     parser.add_argument('--first_kernel', type=int, default=None, help='First kernel')
+    parser.add_argument('--loss_type', type=str, default=None, help='Loss type')
+    parser.add_argument('--no_initial_init', type=int, default=None, help='Whether to use no initial initialization')
 
     # Training arguments
     parser.add_argument('--batch_size', type=int, default=None, help='Batch size for training')
@@ -197,6 +205,8 @@ def parse_configs_from_args(training_config, model_config, cluster_config):
         cluster_config['cache_subjects'] = bool(args.cache_subjects)
     if args.p_masked_timebins is not None:
         training_config['p_masked_timebins'] = args.p_masked_timebins
+    if args.p_masked_frequency_bins is not None:
+        training_config['p_masked_frequency_bins'] = args.p_masked_frequency_bins
     if args.random_string is not None:
         training_config['random_string'] = args.random_string
     if args.electrode_embedding_type is not None:
@@ -277,6 +287,10 @@ def parse_configs_from_args(training_config, model_config, cluster_config):
         training_config['warmup_steps'] = args.warmup_steps
     if args.first_kernel is not None:
         model_config['first_kernel'] = args.first_kernel
+    if args.loss_type is not None:
+        training_config['loss_type'] = args.loss_type
+    if args.no_initial_init is not None:
+        training_config['no_initial_init'] = bool(args.no_initial_init)
 
 max_log_priority = 1
 def log(message, priority=0, indent=0):
@@ -313,6 +327,10 @@ def update_dir_name(model_config, training_config, cluster_config):
         dir_name += f"_nf"
     if not training_config['use_temperature_param']:
         dir_name += f"_nUTP"
+    if training_config['loss_type'] == 'l2':
+        dir_name += f"_l2"
+    if training_config['p_masked_frequency_bins'] != 0.0:
+        dir_name += f"_pmfb{training_config['p_masked_frequency_bins']}"
 
     if model_config['bin_encoder'] != "linear":
         dir_name += f"_be{model_config['bin_encoder'].upper()[0]}"
@@ -324,8 +342,8 @@ def update_dir_name(model_config, training_config, cluster_config):
         dir_name += f"_nII"
     # if not training_config['symmetric_loss']:
     #     dir_name += f"_nSL"
-    # if not model_config['electrode_embedding']['spectrogram']:
-    #     dir_name += f"_nSP"
+    if not model_config['electrode_embedding']['spectrogram']:
+        dir_name += f"_nSP"
     # if model_config['electrode_embedding']['spectrogram_power']:
     #     dir_name += f"_nSPP"
     if cluster_config['eval_aggregation_method'] != 'concat':

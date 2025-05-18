@@ -13,7 +13,7 @@ plt.rcParams.update({'font.size': 12})
 import argparse
 # Parse command line arguments
 parser = argparse.ArgumentParser(description='Create performance figure for BTBench evaluation')
-parser.add_argument('--split_type', type=str, default='SS_SM', 
+parser.add_argument('--split_type', type=str, default='SS_DM', 
                     help='Split type to use (SS_SM or SS_DM)')
 args = parser.parse_args()
 split_type = args.split_type
@@ -26,6 +26,23 @@ BTBENCH_LITE_SUBJECT_TRIALS = [
     (7, 0), (7, 1),
     (10, 0), (10, 1)
 ]
+# BTBENCH_LITE_SUBJECT_TRIALS = [
+#      (1, 2), 
+#     (2, 4),
+#     (3, 0), 
+#      (4, 1),
+#      (7, 1),
+#      (10, 1)
+# ]
+
+# BTBENCH_LITE_SUBJECT_TRIALS = [
+#      (1, 1), 
+#     (2, 0),
+#     (3, 1), 
+#      (4, 0),
+#      (7, 0),
+#      (10, 0)
+# ]
 
 def create_performance_figure():
     task_name_mapping = {
@@ -87,6 +104,11 @@ def create_performance_figure():
         for model in models:
             performance_data[task][model] = {}
 
+    cnf_model_dir = 'M_nst19_dm192_dmb64_nh12_nl2_5_nes50_nf_nUTP_beT_pmt0.9_mtp100.0_SU_eeL_rBBFM_XXXt/frozen_bin_epoch6'
+    cnf_model_dir = 'M_nst20_dm192_dmb192_nh12_nl5_5_nes45_nf_beT_nII_pmt0.0_SU_eeL_wd0.001_fk128_rBFM_MX2/frozen_bin_epoch36'
+    cnf_model_dir = 'M_nst20_dm192_dmb192_nh12_nl5_5_nf_beT_nII_nSP_pmt0.2_eeL_fk256_rLC7/frozen_bin_epoch9'
+    #cnf_model_dir = 'M_nst1_dm192_dmb192_nh12_nl5_5_nes45_nf_beT_nII_pmt0.0_SU_eeL_fk128_rBBFM_2C_X2/frozen_bin_epoch6'
+
     for model_idx, model in enumerate(non_popt_models): # Andrii's model format
         for task in task_list.keys():
             subject_trial_means = []
@@ -102,7 +124,7 @@ def create_performance_figure():
                     granularity = -1
                     filename = f'/om2/user/zaho/BrainBERT/eval_results_lite_{split_type}/brainbert_frozen_mean_granularity_{granularity}/population_btbank{subject_id}_{trial_id}_{task}.json'
                 elif model.startswith('CNF-1 (frozen)'):
-                    filename = f'/om2/user/zaho/bfm/eval_results_lite_{split_type}/M_nst19_dm192_dmb64_nh12_nl2_5_nes50_nf_nUTP_beT_pmt0.9_mtp100.0_SU_eeL_rBBFM_XXXt/frozen_bin_epoch6/population_btbank{subject_id}_{trial_id}_{task}.json'
+                    filename = f'/om2/user/zaho/bfm/eval_results_lite_{split_type}/{cnf_model_dir}/population_btbank{subject_id}_{trial_id}_{task}.json'
 
                     
                 if not os.path.exists(filename):
@@ -221,8 +243,8 @@ def create_performance_figure():
     if metric == 'accuracy':
         first_ax.set_ylim(0.2, 1.0)
     else:
-        first_ax.set_ylim(0.495, .6)
-        first_ax.set_yticks([0.5, 0.6])
+        first_ax.set_ylim(0.49, 0.87)
+        first_ax.set_yticks([0.5, 0.6, 0.7, 0.8])
     first_ax.set_xticks([])
     first_ax.set_ylabel(metric)
     first_ax.axhline(y=0.5, color='black', linestyle='--', alpha=0.5)
