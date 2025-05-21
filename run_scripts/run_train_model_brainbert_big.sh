@@ -2,28 +2,27 @@
 #SBATCH --job-name=bfm_xx          
 #SBATCH --ntasks=1            
 #SBATCH --cpus-per-task=16 
-#SBATCH --gres=gpu:a100:1
-####SBATCH --constraint=ampere
-#SBATCH --mem=96G
+#SBATCH --gres=gpu:1
+#SBATCH --constraint=ampere
+#SBATCH --mem=384G
 #SBATCH -t 16:00:00      
-#SBATCH --array=1-8
+#SBATCH --array=1-4
 #SBATCH --output logs/%A_%a.out
 #SBATCH --error logs/%A_%a.err
 #SBATCH -p normal
 source .venv/bin/activate
 export TMPDIR=/om2/scratch/tmp
 
-n_in_parallel=2
+n_in_parallel=1
 
 train_subject_trial_options=(
-    #"btbank1_0,btbank2_1,btbank2_2,btbank2_3,btbank2_5,btbank2_6,btbank3_2,btbank4_2,btbank5_0,btbank6_0,btbank6_1,btbank6_4,btbank8_0,btbank9_0,btbank1_1,btbank2_0,btbank3_1,btbank4_0,btbank7_0,btbank10_0"
-    #"btbank1_0,btbank2_1,btbank2_2,btbank2_3,btbank2_5,btbank2_6,btbank3_2,btbank4_2,btbank5_0,btbank6_0,btbank6_1,btbank6_4,btbank8_0,btbank9_0,btbank1_2,btbank3_2,btbank4_1,btbank7_1,btbank10_1"
-    "btbank3_1"
+    "btbank1_0,btbank2_1,btbank2_2,btbank2_3,btbank2_5,btbank2_6,btbank3_2,btbank4_2,btbank5_0,btbank6_0,btbank6_1,btbank6_4,btbank8_0,btbank9_0"
 )
-eval_subject_trials="btbank3_0" #,btbank3_1,btbank3_2"
-random_string_options=("BBTT_6")
+eval_subject_trials="btbank1_1,btbank1_2,btbank2_0,btbank2_4,btbank3_0,btbank3_1,btbank4_0,btbank4_1,btbank7_0,btbank7_1,btbank10_0,btbank10_1"
 
-max_n_electrodes_options=(45) #(1 2 4 8 16 32 64 124)
+random_string_options=("BBB")
+
+max_n_electrodes_options=(80) #(1 2 4 8 16 32 64 124)
 weight_decay_options=(0.0)
 spectrogram_options=(0 1)
 loss_type_options=("contrastive" "l2")
@@ -36,13 +35,13 @@ use_temperature_param_options=(1)
 show_a_embedding_options=(0.0)
 show_b_embedding_options=(1.0)
 separate_unembed_options=(0 1)
-p_masked_timebins_options=(0.1 0.2 0.5)
+p_masked_timebins_options=(0.1 0.2)
 max_temperature_param_options=(1000.0)
-n_layers_electrode_options=(4)
-d_model_options=(192)
+n_layers_electrode_options=(6)
+d_model_options=(768)
 first_kernel_options=(256)
 
-wandb_project="BBT_TESTS"
+wandb_project="BB_tests_new"
 
 sample_timebin_size=0.125 #0.0625
 

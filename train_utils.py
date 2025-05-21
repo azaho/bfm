@@ -78,7 +78,7 @@ def get_default_configs(random_string, wandb_project):
             'n_heads': 12,
             'n_layers_electrode': 5,
             'n_layers_time': 5,
-            'dropout': 0.2,
+            'dropout': 0.1,
             'momentum': 0.99,
             'use_cls_token': True,
         },

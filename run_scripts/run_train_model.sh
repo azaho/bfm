@@ -13,7 +13,7 @@
 source .venv/bin/activate
 export TMPDIR=/om2/scratch/tmp
 
-n_in_parallel=2
+n_in_parallel=1
 
 train_subject_trial_options=(
     "btbank1_0,btbank2_1,btbank2_2,btbank2_3,btbank2_5,btbank2_6,btbank3_2,btbank4_2,btbank5_0,btbank6_0,btbank6_1,btbank6_4,btbank8_0,btbank9_0,btbank1_1,btbank2_0,btbank3_1,btbank4_0,btbank7_0,btbank10_0"
