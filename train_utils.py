@@ -81,14 +81,15 @@ def get_default_configs(random_string, wandb_project):
             'dropout': 0.1,
             'momentum': 0.99,
             'use_cls_token': True,
+            'causal': False,
         },
 
         'use_mixed_precision': True,
         'amp_dtype': torch.bfloat16,  # must be bfloat16 because scaler is not existing
     }
     cluster_config = {
-        'save_model_every_n_epochs': 1,
-        'eval_model_every_n_epochs': 3,
+        'save_model_every_n_epochs': 5,
+        'eval_model_every_n_epochs': 5,
 
         'wandb_project': wandb_project,
         'timestamp': time.strftime("%Y%m%d_%H%M%S"),
@@ -152,6 +153,7 @@ def parse_configs_from_args(training_config, model_config, cluster_config):
     parser.add_argument('--use_cls_token', type=int, default=None, help='Whether to use CLS token')
     parser.add_argument('--lr_schedule', type=str, default=None, help='Learning rate schedule (none, linear, cosine)')
     parser.add_argument('--warmup_steps', type=int, default=None, help='Warmup steps')
+    parser.add_argument('--causal', type=int, default=None, help='Whether to use causal transformer')
     
     # Other model config
     parser.add_argument('--init_normalization', type=int, default=None, help='Whether to use initial normalization')
@@ -271,6 +273,8 @@ def parse_configs_from_args(training_config, model_config, cluster_config):
         cluster_config['resume_run'] = bool(args.resume_run)
     if args.use_cls_token is not None:
         model_config['transformer']['use_cls_token'] = bool(args.use_cls_token)
+    if args.causal is not None:
+        model_config['transformer']['causal'] = bool(args.causal)
     if args.projection_type is not None:
         training_config['projection_type'] = args.projection_type
     if args.p_unmasked is not None:
@@ -331,6 +335,8 @@ def update_dir_name(model_config, training_config, cluster_config):
         dir_name += f"_l2"
     if training_config['p_masked_frequency_bins'] != 0.0:
         dir_name += f"_pmfb{training_config['p_masked_frequency_bins']}"
+    if model_config['transformer']['causal']:
+        dir_name += f"_C"
 
     if model_config['bin_encoder'] != "linear":
         dir_name += f"_be{model_config['bin_encoder'].upper()[0]}"

@@ -159,7 +159,7 @@ class FFTaker(BFModule):
         else:
             return x.to(dtype=electrode_data.dtype)
 class BrainBERT(BFModule):
-    def __init__(self, d_input=-1, d_model=192, d_output=192, n_layers=4, n_heads=8, dropout=0.1):
+    def __init__(self, d_input=-1, d_model=192, d_output=192, n_layers=4, n_heads=8, dropout=0.1, causal=False):
         super().__init__()
         self.d_model = d_model
         self.n_layers = n_layers
@@ -167,7 +167,7 @@ class BrainBERT(BFModule):
         self.d_input = d_input
 
         self.transformer = Transformer(d_input=d_input, d_model=d_model, d_output=d_output, 
-                                            n_layer=n_layers, n_head=n_heads, causal=False, 
+                                            n_layer=n_layers, n_head=n_heads, causal=causal, 
                                             rope=True, rope_base=128, dropout=dropout)
         self.temperature_param = nn.Parameter(torch.tensor(0.0))
     

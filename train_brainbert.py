@@ -88,24 +88,6 @@ else:
     raise ValueError(f"Invalid electrode embedding type: {model_config['electrode_embedding']['type']}")
 electrode_embeddings = electrode_embeddings.to(device, dtype=model_config['dtype'])
 
-# if model_config['electrode_embedding']['spectrogram']:
-#     electrode_data_embeddings = ElectrodeDataEmbeddingFFT(
-#         electrode_embeddings, model_config['sample_timebin_size'], model_config['transformer']['d_model'], 
-#         max_frequency_bin=model_config['max_frequency_bin']
-#     ).to(device, dtype=model_config['dtype'])
-# else:
-#     electrode_data_embeddings = ElectrodeDataEmbedding(
-#         electrode_embeddings, model_config['sample_timebin_size'], model_config['transformer']['d_model'], 
-#         overall_sampling_rate=next(iter(all_subjects.values())).get_sampling_rate(0) # XXX remove this once figured out how to be flexible here regarding the sampling rate
-#     ).to(device, dtype=model_config['dtype'])
-
-# from btbench.btbench_config import BTBENCH_LITE_ELECTRODES # Only tempporal lobe electrodes for now
-# for subject_identifier, subject in all_subjects.items():
-#     consider_electrode_names = list(BTBENCH_LITE_ELECTRODES[subject_identifier])
-#     electrode_subset = [electrode_label for electrode_label in consider_electrode_names if electrode_label.startswith('T') or electrode_label.startswith('P')]
-#     subject.set_electrode_subset(electrode_subset)
-#     log(f"Subject {subject_identifier} has {len(electrode_subset)} temporal and parietal lobe electrodes", priority=0)
-
 eval_electrode_subset = {
     #'btbank3': ['T1cIe11'],
 }
@@ -131,7 +113,9 @@ train_dataloader, test_dataloader = load_dataloaders(
 
 eval_subject_trials = [(all_subjects[subject_identifier], trial_id) for subject_identifier, trial_id in training_config['eval_subject_trials']]
 #eval_tasks = ['gpt2_surprisal', 'volume', 'word_part_speech', 'pitch', 'speech']
-eval_tasks = ['gpt2_surprisal', 'speech']
+#eval_tasks = ['gpt2_surprisal', 'speech']
+eval_tasks = ['frame_brightness', 'global_flow', 'local_flow', 'global_flow_angle', 'local_flow_angle', 'face_num', 'volume', 'pitch', 'delta_volume', 
+              'delta_pitch', 'speech', 'onset', 'gpt2_surprisal', 'word_length', 'word_gap', 'word_index', 'word_head_pos', 'word_part_speech', 'speaker']
 evaluation = FrozenModelEvaluation_SS_SM(
     eval_tasks, eval_subject_trials, 
     training_config['data_dtype'], training_config['batch_size'], # Can have a bigger batch size here if that speeds things up

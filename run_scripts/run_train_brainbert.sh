@@ -2,27 +2,28 @@
 #SBATCH --job-name=bfm_xx          
 #SBATCH --ntasks=1            
 #SBATCH --cpus-per-task=16 
-#SBATCH --gres=gpu:a100:1
-####SBATCH --constraint=ampere
-#SBATCH --mem=96G
-#SBATCH -t 16:00:00      
-#SBATCH --array=1-8
+#SBATCH --gres=gpu:1
+#SBATCH --constraint=ampere
+#SBATCH --mem=240G
+#SBATCH -t 48:00:00      
+#SBATCH --array=1-16
 #SBATCH --output logs/%A_%a.out
 #SBATCH --error logs/%A_%a.err
 #SBATCH -p normal
 source .venv/bin/activate
 export TMPDIR=/om2/scratch/tmp
 
-n_in_parallel=2
+n_in_parallel=1
 
 train_subject_trial_options=(
     "btbank1_0,btbank2_1,btbank2_2,btbank2_3,btbank2_5,btbank2_6,btbank3_2,btbank4_2,btbank5_0,btbank6_0,btbank6_1,btbank6_4,btbank8_0,btbank9_0"
 )
 eval_subject_trials="btbank1_1,btbank1_2,btbank2_0,btbank2_4,btbank3_0,btbank3_1,btbank4_0,btbank4_1,btbank7_0,btbank7_1,btbank10_0,btbank10_1"
 
-random_string_options=("BBTT_6")
+random_string_options=("BBB3")
 
-max_n_electrodes_options=(45) #(1 2 4 8 16 32 64 124)
+learning_rate_options=(0.003) # 0.001 0.01)
+max_n_electrodes_options=(80) #(1 2 4 8 16 32 64 124)
 weight_decay_options=(0.0)
 spectrogram_options=(0 1)
 loss_type_options=("contrastive" "l2")
@@ -35,13 +36,14 @@ use_temperature_param_options=(1)
 show_a_embedding_options=(0.0)
 show_b_embedding_options=(1.0)
 separate_unembed_options=(0 1)
-p_masked_timebins_options=(0.1 0.2 0.5)
+p_masked_timebins_options=(0.2 0.5)
 max_temperature_param_options=(1000.0)
 n_layers_electrode_options=(6)
-d_model_options=(192)
+d_model_options=(768)
 first_kernel_options=(256)
+causal_options=(0)
 
-wandb_project="BBT_TESTS"
+wandb_project="BB_tests_new"
 
 sample_timebin_size=0.125 #0.0625
 
@@ -69,6 +71,8 @@ n_mtp=${#max_temperature_param_options[@]}
 n_le=${#n_layers_electrode_options[@]}
 n_dmo=${#d_model_options[@]}
 n_fk=${#first_kernel_options[@]}
+n_lr=${#learning_rate_options[@]}
+n_co=${#causal_options[@]}
 
 # Launch n_in_parallel jobs
 for i in $(seq 0 $(( n_in_parallel - 1 ))); do
@@ -93,13 +97,15 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
     p_masked_timebins=${p_masked_timebins_options[$((idx / n_rs / n_nes / n_wd / n_sp / n_lt / n_lr_schedule / n_ws / n_ii / n_fb / n_be / n_ts / n_ut / n_sa / n_sb / n_se % n_pmt))]}
     max_temperature_param=${max_temperature_param_options[$((idx / n_rs / n_nes / n_wd / n_sp / n_lt / n_lr_schedule / n_ws / n_ii / n_fb / n_be / n_ts / n_ut / n_sa / n_sb / n_se / n_pmt % n_mtp))]}
     n_layers_electrode=${n_layers_electrode_options[$((idx / n_rs / n_nes / n_wd / n_sp / n_lt / n_lr_schedule / n_ws / n_ii / n_fb / n_be / n_ts / n_ut / n_sa / n_sb / n_se / n_pmt / n_mtp % n_le))]}
-    d_model=${d_model_options[$((idx / n_rs / n_nes / n_wd / n_sp / n_lt / n_lr_schedule / n_ws / n_ii / n_fb / n_be / n_ts / n_ut / n_sa / n_sb / n_se / n_pmt / n_mtp / n_le % n_dmo))]}
+    d_model=${d_model_options[$((idx / n_rs / n_nes / n_wd / n_sp / n_lt / n_lr_schedule / n_ws / n_ii / n_fb / n_be / n_ts / n_ut / n_sa / n_sb / n_se / n_pmt / n_mtp / n_le / n_dmo % n_dmo))]}
     first_kernel=${first_kernel_options[$((idx / n_rs / n_nes / n_wd / n_sp / n_lt / n_lr_schedule / n_ws / n_ii / n_fb / n_be / n_ts / n_ut / n_sa / n_sb / n_se / n_pmt / n_mtp / n_le / n_dmo % n_fk))]}
+    causal=${causal_options[$((idx / n_rs / n_nes / n_wd / n_sp / n_lt / n_lr_schedule / n_ws / n_ii / n_fb / n_be / n_ts / n_ut / n_sa / n_sb / n_se / n_pmt / n_mtp / n_le / n_dmo / n_fk % n_co))]}
+    learning_rate=${learning_rate_options[$((idx / n_rs / n_nes / n_wd / n_sp / n_lt / n_lr_schedule / n_ws / n_ii / n_fb / n_be / n_ts / n_ut / n_sa / n_sb / n_se / n_pmt / n_mtp / n_le / n_dmo / n_fk / n_lr % n_lr))]}
 
-    echo "Job $((i+1)) - RS: $random_string, NES: $max_n_electrodes, WD: $weight_decay, SP: $spectrogram, LT: $loss_type, LRS: $lr_schedule, WSS: $warmup_steps, II: $init_identity, FBIN: $future_bin_idx, BE: $bin_encoder, SE: $separate_unembed, UT: $use_temperature_param, SA: $show_a_embedding, SB: $show_b_embedding, PMT: $p_masked_timebins, MTP: $max_temperature_param, NLE: $n_layers_electrode, DMO: $d_model"
+    echo "Job $((i+1)) - RS: $random_string, NES: $max_n_electrodes, WD: $weight_decay, SP: $spectrogram, LT: $loss_type, LRS: $lr_schedule, WSS: $warmup_steps, II: $init_identity, FBIN: $future_bin_idx, BE: $bin_encoder, SE: $separate_unembed, UT: $use_temperature_param, SA: $show_a_embedding, SB: $show_b_embedding, PMT: $p_masked_timebins, MTP: $max_temperature_param, NLE: $n_layers_electrode, DMO: $d_model, FK: $first_kernel, CO: $causal, LR: $learning_rate"
     
     # note: change train_model_fbi_combined.py to train_model.py for the non-combined version
-    python -u train_model_new_brainbert_mini.py  --cache_subjects 1 \
+    python -u train_brainbert.py  --cache_subjects 1 \
         --num_workers_dataloaders 4 \
         --batch_size 256 \
         --random_string $random_string \
@@ -117,6 +123,8 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
         --bin_encoder $bin_encoder \
         --sample_timebin_size $sample_timebin_size \
         --use_temperature_param $use_temperature_param \
+        --causal $causal \
+        --learning_rate $learning_rate \
         --p_show_a_embedding $show_a_embedding \
         --p_show_b_embedding $show_b_embedding \
         --separate_unembed $separate_unembed \

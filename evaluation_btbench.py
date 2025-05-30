@@ -275,6 +275,9 @@ class FrozenModelEvaluation_SS_SM():
 
     def _format_evaluation_results_strings(self, evaluation_results):
         evaluation_results_strings = {}
+        all_auroc_values = []
+        all_acc_values = []
+        
         for eval_name in self.eval_names:
             auroc_values = []
             acc_values = []
@@ -289,6 +292,8 @@ class FrozenModelEvaluation_SS_SM():
 
                 subject_aurocs[subject_identifier].append(auroc)
                 subject_accs[subject_identifier].append(accuracy)
+                all_auroc_values.append(auroc)
+                all_acc_values.append(accuracy)
                 evaluation_results_strings[f"eval_auroc/{subject_identifier}_{trial_id}_{eval_name}"] = auroc
                 evaluation_results_strings[f"eval_acc/{subject_identifier}_{trial_id}_{eval_name}"] = accuracy
             for subject_identifier in subject_aurocs:
@@ -297,6 +302,11 @@ class FrozenModelEvaluation_SS_SM():
             if len(auroc_values) > 0:
                 evaluation_results_strings[f"eval_auroc/average_{eval_name}"] = np.mean(auroc_values).item()
                 evaluation_results_strings[f"eval_acc/average_{eval_name}"] = np.mean(acc_values).item()
+
+        # Add overall metrics across all tasks and subjects
+        if len(all_auroc_values) > 0:
+            evaluation_results_strings["eval_auroc/average_overall"] = np.mean(all_auroc_values).item()
+            evaluation_results_strings["eval_acc/average_overall"] = np.mean(all_acc_values).item()
 
         for key, value in evaluation_results_strings.items():
             evaluation_results_strings[key] = round(value, self.max_float_precision)
