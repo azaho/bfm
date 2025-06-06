@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import mne
 import h5py
+import pandas as pd
 
 MGH_ROOT_DIR = "/om2/data/public/Infolab/mgh2024_data" # Root directory for the data
 
@@ -89,6 +90,27 @@ class MGHSubject:
         """Get all laplacian electrodes for a given subject"""
         return [], {} # TODO: Implement this
 
+    # Process group and mni_name columns to handle special cases with hyphens
+    def _process_channel_name(self, name):
+        if '-' not in name:
+            return name
+            
+        base, suffix = name.split('-', 1)
+            
+        # Handle range cases
+        if 'one-to-eight' in name:
+            num = int(''.join(c for c in suffix if c.isdigit()))
+            return base + str(num)
+        elif 'nine-to-sixteen' in name:
+            num = int(''.join(c for c in suffix if c.isdigit()))
+            return base + str(num + 8)
+        
+        # Handle numeric suffix case
+        if any(c.isdigit() for c in suffix):
+            num = int(''.join(c for c in suffix if c.isdigit()))
+            return base + str(num)
+            
+        return name
     def _filter_electrode_labels(self, electrode_labels, session_id=None, keep_corrupted=False):
         """Filter out corrupted and non-neural electrodes"""
         filtered_electrode_labels = electrode_labels
@@ -105,7 +127,58 @@ class MGHSubject:
         non_neural_channels += ["C"] # Those are the "default" electrode names, and we do not know what they are; for now, just removed
     
         filtered_electrode_labels = [e for e in filtered_electrode_labels if not any(e.upper().startswith(x) for x in non_neural_channels)]
+
+
+        # replace substrings like "CM" and "ANT" in the electrode labels with ""
+        filtered_electrode_labels = [e.replace("CM", "").replace("ANT", "") for e in filtered_electrode_labels]
+        # replace the dashed names with clean names
+        filtered_electrode_labels = [self._process_channel_name(e) for e in filtered_electrode_labels]
+
         return filtered_electrode_labels
+
+    def get_electrode_coordinates(self, session_id=None):
+        """
+            Get the coordinates of the electrodes for this subject
+            Returns:
+                coordinates: (n_electrodes, 3) tensor of coordinates (MNI) without any preprocessing of the coordinates
+                if coordinates are not available, returns nan for that electrode
+        """
+        electrode_labels = self.get_electrode_labels(session_id)
+
+        patient_coordinate_map = os.path.join(MGH_ROOT_DIR, 'patient_coordinate_map.csv')
+        patient_coordinate_map = pd.read_csv(patient_coordinate_map)
+
+        # matching_rows = patient_coordinate_map[
+        #     (patient_coordinate_map['patient_id'] == self.subject_identifier)
+        # ]
+        # matching_electrode_labels = matching_rows['mni_name'].tolist()
+        
+        # # Find electrodes in matching_electrode_labels but not in electrode_labels
+        # in_matching_not_electrode = set(matching_electrode_labels) - set(electrode_labels)
+        # # Find electrodes in electrode_labels but not in matching_electrode_labels  
+        # in_electrode_not_matching = set(electrode_labels) - set(matching_electrode_labels)
+        
+        # print("Total electrodes in coordinate map:", len(matching_electrode_labels))
+        # print("Electrodes in coordinate map but not in electrode labels:", in_matching_not_electrode)
+        # print("Electrodes in electrode labels but not in coordinate map:", in_electrode_not_matching)
+        #exit()
+
+        coordinates = torch.full((len(electrode_labels), 3), float('nan'), dtype=self.dtype)
+        for i, label in enumerate(electrode_labels):
+            # Find matching row in coordinate map for this electrode and subject
+            matching_row = patient_coordinate_map[
+                (patient_coordinate_map['patient_id'] == self.subject_identifier) & 
+                (patient_coordinate_map['mni_name'] == label)
+            ]
+            if len(matching_row) > 0:
+                # Take first matching row if multiple exist
+                row = matching_row.iloc[0]
+                coordinates[i] = torch.tensor([
+                    row['mni_x'],
+                    row['mni_y'], 
+                    row['mni_z']
+                ], dtype=self.dtype)
+        return coordinates
 
     def cache_neural_data(self, session_id):
         assert self.cache, "Cache is not enabled"
@@ -206,6 +279,36 @@ class MGHSubject:
 
 Subject = MGHSubject # alias for convenience
 
+if __name__ == "__main__":
+    for subject_id in range(1, 62):
+        subject = MGHSubject(subject_id, cache=False)
+        sessions = subject.sessions
+
+        print(f"{subject.subject_identifier} (n_electrodes={subject.get_n_electrodes()}, n_sessions={len(sessions)})")
+
+        for session_id in range(len(sessions)):
+            session_hash = sessions[session_id]
+            metadata = subject.session_metadata[session_id]
+
+            electrode_labels = subject.get_electrode_labels(session_id)
+
+            EEG_channels = ['Fp1', 'Fp2', 'F3', 'Fz', 'F4', 'C3', 'Cz', 'C4', 'P3', 'Pz', 'P4', 'O1', 'O2', 'F7', 'F8', 'T3', 'T4', 'T5', 'T6']
+            n_EEG_channels = len([e for e in electrode_labels if e.upper() in EEG_channels])
+            n_non_EEG_channels = len(electrode_labels) - n_EEG_channels
+
+            electrode_coordinates = subject.get_electrode_coordinates(session_id)
+            n_non_nan_coordinates = torch.sum(~torch.isnan(electrode_coordinates[:, 0]))
+
+            session_length = metadata['session_length']
+            hours = int(session_length // 3600)
+            minutes = int((session_length % 3600) // 60)
+            seconds = int(session_length % 60)
+            session_length_str = f"{hours}h{minutes}m{seconds}s"
+            
+            print(f"\t{subject.subject_identifier}_{session_id}:\t{session_length_str},\tsampling_rate={metadata['sampling_rate']},\tn_electrodes={len(electrode_labels)},\tn_EEG_electrodes={n_EEG_channels},\tn_non_EEG_electrodes={n_non_EEG_channels},\tn_coordinates={n_non_nan_coordinates}")
+
+
+exit()
 if __name__ == "__main__":
     subject = MGHSubject(22, cache=False)
     print(subject.electrode_labels)
