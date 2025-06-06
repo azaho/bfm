@@ -291,9 +291,16 @@ if __name__ == "__main__":
             metadata = subject.session_metadata[session_id]
 
             electrode_labels = subject.get_electrode_labels(session_id)
-
-            EEG_channels = ['Fp1', 'Fp2', 'F3', 'Fz', 'F4', 'C3', 'Cz', 'C4', 'P3', 'Pz', 'P4', 'O1', 'O2', 'F7', 'F8', 'T3', 'T4', 'T5', 'T6']
-            n_EEG_channels = len([e for e in electrode_labels if e.upper() in EEG_channels])
+            
+            EEG_CHANNEL_NAME_MAPPING = {
+                'T3': 'T7',
+                'T4': 'T8',
+                'T5': 'P7',
+                'T6': 'P8'
+            }
+            EEG_channels = ['Fp1', 'Fp2', 'F3', 'Fz', 'F4', 'C3', 'Cz', 'C4', 'P3', 'Pz', 'P4', 'O1', 'O2', 'F7', 'F8', 'T3', 'T4', 'T5', 'T6'] + list(EEG_CHANNEL_NAME_MAPPING.keys()) + list(EEG_CHANNEL_NAME_MAPPING.values())
+            upper_EEG_channels = [e.upper() for e in EEG_channels]
+            n_EEG_channels = len([e for e in electrode_labels if e.upper() in upper_EEG_channels])
             n_non_EEG_channels = len(electrode_labels) - n_EEG_channels
 
             electrode_coordinates = subject.get_electrode_coordinates(session_id)
