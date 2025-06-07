@@ -1,6 +1,6 @@
 import torch
 
-def _get_all_laplacian_electrodes(electrode_labels):
+def get_all_laplacian_electrodes(electrode_labels):
     """
         Get all laplacian electrodes for a given subject. This function is originally from
         https://github.com/czlwang/BrainBERT repository (Wang et al., 2023)
@@ -47,7 +47,7 @@ def laplacian_rereference_neural_data(electrode_data, electrode_labels, remove_n
         batch_unsqueeze = True
         electrode_data = electrode_data.unsqueeze(0)
 
-    laplacian_electrodes, laplacian_neighbors = _get_all_laplacian_electrodes(electrode_labels)
+    laplacian_electrodes, laplacian_neighbors = get_all_laplacian_electrodes(electrode_labels)
     laplacian_neighbor_indices = {laplacian_electrode_label: [electrode_labels.index(neighbor_label) for neighbor_label in neighbors] for laplacian_electrode_label, neighbors in laplacian_neighbors.items()}
 
     batch_size, n_electrodes, n_samples = electrode_data.shape
@@ -70,6 +70,33 @@ def laplacian_rereference_neural_data(electrode_data, electrode_labels, remove_n
         rereferenced_data = rereferenced_data.squeeze(0)
     return rereferenced_data, laplacian_electrodes if remove_non_laplacian else electrode_labels
 
+
+def laplacian_rereference_batch(batch, remove_non_laplacian=True):
+    """
+    Rereference the neural data using the laplacian method (subtract the mean of the neighbors, as determined by the electrode labels)
+    inputs:
+        batch: dictionary containing the following keys:
+            'data': torch tensor of shape (batch_size, n_electrodes, n_samples) or (n_electrodes, n_samples)
+            'electrode_label': list of electrode labels
+            'electrode_index': list of electrode indices
+    outputs:
+        batch: dictionary containing the following keys:
+            'data': torch tensor of shape (batch_size, n_electrodes_rereferenced, n_samples) or (n_electrodes_rereferenced, n_samples)
+            'electrode_labels': list of electrode labels of length n_electrodes_rereferenced (n_electrodes_rereferenced could be different from n_electrodes if remove_non_laplacian is True)
+            'electrode_index': list of electrode indices of length n_electrodes_rereferenced (n_electrodes_rereferenced could be different from n_electrodes if remove_non_laplacian is True)
+    """
+    electrode_data = batch['data']
+    electrode_labels = batch['electrode_labels']
+    rereferenced_data, rereferenced_labels = laplacian_rereference_neural_data(electrode_data, electrode_labels, remove_non_laplacian=remove_non_laplacian)
+    batch['data'] = rereferenced_data
+    batch['electrode_labels'] = rereferenced_labels
+
+    if 'electrode_index' in batch:
+        electrode_indices = batch['electrode_index']
+        rereferenced_indices = [electrode_indices[electrode_labels.index(label)] for label in rereferenced_labels]
+        batch['electrode_index'] = rereferenced_indices
+
+    return batch
 
 
 if __name__ == "__main__":

@@ -7,6 +7,8 @@ from multiprocessing import Pool
 import torch.multiprocessing as mp
 import random
 
+from laplacian_rereferencing import get_all_laplacian_electrodes, laplacian_rereference_neural_data
+
 # Standardizing pretraining and evaluation subjects and trials
 all_btbank_subject_trials = [(1, 0), (1, 1), (1, 2), (2, 0), (2, 1), (2, 2), (2, 3), (2, 4), (2, 5), (2, 6), (3, 0), (3, 1), (3, 2), (4, 0), (4, 1), (4, 2), (5, 0), (6, 0), (6, 1), (6, 4), (7, 0), (7, 1), (8, 0), (9, 0), (10, 0), (10, 1)]
 all_btbank_subject_trials = [("btbank" + str(subject_id), trial_id) for subject_id, trial_id in all_btbank_subject_trials]
@@ -18,7 +20,7 @@ train_subject_trials = [st for st in all_btbank_subject_trials if st not in eval
 all_mgh_subject_trials = [('mgh1', 0), ('mgh1', 1), ('mgh1', 2), ('mgh1', 3), ('mgh2', 0), ('mgh2', 1), ('mgh3', 0), ('mgh3', 1), ('mgh3', 2), ('mgh4', 0), ('mgh5', 0), ('mgh6', 0), ('mgh6', 1), ('mgh7', 0), ('mgh7', 1), ('mgh7', 2), ('mgh8', 0), ('mgh9', 0), ('mgh9', 1), ('mgh9', 2), ('mgh10', 0), ('mgh10', 1), ('mgh10', 2), ('mgh10', 3), ('mgh10', 4), ('mgh11', 0), ('mgh11', 1), ('mgh12', 0), ('mgh12', 1), ('mgh13', 0), ('mgh14', 0), ('mgh14', 1), ('mgh15', 0), ('mgh16', 0), ('mgh16', 1), ('mgh16', 2), ('mgh16', 3), ('mgh16', 4), ('mgh16', 5), ('mgh16', 6), ('mgh17', 0), ('mgh17', 1), ('mgh18', 0), ('mgh18', 1), ('mgh19', 0), ('mgh19', 1), ('mgh20', 0), ('mgh21', 0), ('mgh22', 0), ('mgh23', 0), ('mgh23', 1), ('mgh24', 0), ('mgh25', 0), ('mgh25', 1), ('mgh26', 0), ('mgh27', 0), ('mgh27', 1), ('mgh28', 0), ('mgh28', 1), ('mgh29', 0), ('mgh29', 1), ('mgh30', 0), ('mgh30', 1), ('mgh31', 0), ('mgh32', 0), ('mgh32', 1), ('mgh33', 0), ('mgh34', 0), ('mgh34', 1), ('mgh34', 2), ('mgh34', 3), ('mgh34', 4), ('mgh34', 5), ('mgh34', 6), ('mgh35', 0), ('mgh36', 0), ('mgh36', 1), ('mgh36', 2), ('mgh36', 3), ('mgh39', 0), ('mgh40', 0), ('mgh40', 1), ('mgh40', 2), ('mgh40', 3), ('mgh40', 4), ('mgh40', 5), ('mgh40', 6), ('mgh41', 0), ('mgh42', 0), ('mgh43', 0), ('mgh43', 1), ('mgh43', 2), ('mgh44', 0), ('mgh45', 0), ('mgh46', 0), ('mgh47', 0), ('mgh48', 0), ('mgh49', 0), ('mgh50', 0), ('mgh50', 1), ('mgh51', 0), ('mgh52', 0), ('mgh53', 0), ('mgh54', 0), ('mgh54', 1), ('mgh55', 0), ('mgh56', 0), ('mgh57', 0), ('mgh57', 1), ('mgh59', 0), ('mgh60', 0), ('mgh60', 1), ('mgh61', 0), ('mgh62', 0), ('mgh62', 1), ('mgh62', 2)]
 
 class SubjectTrialDataset(Dataset):
-    def __init__(self, subject, trial_id, window_size, dtype=torch.float32, output_embeddings_map=None, output_subject_trial_id=False):
+    def __init__(self, subject, trial_id, window_size, dtype=torch.float32, output_embeddings_map=None, output_subject_trial_id=False, output_electrode_labels=False):
         """
         Args:
             subject (BrainTreebankSubject or MGHSubject): Subject object
@@ -32,9 +34,8 @@ class SubjectTrialDataset(Dataset):
         self.dtype = dtype
         self.output_embeddings_map = output_embeddings_map
         self.output_subject_trial_id = output_subject_trial_id
+        self.output_electrode_labels = output_electrode_labels
 
-
-        self.electrode_labels = subject.get_electrode_labels(trial_id)
         self.electrode_keys = [(subject.subject_identifier, electrode_label) for electrode_label in self.electrode_labels]
         if output_embeddings_map is not None:                
             self.electrode_indices = torch.tensor([self.output_embeddings_map[key] for key in self.electrode_keys])
@@ -53,7 +54,8 @@ class SubjectTrialDataset(Dataset):
         output = {'data': window}
         if self.output_subject_trial_id: 
             output['subject_trial'] = (self.subject.subject_identifier, self.trial_id)
-            output['electrode_label'] = self.electrode_labels # Also output the electrode label
+        if self.output_electrode_labels:
+            output['electrode_labels'] = self.electrode_labels # Also output the electrode label
         if self.output_embeddings_map: 
             output['electrode_index'] = self.electrode_indices
         return output
@@ -98,7 +100,7 @@ class SubjectTrialDataset_SingleElectrode(Dataset):
         output = {'data': window}
         if self.output_subject_trial_id:
             output['subject_trial'] = (self.subject.subject_identifier, self.trial_id)
-            output['electrode_label'] = self.electrode_labels[electrode_idx] # Also output the electrode label
+            output['electrode_labels'] = self.electrode_labels[electrode_idx] # Also output the electrode label
         if self.output_embeddings_map:
             key = (self.subject.subject_identifier, self.electrode_labels[electrode_idx])
             electrode_index = torch.tensor(self.output_embeddings_map[key])
@@ -234,7 +236,8 @@ def load_dataloaders(all_subjects, train_subject_trials, p_test, sample_timebin_
                 int(sample_timebin_size * all_subjects[subject_identifier].get_sampling_rate(trial_id) * max_n_timebins), 
                 dtype=dtype, 
                 output_embeddings_map=output_embeddings_map,
-                output_subject_trial_id=True
+                output_subject_trial_id=True,
+                output_electrode_labels=True
             )
         )
         log(f"finished loading dataset for {subject_identifier}_{trial_id}", indent=1, priority=1)

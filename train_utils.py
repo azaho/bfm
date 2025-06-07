@@ -84,6 +84,8 @@ def get_default_configs(random_string, wandb_project):
             'causal': False,
         },
 
+        'laplacian_rereference': True,
+
         'use_mixed_precision': True,
         'amp_dtype': torch.bfloat16,  # must be bfloat16 because scaler is not existing
     }

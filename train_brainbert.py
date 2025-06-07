@@ -9,7 +9,7 @@ from muon import Muon
 from model_model import GranularModel, LinearBinTransformer, BinTransformer, LinearKernelTransformer, FFTaker, BrainBERT
 from model_electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit
 from dataset import load_dataloaders, load_subjects
-from evaluation_btbench import FrozenModelEvaluation_SS_SM
+from evaluation_neuroprobe import FrozenModelEvaluation_SS_SM
 from train_utils import log, update_dir_name, update_random_seed, convert_dtypes, parse_configs_from_args, get_default_configs, get_shared_memory_info
 from torch.optim.lr_scheduler import ChainedScheduler
 
@@ -113,9 +113,9 @@ train_dataloader, test_dataloader = load_dataloaders(
 
 eval_subject_trials = [(all_subjects[subject_identifier], trial_id) for subject_identifier, trial_id in training_config['eval_subject_trials']]
 #eval_tasks = ['gpt2_surprisal', 'volume', 'word_part_speech', 'pitch', 'speech']
-#eval_tasks = ['gpt2_surprisal', 'speech']
-eval_tasks = ['frame_brightness', 'global_flow', 'local_flow', 'global_flow_angle', 'local_flow_angle', 'face_num', 'volume', 'pitch', 'delta_volume', 
-              'delta_pitch', 'speech', 'onset', 'gpt2_surprisal', 'word_length', 'word_gap', 'word_index', 'word_head_pos', 'word_part_speech', 'speaker']
+eval_tasks = ['gpt2_surprisal', 'speech']
+# eval_tasks = ['frame_brightness', 'global_flow', 'local_flow', 'global_flow_angle', 'local_flow_angle', 'face_num', 'volume', 'pitch', 'delta_volume', 
+#               'delta_pitch', 'speech', 'onset', 'gpt2_surprisal', 'word_length', 'word_gap', 'word_index', 'word_head_pos', 'word_part_speech', 'speaker']
 evaluation = FrozenModelEvaluation_SS_SM(
     eval_tasks, eval_subject_trials, 
     training_config['data_dtype'], training_config['batch_size'], # Can have a bigger batch size here if that speeds things up
@@ -124,7 +124,9 @@ evaluation = FrozenModelEvaluation_SS_SM(
     prefetch_factor=cluster_config['prefetch_factor'],
     feature_aggregation_method=cluster_config['eval_aggregation_method'],
     electrode_subset=eval_electrode_subset,
-    max_n_electrodes=model_config['max_n_electrodes']
+    max_n_electrodes=model_config['max_n_electrodes'],
+    laplacian_rereference=model_config['laplacian_rereference'],
+    voltage_normalization=not model_config['electrode_embedding']['spectrogram']
 )
 
 # After model initialization
@@ -311,10 +313,15 @@ def calculate_pretrain_test_loss():
         batch['data'] = batch['data'].to(model.device, dtype=model_config['dtype'], non_blocking=True)
         batch['electrode_index'] = batch['electrode_index'].to(model.device, dtype=torch.long, non_blocking=True)
 
-        normalized_batch = batch['data']
-        normalized_batch = normalized_batch - torch.mean(normalized_batch, dim=[0, 2], keepdim=True)
-        normalized_batch = normalized_batch / (torch.std(normalized_batch, dim=[0, 2], keepdim=True) + 1) # note values are in range [-180, 180]
-        batch['data'] = normalized_batch
+        if model_config['laplacian_rereference']:
+            from laplacian_rereferencing import laplacian_rereference_batch
+            batch = laplacian_rereference_batch(batch, remove_non_laplacian=False)
+
+        if not model_config['electrode_embedding']['spectrogram']:
+            normalized_batch = batch['data']
+            normalized_batch = normalized_batch - torch.mean(normalized_batch, dim=[0, 2], keepdim=True)
+            normalized_batch = normalized_batch / (torch.std(normalized_batch, dim=[0, 2], keepdim=True) + 1) # note values are in range [-180, 180]
+            batch['data'] = normalized_batch
 
         loss = calculate_loss_function(batch)
         
@@ -392,10 +399,15 @@ for epoch_i in range(training_config['n_epochs']):
         batch['electrode_index'] = batch['electrode_index'].to(device, dtype=torch.long, non_blocking=True)
         subject_identifier, trial_id = batch['subject_trial'][0]
 
-        normalized_batch = batch['data']
-        normalized_batch = normalized_batch - torch.mean(normalized_batch, dim=[0, 2], keepdim=True)
-        normalized_batch = normalized_batch / (torch.std(normalized_batch, dim=[0, 2], keepdim=True) + 1) # note values are in range [-180, 180]
-        batch['data'] = normalized_batch
+        if model_config['laplacian_rereference']:
+            from laplacian_rereferencing import laplacian_rereference_batch
+            batch = laplacian_rereference_batch(batch, remove_non_laplacian=False)
+
+        if not model_config['electrode_embedding']['spectrogram']:
+            normalized_batch = batch['data']
+            normalized_batch = normalized_batch - torch.mean(normalized_batch, dim=[0, 2], keepdim=True)
+            normalized_batch = normalized_batch / (torch.std(normalized_batch, dim=[0, 2], keepdim=True) + 1) # note values are in range [-180, 180]
+            batch['data'] = normalized_batch
 
         for optimizer in optimizers: optimizer.zero_grad()
 

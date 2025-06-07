@@ -9,7 +9,7 @@ from muon import Muon
 from model_model import GranularModel, LinearBinTransformer, BinTransformer, LinearKernelTransformer, FFTaker, BrainBERT
 from model_electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit
 from dataset import load_dataloaders, load_subjects
-from evaluation_btbench import FrozenModelEvaluation_SS_SM
+from evaluation_neuroprobe import FrozenModelEvaluation_SS_SM
 from train_utils import log, update_dir_name, update_random_seed, convert_dtypes, parse_configs_from_args, get_default_configs, get_shared_memory_info
 from torch.optim.lr_scheduler import ChainedScheduler
 

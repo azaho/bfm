@@ -122,34 +122,47 @@ class FFTaker(BFModule):
 
         batch_size, n_electrodes, n_timebins, samples_per_bin = electrode_data.shape
         
-        # Calculate FFT for each timebin
-        x = electrode_data.reshape(-1, samples_per_bin)
-        x = x.to(dtype=torch.float32)  # Convert to float32 for FFT
-        x = torch.fft.rfft(x, dim=-1)  # Using rfft for real-valued input
-
+        # Reshape for STFT
+        x = electrode_data.reshape(batch_size * n_electrodes, -1)
+        x = x.to(dtype=torch.float32)  # Convert to float32 for STFT
+        
+        # STFT parameters
+        nperseg = 400
+        noverlap = 350
+        window = torch.hann_window(nperseg, device=x.device)
+        hop_length = nperseg - noverlap
+        
+        # Compute STFT
+        x = torch.stft(x,
+                      n_fft=nperseg, 
+                      hop_length=hop_length,
+                      win_length=nperseg,
+                      window=window,
+                      return_complex=True,
+                      normalized=False,
+                      center=True)
+        
+        # Take magnitude
+        x = torch.abs(x)
+        
         # Pad or trim to max_frequency_bin dimension
         if x.shape[1] < self.max_frequency_bin:
-            x = torch.nn.functional.pad(x, (0, self.max_frequency_bin - x.shape[1]))
+            x = torch.nn.functional.pad(x, (0, 0, 0, self.max_frequency_bin - x.shape[1]))
         else:
             x = x[:, :self.max_frequency_bin]
-
-        x = x.reshape(batch_size, n_electrodes, n_timebins, -1)  # shape: (batch_size, n_electrodes, n_timebins, max_frequency_bin)
+            
+        # Reshape back
+        _, n_freqs, n_times = x.shape
+        x = x.reshape(batch_size, n_electrodes, n_freqs, n_times)
         
-        if self.power:
-            # Calculate magnitude (equivalent to scipy.signal.stft's magnitude)
-            x = torch.abs(x)
-            # Convert to power
-            x = torch.log(x + 1e-5)
-        else:
-            x = torch.cat([torch.real(x), torch.imag(x)], dim=-1)  # shape: (batch_size, n_electrodes, n_timebins, 2*max_frequency_bin)
-
-        # Batchnorm after taking FFT
+        # Z-score normalization
         x = x - x.mean(dim=[0, 2], keepdim=True)
         x = x / (x.std(dim=[0, 2], keepdim=True) + 1e-5)
 
-        n_frequencies = x.shape[-1]
+        # Mask frequencies if specified
+        n_frequencies = x.shape[2]
         mask_frequency_indices = np.random.choice(n_frequencies, size=int(np.ceil(n_frequencies*p_mask_frequencies)), replace=False)
-        x[:, :, :, mask_frequency_indices] = 0
+        x[:, :, mask_frequency_indices] = 0
         
         # Transform to match expected output dimension
         x = self.output_transform(x)  # shape: (batch_size, n_electrodes, n_timebins, first_kernel//n_downsample_factor)
