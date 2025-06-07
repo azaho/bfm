@@ -31,9 +31,6 @@ class BrainTreebankSubject:
         self.neural_data_cache = {} # structure: {trial_id: torch.Tensor of shape (n_electrodes, n_samples)}
         self.h5_files = {} # structure: {trial_id: h5py.File}
 
-        # For downstream Laplacian rereferencing
-        self.laplacian_electrodes, self.electrode_neighbors = self._get_all_laplacian_electrodes()
-
         self.neural_data_cache_window_from = 0
         self.neural_data_cache_window_to = None
 
@@ -69,36 +66,6 @@ class BrainTreebankSubject:
         corrupted_electrodes = json.load(open(corrupted_electrodes_file))
         corrupted_electrodes = [self._clean_electrode_label(e) for e in corrupted_electrodes[f'sub_{self.subject_id}']]
         return corrupted_electrodes
-    def _get_all_laplacian_electrodes(self, verbose=False):
-        """
-            Get all laplacian electrodes for a given subject. This function is originally from
-            https://github.com/czlwang/BrainBERT repository (Wang et al., 2023)
-        """
-        def stem_electrode_name(name):
-            #names look like 'O1aIb4', 'O1aIb5', 'O1aIb6', 'O1aIb7'
-            #names look like 'T1b2
-            reverse_name = reversed(name)
-            found_stem_end = False
-            stem, num = [], []
-            for c in reversed(name):
-                if c.isalpha():
-                    found_stem_end = True
-                if found_stem_end:
-                    stem.append(c)
-                else:
-                    num.append(c)
-            return ''.join(reversed(stem)), int(''.join(reversed(num)))
-        def has_neighbors(stem, stems):
-            (x,y) = stem
-            return ((x,y+1) in stems) and ((x,y-1) in stems)
-        def get_neighbors(stem):
-            (x,y) = stem
-            return [f'{x}{y}' for (x,y) in [(x,y+1), (x,y-1)]]
-        stems = [stem_electrode_name(e) for e in self.electrode_labels]
-        laplacian_stems = [x for x in stems if has_neighbors(x, stems)]
-        electrodes = [f'{x}{y}' for (x,y) in laplacian_stems]
-        neighbors = {e: get_neighbors(stem_electrode_name(e)) for e in electrodes}
-        return electrodes, neighbors
     def _filter_electrode_labels(self):
         """
             Filter the electrode labels to remove corrupted electrodes and electrodes that don't have brain signal
@@ -137,16 +104,6 @@ class BrainTreebankSubject:
             for electrode_label, electrode_id in self.electrode_ids.items():
                 neural_data_key = self.h5_neural_data_keys[electrode_label]
                 self.neural_data_cache[trial_id][electrode_id] = torch.from_numpy(f['data'][neural_data_key][cache_window_from:cache_window_to]).to(self.dtype)
-
-    def _calculate_laplacian_rereferencing_addon(self, trial_id):
-        assert trial_id in self.neural_data_cache, "Trial data must be cached before Laplacian rereferencing can be applied."
-        neural_data_cache = self.neural_data_cache[trial_id]
-        neighbors_data = torch.zeros((len(self.electrode_labels), neural_data_cache.shape[1]), dtype=self.dtype)
-        for electrode_label, electrode_id in self.electrode_ids.items():
-            assert electrode_label in self.electrode_neighbors, f"Neighbor electrodes for electrode {electrode_label} not found in electrode_neighbors. A mistake upstream must have happened."
-            neighbors = self.electrode_neighbors[electrode_label]
-            neighbors_data[electrode_id] = torch.mean(torch.stack([neural_data_cache[self.electrode_ids[n]][:] for n in neighbors]), dim=0)
-        return neighbors_data
     def clear_neural_data_cache(self, trial_id=None):
         if trial_id is None:
             self.neural_data_cache = {}

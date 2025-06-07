@@ -52,9 +52,6 @@ class MGHSubject:
             self.electrode_index_subset[session_id] = np.array([self.electrode_ids[e] for e in session_electrode_labels])
             self.electrode_labels_subset[session_id] = session_electrode_labels
 
-        # For downstream Laplacian rereferencing
-        self.laplacian_electrodes, self.electrode_neighbors = self._get_all_laplacian_electrodes()
-
     def get_n_electrodes(self, session_id=None):
         if session_id is None: return len(self.electrode_labels)
         else: return len(self.electrode_index_subset[session_id])
@@ -86,17 +83,11 @@ class MGHSubject:
         corrupted_electrodes = [self._clean_electrode_label(e) for e in corrupted_electrodes[self.subject_identifier + "_" + str(session_id)]]
         return corrupted_electrodes
 
-    def _get_all_laplacian_electrodes(self, verbose=False):
-        """Get all laplacian electrodes for a given subject"""
-        return [], {} # TODO: Implement this
-
     # Process group and mni_name columns to handle special cases with hyphens
     def _process_channel_name(self, name):
         if '-' not in name:
             return name
-            
         base, suffix = name.split('-', 1)
-            
         # Handle range cases
         if 'one-to-eight' in name:
             num = int(''.join(c for c in suffix if c.isdigit()))
@@ -109,7 +100,6 @@ class MGHSubject:
         if any(c.isdigit() for c in suffix):
             num = int(''.join(c for c in suffix if c.isdigit()))
             return base + str(num)
-            
         return name
     def _filter_electrode_labels(self, electrode_labels, session_id=None, keep_corrupted=False):
         """Filter out corrupted and non-neural electrodes"""
@@ -128,12 +118,10 @@ class MGHSubject:
     
         filtered_electrode_labels = [e for e in filtered_electrode_labels if not any(e.upper().startswith(x) for x in non_neural_channels)]
 
-
         # replace substrings like "CM" and "ANT" in the electrode labels with ""
         filtered_electrode_labels = [e.replace("CM", "").replace("ANT", "") for e in filtered_electrode_labels]
         # replace the dashed names with clean names
         filtered_electrode_labels = [self._process_channel_name(e) for e in filtered_electrode_labels]
-
         return filtered_electrode_labels
 
     def get_electrode_coordinates(self, session_id=None):
