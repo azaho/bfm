@@ -36,7 +36,7 @@ class SubjectTrialDataset(Dataset):
         self.output_subject_trial_id = output_subject_trial_id
         self.output_electrode_labels = output_electrode_labels
 
-        self.electrode_keys = [(subject.subject_identifier, electrode_label) for electrode_label in self.electrode_labels]
+        self.electrode_keys = [(subject.subject_identifier, electrode_label) for electrode_label in self.subject.electrode_labels]
         if output_embeddings_map is not None:                
             self.electrode_indices = torch.tensor([self.output_embeddings_map[key] for key in self.electrode_keys])
 
@@ -55,7 +55,7 @@ class SubjectTrialDataset(Dataset):
         if self.output_subject_trial_id: 
             output['subject_trial'] = (self.subject.subject_identifier, self.trial_id)
         if self.output_electrode_labels:
-            output['electrode_labels'] = self.electrode_labels # Also output the electrode label
+            output['electrode_labels'] = self.subject.electrode_labels # Also output the electrode label
         if self.output_embeddings_map: 
             output['electrode_index'] = self.electrode_indices
         return output
@@ -148,16 +148,21 @@ class RandomElectrodeCollator:
         # Process signals
         processed_data = []
         processed_electrode_indices = []
+        processed_electrode_labels = []
         for item in batch:
             data = item['data']
             if min_electrodes != max_electrodes: # Only if all electrodes are not the same length (assuming they come from different places) # XXX Surely there must be a better way to do this, for example look at variance of electrode_indices
                 selected_idx =  torch.randperm(data.shape[0])[:n_electrodes]
             if 'electrode_index' in item:
                 processed_electrode_indices.append(item['electrode_index'][selected_idx])
+            if 'electrode_labels' in item:
+                processed_electrode_labels.append([item['electrode_labels'][i] for i in selected_idx])
             processed_data.append(data[selected_idx])
         output['data'] = torch.stack(processed_data)
         if len(processed_electrode_indices) > 0:
             output['electrode_index'] = torch.stack(processed_electrode_indices)
+        if len(processed_electrode_labels) > 0:
+            output['electrode_labels'] = processed_electrode_labels
         
         # Copy through any other fields that don't need processing
         for key in batch[0].keys():
@@ -221,7 +226,7 @@ def load_subjects(train_subject_trials, eval_subject_trials, dtype, cache=True, 
 
     return all_subjects
 
-def load_dataloaders(all_subjects, train_subject_trials, p_test, sample_timebin_size, max_n_timebins, dtype, 
+def load_dataloaders(all_subjects, train_subject_trials, p_test, context_length, dtype, 
                      batch_size, max_n_electrodes=None, output_embeddings_map=None, single_electrode=False, 
                      num_workers_dataloaders=12, prefetch_factor=2, test_num_workers_fraction=0.15):
     # Step 2: Load all datasets 
@@ -233,7 +238,7 @@ def load_dataloaders(all_subjects, train_subject_trials, p_test, sample_timebin_
             SubjectTrialDatasetClass(
                 all_subjects[subject_identifier], 
                 trial_id, 
-                int(sample_timebin_size * all_subjects[subject_identifier].get_sampling_rate(trial_id) * max_n_timebins), 
+                int(context_length * all_subjects[subject_identifier].get_sampling_rate(trial_id)), 
                 dtype=dtype, 
                 output_embeddings_map=output_embeddings_map,
                 output_subject_trial_id=True,

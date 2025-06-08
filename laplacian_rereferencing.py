@@ -55,20 +55,23 @@ def laplacian_rereference_neural_data(electrode_data, electrode_labels, remove_n
     rereferenced_data = torch.zeros((batch_size, rereferenced_n_electrodes, n_samples), dtype=electrode_data.dtype, device=electrode_data.device)
 
     electrode_i = 0
-    for electrode_label in electrode_labels:
+    original_electrode_indices = []
+    for original_electrode_index, electrode_label in enumerate(electrode_labels):
         if electrode_label in laplacian_electrodes:
             rereferenced_data[:, electrode_i] = electrode_data[:, electrode_i] - torch.mean(electrode_data[:, laplacian_neighbor_indices[electrode_label]], axis=1)
+            original_electrode_indices.append(original_electrode_index)
             electrode_i += 1
         else:
             if remove_non_laplacian: 
                 continue # just skip the non-laplacian electrodes
             else:
                 rereferenced_data[:, electrode_i] = electrode_data[:, electrode_i]
+                original_electrode_indices.append(original_electrode_index)
                 electrode_i += 1
                 
     if batch_unsqueeze:
         rereferenced_data = rereferenced_data.squeeze(0)
-    return rereferenced_data, laplacian_electrodes if remove_non_laplacian else electrode_labels
+    return rereferenced_data, laplacian_electrodes if remove_non_laplacian else electrode_labels, original_electrode_indices
 
 
 def laplacian_rereference_batch(batch, remove_non_laplacian=True):
@@ -77,24 +80,24 @@ def laplacian_rereference_batch(batch, remove_non_laplacian=True):
     inputs:
         batch: dictionary containing the following keys:
             'data': torch tensor of shape (batch_size, n_electrodes, n_samples) or (n_electrodes, n_samples)
-            'electrode_label': list of electrode labels
-            'electrode_index': list of electrode indices
+            'electrode_label': [lists of electrode labels] of length batch_size
+            'electrode_index': [lists of electrode indices] of length batch_size
     outputs:
         batch: dictionary containing the following keys:
             'data': torch tensor of shape (batch_size, n_electrodes_rereferenced, n_samples) or (n_electrodes_rereferenced, n_samples)
-            'electrode_labels': list of electrode labels of length n_electrodes_rereferenced (n_electrodes_rereferenced could be different from n_electrodes if remove_non_laplacian is True)
-            'electrode_index': list of electrode indices of length n_electrodes_rereferenced (n_electrodes_rereferenced could be different from n_electrodes if remove_non_laplacian is True)
+            'electrode_labels': lists of electrode labels of length n_electrodes_rereferenced (n_electrodes_rereferenced could be different from n_electrodes if remove_non_laplacian is True)
+            'electrode_index': lists of electrode indices of length n_electrodes_rereferenced (n_electrodes_rereferenced could be different from n_electrodes if remove_non_laplacian is True)
     """
-    electrode_data = batch['data']
-    electrode_labels = batch['electrode_labels']
-    rereferenced_data, rereferenced_labels = laplacian_rereference_neural_data(electrode_data, electrode_labels, remove_non_laplacian=remove_non_laplacian)
+    electrode_data = batch['data'] # shape: (batch_size, n_electrodes, n_samples)
+    electrode_labels = batch['electrode_labels'] # shape: (batch_size, n_electrodes)
+    rereferenced_data, rereferenced_labels, original_electrode_indices = laplacian_rereference_neural_data(electrode_data, electrode_labels[0], remove_non_laplacian=remove_non_laplacian)
+    # XXX The line above assumes that the electrode labels are the same for all subjects in the batch. This may or may not be the case. Need to find a more efficient way later to do it item per item.
+
     batch['data'] = rereferenced_data
     batch['electrode_labels'] = rereferenced_labels
 
     if 'electrode_index' in batch:
-        electrode_indices = batch['electrode_index']
-        rereferenced_indices = [electrode_indices[electrode_labels.index(label)] for label in rereferenced_labels]
-        batch['electrode_index'] = rereferenced_indices
+        batch['electrode_index'] = batch['electrode_index'][:, original_electrode_indices]
 
     return batch
 

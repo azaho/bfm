@@ -108,7 +108,7 @@ class FrozenModelEvaluation_SS_SM():
 
             if self.laplacian_rereference:
                 from laplacian_rereferencing import laplacian_rereference_batch
-                batch = {'data': batch_input, 'electrode_labels': self.all_subject_electrode_labels[subject_identifier]}
+                batch = {'data': batch_input, 'electrode_labels': [self.all_subject_electrode_labels[subject_identifier]] * batch_input.shape[0]}
                 batch = laplacian_rereference_batch(batch, remove_non_laplacian=False)
                 batch_input = batch['data']
             

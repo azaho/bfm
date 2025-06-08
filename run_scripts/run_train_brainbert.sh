@@ -20,7 +20,7 @@ train_subject_trial_options=(
 )
 eval_subject_trials="btbank1_1,btbank1_2,btbank2_0,btbank2_4,btbank3_0,btbank3_1,btbank4_0,btbank4_1,btbank7_0,btbank7_1,btbank10_0,btbank10_1"
 
-random_string_options=("BBB3")
+random_string_options=("BBB")
 
 learning_rate_options=(0.003) # 0.001 0.01)
 max_n_electrodes_options=(80) #(1 2 4 8 16 32 64 124)
@@ -43,7 +43,7 @@ d_model_options=(768)
 first_kernel_options=(256)
 causal_options=(0)
 
-wandb_project="BB_tests_new"
+wandb_project="BB2"
 
 sample_timebin_size=0.125 #0.0625
 

@@ -95,7 +95,7 @@ electrode_embeddings = electrode_embeddings.to(device, dtype=model_config['dtype
 # if model_config['electrode_embedding']['spectrogram']:
 #     electrode_data_embeddings = ElectrodeDataEmbeddingFFT(
 #         electrode_embeddings, model_config['sample_timebin_size'], model_config['transformer']['d_model'], 
-#         max_frequency_bin=model_config['max_frequency_bin']
+#         max_frequency=model_config['max_frequency']
 #     ).to(device, dtype=model_config['dtype'])
 # else:
 #     electrode_data_embeddings = ElectrodeDataEmbedding(
@@ -122,10 +122,9 @@ for subject in all_subjects.values():
 electrode_embeddings = electrode_embeddings.to(device, dtype=model_config['dtype']) # moving to device again to ensure the new parameters are on the correct device
 
 log(f"Loading dataloaders...", priority=0)
-n_samples = model_config['max_n_timebins'] * model_config['sample_timebin_size']
 train_dataloader, test_dataloader = load_dataloaders(
     all_subjects, training_config['train_subject_trials'], training_config['p_test'], 
-    model_config['sample_timebin_size'], model_config['max_n_timebins'], training_config['data_dtype'], 
+    model_config['context_length'], training_config['data_dtype'], 
     training_config['batch_size'],
     num_workers_dataloaders=cluster_config['num_workers_dataloaders'], 
     prefetch_factor=cluster_config['prefetch_factor'],

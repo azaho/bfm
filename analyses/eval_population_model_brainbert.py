@@ -93,12 +93,12 @@ if model_config['electrode_embedding']['spectrogram']:
     bin_embed_transformer = FFTaker(
         d_input=model_config['first_kernel'],
         d_model=model_config['transformer']['d_model'],
-        max_frequency_bin=model_config['max_frequency_bin']
+        max_frequency=model_config['max_frequency']
     )
 else:
     bin_embed_transformer = torch.nn.Identity()
 
-brainbert_d_input = model_config['first_kernel'] if not model_config['electrode_embedding']['spectrogram'] else model_config['max_frequency_bin']
+brainbert_d_input = model_config['first_kernel'] if not model_config['electrode_embedding']['spectrogram'] else model_config['max_frequency']
 model = BrainBERT(
     d_input=brainbert_d_input,
     d_model=model_config['transformer']['d_model'],
@@ -140,9 +140,9 @@ def get_model_features(x, fs=2048, max_batch_size=100):
             if model_config['electrode_embedding']['spectrogram']:
                 bin_embed_transformed_data, masked_frequency_indices = bin_embed_transformer(batch_x, p_mask_frequencies=0, return_mask_frequency_indices=True) # shape: (batch_size, n_electrodes, n_timebins, d_model)
             else:
-                bin_embed_transformed_data = bin_embed_transformer(batch_x) # shape: (batch_size, n_electrodes, n_timebins, d_model or max_frequency_bin or first_kernel)
+                bin_embed_transformed_data = bin_embed_transformer(batch_x) # shape: (batch_size, n_electrodes, n_timebins, d_model or max_frequency or first_kernel)
 
-            model_output = model(bin_embed_transformed_data) # shape: (batch_size, n_electrodes, n_timebins, d_model or max_frequency_bin or first_kernel)
+            model_output = model(bin_embed_transformed_data) # shape: (batch_size, n_electrodes, n_timebins, d_model or max_frequency or first_kernel)
             electrode_data = model_output
 
             batch_i, n_channels, n_timebins, sample_timebin_size = electrode_data.shape

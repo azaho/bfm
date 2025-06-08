@@ -18,7 +18,7 @@ d_models=(192) # 240 288)
 n_layers=(5) # 10 20)
 weight_decays=(0.0)
 random_strings=("MBF_1" "MBF_2" "MBF_3")
-max_frequency_bins=(128 96 64 48 32 16)
+max_frequencys=(128 96 64 48 32 16)
 
 # Calculate indices for two parallel jobs
 idx1=$(( ($SLURM_ARRAY_TASK_ID-1) * 2 ))
@@ -29,7 +29,7 @@ n_d=${#d_models[@]}
 n_l=${#n_layers[@]}
 n_ws=${#weight_decays[@]}
 n_rs=${#random_strings[@]}
-n_mbf=${#max_frequency_bins[@]}
+n_mbf=${#max_frequencys[@]}
 
 # Convert indices for first job
 layer_idx1=$(( idx1 % n_l ))
@@ -53,7 +53,7 @@ D_MODEL1=${d_models[$d_idx1]}
 N_LAYERS1=${n_layers[$layer_idx1]}
 WS1=${weight_decays[$ws_idx1]}
 RS1=${random_strings[$rs_idx1]}
-MBF1=${max_frequency_bins[$mbf_idx1]}
+MBF1=${max_frequencys[$mbf_idx1]}
 
 # Get parameter values for second job
 LR2=${learning_rates[$lr_idx2]}
@@ -61,11 +61,11 @@ D_MODEL2=${d_models[$d_idx2]}
 N_LAYERS2=${n_layers[$layer_idx2]}
 WS2=${weight_decays[$ws_idx2]}
 RS2=${random_strings[$rs_idx2]}
-MBF2=${max_frequency_bins[$mbf_idx2]}
+MBF2=${max_frequencys[$mbf_idx2]}
 
 echo "Job 1 - LR: $LR1, D_MODEL: $D_MODEL1, N_LAYERS: $N_LAYERS1, WS: $WS1, RS: $RS1, MBF: $MBF1"
 echo "Job 2 - LR: $LR2, D_MODEL: $D_MODEL2, N_LAYERS: $N_LAYERS2, WS: $WS2, RS: $RS2, MBF: $MBF2"
 
-python -u train_model.py --learning_rate $LR1 --d_model $D_MODEL1 --n_layers_electrode $N_LAYERS1 --n_layers_time $N_LAYERS1 --weight_decay $WS1 --random_string $RS1 --max_frequency_bin $MBF1 &
-python -u train_model.py --learning_rate $LR2 --d_model $D_MODEL2 --n_layers_electrode $N_LAYERS2 --n_layers_time $N_LAYERS2 --weight_decay $WS2 --random_string $RS2 --max_frequency_bin $MBF2 &
+python -u train_model.py --learning_rate $LR1 --d_model $D_MODEL1 --n_layers_electrode $N_LAYERS1 --n_layers_time $N_LAYERS1 --weight_decay $WS1 --random_string $RS1 --max_frequency $MBF1 &
+python -u train_model.py --learning_rate $LR2 --d_model $D_MODEL2 --n_layers_electrode $N_LAYERS2 --n_layers_time $N_LAYERS2 --weight_decay $WS2 --random_string $RS2 --max_frequency $MBF2 &
 wait

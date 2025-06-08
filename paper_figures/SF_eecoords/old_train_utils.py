@@ -26,7 +26,7 @@ def get_default_configs(random_string, wandb_project):
     }
     model_config = {
         'sample_timebin_size': 0.125, # in seconds
-        'max_frequency_bin': 64, # XXX Todo: make this based on frequency and not bin number
+        'max_frequency': 64, # XXX Todo: make this based on frequency and not bin number
         'max_n_timebins': 24,
         'max_n_electrodes': 128,
 
@@ -74,7 +74,7 @@ def parse_configs_from_args(training_config, model_config, cluster_config):
     parser.add_argument('--n_layers_time', type=int, default=None, help='Number of transformer layers for time path')
     parser.add_argument('--dropout', type=float, default=None, help='Dropout rate')
     parser.add_argument('--embedding_dim', type=int, default=None, help='Dimension of electrode embeddings')
-    parser.add_argument('--max_frequency_bin', type=int, default=None, help='Maximum frequency bin')
+    parser.add_argument('--max_frequency', type=int, default=None, help='Maximum frequency bin')
     parser.add_argument('--sample_timebin_size', type=float, default=None, help='Sample timebin size in seconds')
     parser.add_argument('--max_n_timebins', type=int, default=None, help='Maximum number of time bins')
 
@@ -139,8 +139,8 @@ def parse_configs_from_args(training_config, model_config, cluster_config):
         cluster_config['wandb_project'] = args.wandb_project
     if args.embedding_dim is not None:
         model_config['electrode_embedding']['embedding_dim'] = args.embedding_dim
-    if args.max_frequency_bin is not None:
-        model_config['max_frequency_bin'] = args.max_frequency_bin if args.max_frequency_bin != -1 else None
+    if args.max_frequency is not None:
+        model_config['max_frequency'] = args.max_frequency if args.max_frequency != -1 else None
     if args.train_subject_trials is not None:
         train_subject_trials = []
         for subject_trial in args.train_subject_trials.replace(" ", "").split(","):
@@ -221,8 +221,8 @@ def update_dir_name(model_config, training_config, cluster_config):
         dir_name += f"_pps{training_config['p_electrodes_per_stream']}"
     if model_config['electrode_embedding']['embedding_dim'] is not None:
         dir_name += f"_ed{model_config['electrode_embedding']['embedding_dim']}"
-    if model_config['max_frequency_bin'] != 64:
-        dir_name += f"_mbf{model_config['max_frequency_bin']}"
+    if model_config['max_frequency'] != 64:
+        dir_name += f"_mbf{model_config['max_frequency']}"
     if model_config['transformer']['dropout'] != 0.2:
         dir_name += f"_dr{model_config['transformer']['dropout']}"
     if training_config['batch_size'] != 100:

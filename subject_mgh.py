@@ -303,7 +303,6 @@ if __name__ == "__main__":
             print(f"\t{subject.subject_identifier}_{session_id}:\t{session_length_str},\tsampling_rate={metadata['sampling_rate']},\tn_electrodes={len(electrode_labels)},\tn_EEG_electrodes={n_EEG_channels},\tn_non_EEG_electrodes={n_non_EEG_channels},\tn_coordinates={n_non_nan_coordinates}")
 
 
-exit()
 if __name__ == "__main__":
     subject = MGHSubject(22, cache=False)
     print(subject.electrode_labels)

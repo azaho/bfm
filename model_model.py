@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 from model_transformers import BFModule
 import numpy as np
+
+
 class BFModel(BFModule):
     """Base model class for brain-feature models.
     
@@ -105,14 +107,18 @@ class BinTransformer(BFModule):
         return electrode_data
 
 class FFTaker(BFModule):
-    def __init__(self, d_input, d_model=192, max_frequency_bin=64, power=True, output_transform=False):
+    def __init__(self, d_input, d_model=192, max_frequency=200, nperseg=400, noverlap=350, power=True, output_transform=False):
         super(FFTaker, self).__init__()
-        self.max_frequency_bin = max_frequency_bin
+        self.max_frequency = max_frequency
         self.power = power
         self.d_input = d_input
         self.d_model = d_model
+        self.nperseg = nperseg
+        self.noverlap = noverlap
+        #freqs = np.fft.rfftfreq(nperseg, d=1/2048)
+        self.max_frequency_bin = 40 # np.argmax(freqs > max_frequency)
         # Transform FFT output to match expected output dimension
-        self.output_transform = nn.Identity() if not output_transform else nn.Linear(max_frequency_bin if power else 2*max_frequency_bin, 
+        self.output_transform = nn.Identity() if not output_transform else nn.Linear(self.max_frequency_bin if power else 2*self.max_frequency_bin, 
                                                                             d_model)
     
     def forward(self, electrode_data, p_mask_frequencies=0, return_mask_frequency_indices=False):
@@ -145,7 +151,7 @@ class FFTaker(BFModule):
         # Take magnitude
         x = torch.abs(x)
         
-        # Pad or trim to max_frequency_bin dimension
+        # Pad or trim to max_frequency dimension
         if x.shape[1] < self.max_frequency_bin:
             x = torch.nn.functional.pad(x, (0, 0, 0, self.max_frequency_bin - x.shape[1]))
         else:
@@ -165,6 +171,7 @@ class FFTaker(BFModule):
         x[:, :, mask_frequency_indices] = 0
         
         # Transform to match expected output dimension
+        x = x.transpose(2, 3) # (batch_size, n_electrodes, n_timebins, n_freqs)
         x = self.output_transform(x)  # shape: (batch_size, n_electrodes, n_timebins, first_kernel//n_downsample_factor)
         
         if return_mask_frequency_indices:

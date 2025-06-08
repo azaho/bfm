@@ -13,6 +13,7 @@ from evaluation_neuroprobe import FrozenModelEvaluation_SS_SM
 from train_utils import log, update_dir_name, update_random_seed, convert_dtypes, parse_configs_from_args, get_default_configs, get_shared_memory_info
 from torch.optim.lr_scheduler import ChainedScheduler
 
+
 training_config, model_config, cluster_config = get_default_configs(random_string="TEMP", wandb_project="")
 parse_configs_from_args(training_config, model_config, cluster_config)
 dir_name = update_dir_name(model_config, training_config, cluster_config)
@@ -36,7 +37,7 @@ if model_config['electrode_embedding']['spectrogram']:
     bin_embed_transformer = FFTaker(
         d_input=model_config['first_kernel'],
         d_model=model_config['transformer']['d_model'],
-        max_frequency_bin=model_config['max_frequency_bin']
+        max_frequency=model_config['max_frequency']
     )
 else:
     bin_embed_transformer = torch.nn.Identity()
@@ -45,7 +46,7 @@ if model_config['electrode_embedding']['spectrogram']:
     bin_unembed_transformer = FFTaker(
         d_input=model_config['first_kernel'],
         d_model=model_config['transformer']['d_model'],
-        max_frequency_bin=model_config['max_frequency_bin'],
+        max_frequency=model_config['max_frequency'],
         output_transform=model_config['separate_unembed']
     )
 else:
@@ -57,7 +58,7 @@ else:
 bin_unembed_transformer = bin_unembed_transformer.to(device, dtype=model_config['dtype'])
 bin_embed_transformer = bin_embed_transformer.to(device, dtype=model_config['dtype'])
 
-brainbert_d_input = model_config['first_kernel'] if not model_config['electrode_embedding']['spectrogram'] else model_config['max_frequency_bin']
+brainbert_d_input = model_config['first_kernel'] if not model_config['electrode_embedding']['spectrogram'] else 40 # XXX hardcoded max frequency bin
 model = BrainBERT(
     d_input=brainbert_d_input,
     d_model=model_config['transformer']['d_model'],
@@ -100,10 +101,9 @@ for subject in all_subjects.values():
 electrode_embeddings = electrode_embeddings.to(device, dtype=model_config['dtype']) # moving to device again to ensure the new parameters are on the correct device
 
 log(f"Loading dataloaders...", priority=0)
-n_samples = model_config['max_n_timebins'] * model_config['sample_timebin_size']
 train_dataloader, test_dataloader = load_dataloaders(
     all_subjects, training_config['train_subject_trials'], training_config['p_test'], 
-    model_config['sample_timebin_size'], model_config['max_n_timebins'], training_config['data_dtype'], 
+    model_config['context_length'], training_config['data_dtype'], 
     training_config['batch_size'],
     num_workers_dataloaders=cluster_config['num_workers_dataloaders'], 
     prefetch_factor=cluster_config['prefetch_factor'],
@@ -240,13 +240,13 @@ def calculate_loss_function(batch, output_accuracy=True):
     if model_config['electrode_embedding']['spectrogram']:
         bin_embed_transformed_data, masked_frequency_indices = bin_embed_transformer(masked_batch_data, p_mask_frequencies=training_config['p_masked_frequency_bins'], return_mask_frequency_indices=True) # shape: (batch_size, n_electrodes, n_timebins, d_model)
     else:
-        bin_embed_transformed_data = bin_embed_transformer(masked_batch_data) # shape: (batch_size, n_electrodes, n_timebins, d_model or max_frequency_bin or first_kernel)
+        bin_embed_transformed_data = bin_embed_transformer(masked_batch_data) # shape: (batch_size, n_electrodes, n_timebins, d_model or max_frequency or first_kernel)
     if model_config['electrode_embedding']['spectrogram']:
-        bin_unembed_transformed_data = bin_unembed_transformer(batch['data'], p_mask_frequencies=0) # shape: (batch_size, n_electrodes, n_timebins, d_model or max_frequency_bin or first_kernel)
+        bin_unembed_transformed_data = bin_unembed_transformer(batch['data'], p_mask_frequencies=0) # shape: (batch_size, n_electrodes, n_timebins, d_model or max_frequency or first_kernel)
     else:
-        bin_unembed_transformed_data = bin_unembed_transformer(batch['data']) # shape: (batch_size, n_electrodes, n_timebins, d_model or max_frequency_bin or first_kernel)
+        bin_unembed_transformed_data = bin_unembed_transformer(batch['data']) # shape: (batch_size, n_electrodes, n_timebins, d_model or max_frequency or first_kernel)
 
-    model_output = model(bin_embed_transformed_data) # shape: (batch_size, n_electrodes, n_timebins, d_model or max_frequency_bin or first_kernel)
+    model_output = model(bin_embed_transformed_data) # shape: (batch_size, n_electrodes, n_timebins, d_model or max_frequency or first_kernel)
 
     _add_to_loss = _add_to_loss_l2 if training_config['loss_type'] == 'l2' else _add_to_loss_contrastive
 
@@ -380,7 +380,7 @@ print("eval_full_model", eval_full_model)
 eval_results.update(eval_full_model)
 
 if wandb: wandb.log(eval_results, step=1)
-del eval_full_model
+del eval_full_model, eval_raw
 torch.cuda.empty_cache()
 gc.collect()
 

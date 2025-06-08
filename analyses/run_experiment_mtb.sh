@@ -43,4 +43,4 @@ python -u train_model.py  --cache_subjects 1 \
     --learning_rate $learning_rate \
     --sample_timebin_size $sample_timebin_size \
     --max_n_timebins $max_n_timebins \
-    --max_frequency_bin -1
+    --max_frequency -1
