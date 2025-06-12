@@ -7,7 +7,7 @@ import gc
 
 from muon import Muon
 from model_model import FFTaker, OriginalModel
-from model_electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit
+from model_electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
 from dataset import load_dataloaders, load_subjects
 from evaluation_neuroprobe import FrozenModelEvaluation_SS_SM
 from train_utils import log, update_dir_name, update_random_seed, convert_dtypes, parse_configs_from_args, get_default_configs, get_shared_memory_info
@@ -43,30 +43,20 @@ model = OriginalModel(
     n_layers_time=model_config['transformer']['n_layers_time'],
     n_heads=model_config['transformer']['n_heads'],
     dropout=model_config['transformer']['dropout']
-)
+).to(device, dtype=model_config['dtype'])
 
 ### LOAD ELECTRODE EMBEDDINGS ###
 
-if model_config['electrode_embedding']['type'] == 'learned' or model_config['electrode_embedding']['type'] == 'zero':
-    electrode_embeddings = ElectrodeEmbedding_Learned(
-        model_config['transformer']['d_model'], 
-        embedding_dim=model_config['electrode_embedding']['embedding_dim'],
-        embedding_requires_grad=model_config['electrode_embedding']['type'] != 'zero'
-    )
-elif model_config['electrode_embedding']['type'] == 'coordinate_init':
-    electrode_embeddings = ElectrodeEmbedding_Learned_CoordinateInit(
-        model_config['transformer']['d_model'], 
-        embedding_dim=model_config['electrode_embedding']['embedding_dim']
-    )
-elif model_config['electrode_embedding']['type'] == 'noisy_coordinate':
-    electrode_embeddings = ElectrodeEmbedding_NoisyCoordinate(
-        model_config['transformer']['d_model'], 
-        coordinate_noise_std=model_config['electrode_embedding']['coordinate_noise_std'],
-        embedding_dim=model_config['electrode_embedding']['embedding_dim']
-    )
-else:
-    raise ValueError(f"Invalid electrode embedding type: {model_config['electrode_embedding']['type']}")
-electrode_embeddings = electrode_embeddings.to(device, dtype=model_config['dtype'])
+electrode_embeddings = {
+    'learned': ElectrodeEmbedding_Learned,
+    'zero': ElectrodeEmbedding_Zero,
+    'coordinate_init': ElectrodeEmbedding_Learned_CoordinateInit,
+    'noisy_coordinate': ElectrodeEmbedding_NoisyCoordinate,
+}[model_config['electrode_embedding']['type']](
+    model_config['transformer']['d_model'], 
+    embedding_dim=model_config['electrode_embedding']['embedding_dim'],
+    coordinate_noise_std=model_config['electrode_embedding']['coordinate_noise_std'],
+).to(device, dtype=model_config['dtype'])
 
 for subject in all_subjects.values():
     log(f"Adding subject {subject.subject_identifier} to electrode embeddings...", priority=0)
@@ -93,7 +83,7 @@ eval_subject_trials = [(all_subjects[subject_identifier], trial_id) for subject_
 eval_tasks = ['frame_brightness', 'global_flow', 'local_flow', 'global_flow_angle', 'local_flow_angle', 'face_num', 'volume', 'pitch', 'delta_volume', 
               'delta_pitch', 'speech', 'onset', 'gpt2_surprisal', 'word_length', 'word_gap', 'word_index', 'word_head_pos', 'word_part_speech', 'speaker']
 # Below for just two tasks in Neuroprobe (minimal eval)
-# eval_tasks = ['gpt2_surprisal', 'speech']
+eval_tasks = ['gpt2_surprisal', 'speech']
 evaluation = FrozenModelEvaluation_SS_SM(
     eval_tasks, eval_subject_trials, 
     training_config['data_dtype'], training_config['batch_size'], # Can have a bigger batch size here if that speeds things up
@@ -146,17 +136,19 @@ def calculate_loss_function(batch, output_accuracy=True):
     # batch['electrode_index'] shape: (batch_size, n_electrodes)
     losses = {}
     def _add_to_loss_contrastive(output, target, loss_suffix):
+        # output and target shape: (batch_size, n_timebins-future_bin_idx, d_model)
         if training_config['normalize_features']:
             output_ = output / (torch.norm(output, dim=-1, keepdim=True) + 0.001)
             target_ = target / (torch.norm(target, dim=-1, keepdim=True) + 0.001)
-        similarity = output_.permute(1, 2, 0, 3) @ target_.permute(1, 2, 3, 0) # shape: (n_electrodes, n_timebins-1, batch_size, batch_size)
+        similarity = output_.permute(1, 0, 2) @ target_.permute(1, 2, 0) # shape: (n_timebins-future_bin_idx, batch_size, batch_size)
         if training_config['use_temperature_param']:
             similarity = similarity * torch.minimum(torch.exp(model.temperature_param), torch.tensor(training_config['max_temperature_param'], device=model.device, dtype=model.dtype))
-        expanded_arange_bin = torch.arange(batch_size).unsqueeze(0).repeat(output.shape[1], output.shape[2], 1).to(model.device, dtype=torch.long).reshape(-1)
-        loss_bin = torch.nn.functional.cross_entropy(similarity[:, :, :, :].view(-1, batch_size), expanded_arange_bin)
-        losses[f'contrastive_{loss_suffix}'] = loss_bin
+        expanded_arange = torch.arange(batch_size).unsqueeze(0).repeat(output.shape[1], 1).to(model.device, dtype=torch.long).reshape(-1)
+
+        loss = torch.nn.functional.cross_entropy(similarity[:, :, :].view(-1, batch_size), expanded_arange)
+        losses[f'contrastive_{loss_suffix}'] = loss
         if output_accuracy:
-            accuracy_bin = (similarity[:, :, :, :].view(-1, batch_size).argmax(dim=-1) == expanded_arange_bin).float().mean()
+            accuracy_bin = (similarity[:, :, :].view(-1, batch_size).argmax(dim=-1) == expanded_arange).float().mean()
             losses[f'accuracy_{loss_suffix}'] = accuracy_bin
         return losses
     future_bin_idx = training_config['future_bin_idx']
@@ -177,8 +169,8 @@ def calculate_loss_function(batch, output_accuracy=True):
     electrode_transformed_data_b, time_transformed_data_b = model(electrode_data_b, embeddings_b) # shape: (batch_size, n_timebins, d_model)
 
     # add two symmetric loss components
-    _add_to_loss_contrastive(time_transformed_data_a[:, :future_bin_idx], electrode_transformed_data_b[:, future_bin_idx:], 'a')
-    _add_to_loss_contrastive(time_transformed_data_b[:, :future_bin_idx], electrode_transformed_data_a[:, future_bin_idx:], 'b')
+    _add_to_loss_contrastive(time_transformed_data_a[:, :-future_bin_idx], electrode_transformed_data_b[:, future_bin_idx:], 'a')
+    _add_to_loss_contrastive(time_transformed_data_b[:, :-future_bin_idx], electrode_transformed_data_a[:, future_bin_idx:], 'b')
 
     return losses
 
@@ -257,15 +249,11 @@ for epoch_i in range(training_config['n_epochs']):
         batch['electrode_index'] = batch['electrode_index'].to(device, dtype=torch.long, non_blocking=True)
         subject_identifier, trial_id = batch['subject_trial'][0]
 
-        if model_config['laplacian_rereference']:
-            from laplacian_rereferencing import laplacian_rereference_batch
-            batch = laplacian_rereference_batch(batch, remove_non_laplacian=False)
-
         for optimizer in optimizers: optimizer.zero_grad()
 
         # Use autocast with specified dtype
-        if training_config['use_amp']:
-            with autocast(device_type='cuda', dtype=training_config['amp_dtype'], enabled=training_config['use_amp']):
+        if model_config['use_mixed_precision']:
+            with autocast(device_type='cuda', dtype=model_config['amp_dtype'], enabled=model_config['use_mixed_precision']):
                 loss_dict = calculate_loss_function(batch)
                 loss = sum([v for k, v in loss_dict.items() if 'accuracy' not in k]) / len([v for k, v in loss_dict.items() if 'accuracy' not in k]) 
             loss.backward()
@@ -318,7 +306,7 @@ for epoch_i in range(training_config['n_epochs']):
         accuracy_string = f" / ".join([f"{k.split('_')[1]}: {v:.4f}" for k, v in test_loss_dict.items() if 'accuracy' in k])
         log(f"Test loss: {eval_results['test_loss']:.4f} ({losses_string}), Accuracies: {accuracy_string}", priority=0)
         if (epoch_i+1) % cluster_config['eval_model_every_n_epochs'] == 0:
-            evaluation_results_strings = evaluation.evaluate_on_all_metrics(model, bin_embed_transformer, electrode_embeddings, quick_eval=cluster_config['quick_eval'], only_keys_containing='auroc/average')
+            evaluation_results_strings = evaluation.evaluate_on_all_metrics(model, electrode_embeddings, quick_eval=cluster_config['quick_eval'], only_keys_containing='auroc/average')
             eval_results.update(evaluation_results_strings)
             log("eval_full_model" + str(evaluation_results_strings))
             del evaluation_results_strings

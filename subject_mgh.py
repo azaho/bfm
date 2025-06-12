@@ -14,6 +14,9 @@ class MGHSubject:
         It also contains methods to get the data for a given electrode and session.
     """
     def __init__(self, subject_id, allow_corrupted=False, cache=False, dtype=torch.float32):
+        assert subject_id >= 0 and subject_id <= 62, f"Subject ID must be between 0 and 62, got {subject_id}"
+
+
         self.subject_id = subject_id
         self.subject_identifier = f'mgh{subject_id}'
         self.allow_corrupted = allow_corrupted
@@ -51,6 +54,10 @@ class MGHSubject:
             session_electrode_labels = self._filter_electrode_labels(session_electrode_labels, session_id=session_id)
             self.electrode_index_subset[session_id] = np.array([self.electrode_ids[e] for e in session_electrode_labels])
             self.electrode_labels_subset[session_id] = session_electrode_labels
+
+            session_length = self.session_metadata[session_id]['session_length'] * self.session_metadata[session_id]['sampling_rate']
+            self.electrode_data_length[session_id] = round(session_length)
+
 
     def get_n_electrodes(self, session_id=None):
         if session_id is None: return len(self.electrode_labels)
@@ -180,14 +187,10 @@ class MGHSubject:
         h5_path = os.path.join(MGH_ROOT_DIR, 'h5', session_hash + '.h5')
         original_h5_electrode_labels = self.session_metadata[session_id]['channel_names']
         original_h5_electrode_ids = [original_h5_electrode_labels.index(e) for e in self.get_electrode_labels(session_id)]
-        original_h5_electrode_keys = original_h5_electrode_ids#["channel_"+str(i) for i in original_h5_electrode_ids]
+        original_h5_electrode_keys = np.array(original_h5_electrode_ids)#["channel_"+str(i) for i in original_h5_electrode_ids]
 
         with h5py.File(h5_path, 'r', locking=False) as f:
-            self.electrode_data_length[session_id] = f['data'].shape[1]
-
-            self.neural_data_cache[session_id] = torch.zeros((len(original_h5_electrode_keys), self.electrode_data_length[session_id]), dtype=self.dtype)
-            for i, key in enumerate(original_h5_electrode_keys):
-                self.neural_data_cache[session_id][i] = torch.from_numpy(f['data'][key][:]).to(self.dtype)
+            self.neural_data_cache[session_id] = torch.from_numpy(f['data'][original_h5_electrode_keys, :]).to(self.dtype)
 
     def clear_neural_data_cache(self, session_id=None):
         if session_id is None:
@@ -199,7 +202,6 @@ class MGHSubject:
             if session_id in self.neural_data_cache: del self.neural_data_cache[session_id]
             if session_id in self.h5_files: del self.h5_files[session_id]
             if session_id in self.session_annotations: del self.session_annotations[session_id]
-            if session_id in self.electrode_data_length: del self.electrode_data_length[session_id]
 
     def open_neural_data_file(self, session_id):
         assert not self.cache, "Cache is enabled; Use cache_neural_data() instead"
@@ -208,23 +210,22 @@ class MGHSubject:
         session_hash = self.sessions[session_id]
         h5_path = os.path.join(MGH_ROOT_DIR, 'h5', session_hash + '.h5')
         self.h5_files[session_id] = h5py.File(h5_path, 'r', locking=False)
-        self.electrode_data_length[session_id] = self.h5_files[session_id]['data'].shape[1]
 
-    def load_annotations(self, session_id):
-        return None
-        raise NotImplementedError("Annotations are not yet implemented for MGH data because they could not be anonymized")
-        annotation_file = os.path.join(MGH_ROOT_DIR, "../annotations", self.name_map[self.sessions[session_id]['filename']] + '.json')
-        with open(annotation_file, "r") as f:
-            self.session_annotations[session_id] = json.load(f)
+    def load_annotations(self, session_id=None):
+        sessions = range(len(self.sessions)) if session_id is None else [session_id]
+        for session_id in sessions:
+            session_hash = self.sessions[session_id]
+            annotation_file = os.path.join(MGH_ROOT_DIR, "annotations", session_hash + '.json')
+            with open(annotation_file, "r") as f:
+                self.session_annotations[session_id] = json.load(f)
 
     def load_neural_data(self, session_id):
         self.load_annotations(session_id)
         if self.cache: self.cache_neural_data(session_id)
         else: self.open_neural_data_file(session_id)
 
-    def get_annotations(self, session_id, window_from=None, window_to=None):
-        raise NotImplementedError("Annotations are not yet implemented for MGH data because they could not be anonymized")
-    
+    def get_annotations(self, session_id, window_from=None, window_to=None, 
+                        remove_persyst=True, remove_cashlab=True, remove_software_changes=True):
         if session_id not in self.session_annotations: self.load_annotations(session_id)
         if window_from is None: window_from = 0
         if window_to is None: window_to = self.electrode_data_length[session_id] / self.get_sampling_rate(session_id)
@@ -232,6 +233,12 @@ class MGHSubject:
         annotation_onsets = np.array([a['onset'] for a in self.session_annotations[session_id]])
         annotation_descriptions = np.array([a['description'] for a in self.session_annotations[session_id]])
         mask = (annotation_onsets >= window_from) & (annotation_onsets <= window_to)
+        if remove_persyst:
+            mask = (~np.array(['Persyst' in a['description'] for a in self.session_annotations[session_id]])) & mask
+        if remove_cashlab:
+            mask = (~np.array(['Cashlab' in a['description'] for a in self.session_annotations[session_id]])) & mask
+        if remove_software_changes:
+            mask = (~np.array([' Change' in a['description'] for a in self.session_annotations[session_id]])) & mask
         return annotation_onsets[mask], annotation_descriptions[mask]
     
 
@@ -261,12 +268,10 @@ class MGHSubject:
             h5_path = os.path.join(MGH_ROOT_DIR, 'h5', session_hash + '.h5')
             original_h5_electrode_labels = self.session_metadata[session_id]['channel_names']
             original_h5_electrode_ids = [original_h5_electrode_labels.index(e) for e in self.get_electrode_labels(session_id)]
-            original_h5_electrode_keys = original_h5_electrode_ids#["channel_"+str(i) for i in original_h5_electrode_ids]
+            original_h5_electrode_keys = np.array(original_h5_electrode_ids)#["channel_"+str(i) for i in original_h5_electrode_ids]
 
             with h5py.File(h5_path, 'r', locking=False) as f:
-                data = torch.zeros((len(original_h5_electrode_keys), window_to-window_from), dtype=self.dtype)
-                for i, key in enumerate(original_h5_electrode_keys):
-                    data[i] = torch.from_numpy(f['data'][key][window_from:window_to]).to(self.dtype)
+                data = torch.from_numpy(f['data'][original_h5_electrode_keys, window_from:window_to]).to(self.dtype)
             return data
 
 Subject = MGHSubject # alias for convenience

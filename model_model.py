@@ -25,10 +25,9 @@ class BFModel(BFModule):
 
 
 class FFTaker(BFModule):
-    def __init__(self, d_input, d_model=192, max_frequency=200, nperseg=400, noverlap=350, output_transform=False):
+    def __init__(self, d_model=192, max_frequency=200, nperseg=400, noverlap=350, output_transform=False):
         super(FFTaker, self).__init__()
         self.max_frequency = max_frequency
-        self.d_input = d_input
         self.d_model = d_model
         self.nperseg = nperseg
         self.noverlap = noverlap
@@ -43,9 +42,6 @@ class FFTaker(BFModule):
     def forward(self, electrode_data):
         # electrode_data is of shape (batch_size, n_electrodes, n_samples)
         batch_size, n_electrodes = electrode_data.shape[:2]
-        electrode_data = electrode_data.reshape(batch_size, n_electrodes, -1, self.d_input)
-
-        batch_size, n_electrodes, n_timebins, samples_per_bin = electrode_data.shape
         
         # Reshape for STFT
         x = electrode_data.reshape(batch_size * n_electrodes, -1)
@@ -157,9 +153,11 @@ class OriginalModel(BFModule):
         self.n_layers_electrode = n_layers_electrode
         self.n_layers_time = n_layers_time
         
-        self.fft_preprocessor = FFTaker(d_input=d_model, d_model=d_model, max_frequency=200, output_transform=True)
+        self.fft_preprocessor = FFTaker(d_model=d_model, max_frequency=200, output_transform=True)
         self.electrode_transformer = ElectrodeTransformer(d_model, n_layers_electrode, n_heads, dropout)
         self.time_transformer = TimeTransformer(d_model, n_layers_time, n_heads, dropout)
+
+        self.temperature_param = nn.Parameter(torch.tensor(0.0))
     
     def forward(self, electrode_data, embeddings=None):
         # electrode_data is of shape (batch_size, n_electrodes, n_timesamples

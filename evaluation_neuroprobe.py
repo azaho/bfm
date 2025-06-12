@@ -93,7 +93,7 @@ class FrozenModelEvaluation_SS_SM():
 
 
     def _generate_frozen_features(self, dataloader, subject_identifier, 
-                                  model, electrode_embeddings, bin_transformer, 
+                                  model, electrode_embeddings, 
                                   log_priority=0, raw_data=False, only_bin_transformer=False):
         device, dtype = model.device, model.dtype
 
@@ -127,15 +127,9 @@ class FrozenModelEvaluation_SS_SM():
                 batch_input = batch_input / (torch.std(batch_input, dim=[0, 2], keepdim=True) + 1)
 
             if not raw_data:
-                if not only_bin_transformer:
-                    electrode_data = bin_transformer(batch_input) # shape (batch_size, n_electrodes, n_samples)
-                    embeddings = electrode_embeddings.forward(electrode_indices)
-                    features = model.generate_frozen_evaluation_features(electrode_data, embeddings, feature_aggregation_method=self.feature_aggregation_method)
-                else:
-                    electrode_data = bin_transformer.generate_frozen_evaluation_features(batch_input, None)
-                    features = electrode_data.reshape(batch_input.shape[0], -1)
+                embeddings = electrode_embeddings.forward(electrode_indices)
+                features = model.generate_frozen_evaluation_features(batch_input, embeddings, feature_aggregation_method=self.feature_aggregation_method)
             else:
-                electrode_data = batch_input
                 features = batch_input.reshape(batch_input.shape[0], -1)
 
             log(f'done generating frozen features for batch {i} of {len(dataloader)}', priority=log_priority, indent=3)
@@ -145,14 +139,14 @@ class FrozenModelEvaluation_SS_SM():
             # Clear GPU cache after each batch
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
-            del features, batch_input, electrode_data
-            if not only_bin_transformer and not raw_data:
+            del features, batch_input
+            if not raw_data:
                 del embeddings
 
         return np.concatenate(X), np.concatenate(y)
 
 
-    def _evaluate_on_dataset(self, model, bin_transformer, electrode_embeddings, subject, train_dataset, test_dataset, log_priority=0, only_bin_transformer=False, raw_data=False):
+    def _evaluate_on_dataset(self, model, electrode_embeddings, subject, train_dataset, test_dataset, log_priority=0, only_bin_transformer=False, raw_data=False):
         subject_identifier = subject.subject_identifier
         train_dataloader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers_eval, 
                                       prefetch_factor=self.prefetch_factor, pin_memory=True)
@@ -162,7 +156,7 @@ class FrozenModelEvaluation_SS_SM():
         # Generate features for training data
         log('generating frozen train features', priority=log_priority, indent=2)
         X_train, y_train = self._generate_frozen_features(
-            train_dataloader, subject_identifier, model, electrode_embeddings, bin_transformer,
+            train_dataloader, subject_identifier, model, electrode_embeddings,
             log_priority=log_priority, raw_data=raw_data, only_bin_transformer=only_bin_transformer
         )
         log('done generating frozen train features', priority=log_priority, indent=2)
@@ -170,7 +164,7 @@ class FrozenModelEvaluation_SS_SM():
         # Generate features for test data
         log('generating frozen test features', priority=log_priority, indent=2)
         X_test, y_test = self._generate_frozen_features(
-            test_dataloader, subject_identifier, model, electrode_embeddings, bin_transformer,
+            test_dataloader, subject_identifier, model, electrode_embeddings,
             log_priority=log_priority, raw_data=raw_data, only_bin_transformer=only_bin_transformer
         )
         log('done generating frozen test features', priority=log_priority, indent=2)
@@ -213,16 +207,16 @@ class FrozenModelEvaluation_SS_SM():
         log('done evaluating', priority=log_priority, indent=2)
         return auroc, accuracy
     
-    def _evaluate_on_metric_cv(self, model, bin_transformer, electrode_embeddings, subject, train_datasets, test_datasets, log_priority=0, quick_eval=False, only_bin_transformer=False, raw_data=False):
+    def _evaluate_on_metric_cv(self, model, electrode_embeddings, subject, train_datasets, test_datasets, log_priority=0, quick_eval=False, only_bin_transformer=False, raw_data=False):
         auroc_list, accuracy_list = [], []
         for train_dataset, test_dataset in zip(train_datasets, test_datasets):
-            auroc, accuracy = self._evaluate_on_dataset(model, bin_transformer, electrode_embeddings, subject, train_dataset, test_dataset, log_priority=log_priority, only_bin_transformer=only_bin_transformer, raw_data=raw_data)
+            auroc, accuracy = self._evaluate_on_dataset(model, electrode_embeddings, subject, train_dataset, test_dataset, log_priority=log_priority, only_bin_transformer=only_bin_transformer, raw_data=raw_data)
             auroc_list.append(auroc)
             accuracy_list.append(accuracy)
             if quick_eval: break
         return np.mean(auroc_list), np.mean(accuracy_list)
     
-    def evaluate_on_all_metrics(self, model, bin_transformer, electrode_embeddings, log_priority=4, quick_eval=False, only_bin_transformer=False, key_prefix="", only_keys_containing=None, raw_data=False):
+    def evaluate_on_all_metrics(self, model, electrode_embeddings, log_priority=4, quick_eval=False, only_bin_transformer=False, key_prefix="", only_keys_containing=None, raw_data=False):
         log('evaluating on all metrics', priority=log_priority, indent=1)
         evaluation_results = {}
         for subject in self.all_subjects:
@@ -230,7 +224,7 @@ class FrozenModelEvaluation_SS_SM():
                 trial_ids = [trial_id for _subject, trial_id in self.subject_trials if _subject.subject_identifier == subject.subject_identifier]
                 for trial_id in trial_ids:
                     splits = self.evaluation_datasets[(eval_name, subject.subject_identifier, trial_id)]
-                    auroc, accuracy = self._evaluate_on_metric_cv(model, bin_transformer, electrode_embeddings, subject, splits[0], splits[1], log_priority=log_priority+1, quick_eval=quick_eval, only_bin_transformer=only_bin_transformer, raw_data=raw_data)
+                    auroc, accuracy = self._evaluate_on_metric_cv(model, electrode_embeddings, subject, splits[0], splits[1], log_priority=log_priority+1, quick_eval=quick_eval, only_bin_transformer=only_bin_transformer, raw_data=raw_data)
                     evaluation_results[(eval_name, subject.subject_identifier, trial_id)] = (auroc, accuracy)
         
         evaluation_results_strings = self._format_evaluation_results_strings(evaluation_results)

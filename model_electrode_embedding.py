@@ -3,7 +3,7 @@ import torch.nn as nn
 from model_model import BFModule
 
 class ElectrodeEmbedding(BFModule):
-    def __init__(self, d_model, embedding_dim=None, embedding_fanout_requires_grad=True, embedding_requires_grad=True, initial_capacity=100):
+    def __init__(self, d_model, embedding_dim=None, embedding_fanout_requires_grad=True, embedding_requires_grad=True, initial_capacity=100, **kwargs):
         super(ElectrodeEmbedding, self).__init__()
 
         self.embedding_dim = embedding_dim if embedding_dim is not None else d_model
@@ -59,6 +59,12 @@ class ElectrodeEmbedding(BFModule):
         return state_dict
 ElectrodeEmbedding_Learned = ElectrodeEmbedding
 
+class ElectrodeEmbedding_Zero(ElectrodeEmbedding):
+    def __init__(self, d_model, embedding_dim=None, **kwargs):
+        super(ElectrodeEmbedding_Zero, self).__init__(d_model, embedding_dim=embedding_dim, embedding_fanout_requires_grad=False, embedding_requires_grad=False)
+        self.embeddings.weight.data.zero_()
+        self.embeddings.weight.requires_grad = False
+
 EEG_CHANNEL_NAME_MAPPING = {
     'T3': 'T7',
     'T4': 'T8',
@@ -66,7 +72,7 @@ EEG_CHANNEL_NAME_MAPPING = {
     'T6': 'P8'
 }
 class ElectrodeEmbedding_Learned_FixedVocabulary(ElectrodeEmbedding):
-    def __init__(self, d_model, vocabulary_channels, embedding_dim=None, embedding_fanout_requires_grad=True, embedding_requires_grad=True):
+    def __init__(self, d_model, vocabulary_channels, embedding_dim=None, embedding_fanout_requires_grad=True, embedding_requires_grad=True, **kwargs):
         """
             vocabulary is a list of strings, each corresponding to each recorded channel name.
             All the channels that are not in the vocabulary will be set to an "overflow" vector that can be learned.

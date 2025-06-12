@@ -90,6 +90,7 @@ def laplacian_rereference_batch(batch, remove_non_laplacian=True):
     """
     electrode_data = batch['data'] # shape: (batch_size, n_electrodes, n_samples)
     electrode_labels = batch['electrode_labels'] # shape: (batch_size, n_electrodes)
+
     rereferenced_data, rereferenced_labels, original_electrode_indices = laplacian_rereference_neural_data(electrode_data, electrode_labels[0], remove_non_laplacian=remove_non_laplacian)
     # XXX The line above assumes that the electrode labels are the same for all subjects in the batch. This may or may not be the case. Need to find a more efficient way later to do it item per item.
 

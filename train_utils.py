@@ -41,8 +41,8 @@ def get_default_configs(random_string, wandb_project):
             'type': 'learned',
             'coordinate_noise_std': 0.0,
             'embedding_dim': None,
-            'spectrogram': False,
-            'spectrogram_power': False,
+            'spectrogram': True,
+            'spectrogram_power': True,
         },
 
         'dtype': torch.float32,
