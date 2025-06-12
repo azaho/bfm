@@ -16,11 +16,11 @@ export TMPDIR=/om2/scratch/tmp
 n_in_parallel=1
 
 train_subject_trial_options=(
-    "btbank1_0,btbank2_1,btbank2_2,btbank2_3,btbank2_5,btbank2_6,btbank3_2,btbank4_2,btbank5_0,btbank6_0,btbank6_1,btbank6_4,btbank8_0,btbank9_0"
+    "mgh14_0"
 )
-eval_subject_trials="btbank1_1,btbank1_2,btbank2_0,btbank2_4,btbank3_0,btbank3_1,btbank4_0,btbank4_1,btbank7_0,btbank7_1,btbank10_0,btbank10_1"
+eval_subject_trials=""
 
-random_string_options=("BBB3")
+random_string_options=("MGH1")
 
 learning_rate_options=(0.003) # 0.001 0.01)
 max_n_electrodes_options=(20) #(1 2 4 8 16 32 64 124)
@@ -105,15 +105,15 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
     echo "Job $((i+1)) - RS: $random_string, NES: $max_n_electrodes, WD: $weight_decay, SP: $spectrogram, LT: $loss_type, LRS: $lr_schedule, WSS: $warmup_steps, II: $init_identity, FBIN: $future_bin_idx, BE: $bin_encoder, SE: $separate_unembed, UT: $use_temperature_param, SA: $show_a_embedding, SB: $show_b_embedding, PMT: $p_masked_timebins, MTP: $max_temperature_param, NLE: $n_layers_electrode, DMO: $d_model, FK: $first_kernel, CO: $causal, LR: $learning_rate"
     
     # note: change train_model_fbi_combined.py to train_model.py for the non-combined version
-    python -u train_brainbert.py  --cache_subjects 1 \
+    python -u brainbert_train.py  --cache_subjects 1 \
         --num_workers_dataloaders 4 \
         --batch_size 256 \
         --random_string $random_string \
         --max_n_electrodes $max_n_electrodes \
         --train_subject_trials $train_subject_trials \
-        --eval_subject_trials $eval_subject_trials \
+        --eval_subject_trials "" \
         --weight_decay $weight_decay \
-        --wandb_project $wandb_project \
+        --wandb_project "" \
         --spectrogram $spectrogram \
         --loss_type $loss_type \
         --lr_schedule $lr_schedule \

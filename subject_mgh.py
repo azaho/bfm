@@ -2,8 +2,8 @@ import os
 import json
 import numpy as np
 import torch
-import mne
 import h5py
+import re
 import pandas as pd
 
 MGH_ROOT_DIR = "/om2/data/public/Infolab/mgh2024_data" # Root directory for the data
@@ -64,7 +64,7 @@ class MGHSubject:
         else: return self.electrode_labels_subset[session_id]
 
     def get_sampling_rate(self, session_id):
-        return self.sessions[session_id]['sampling_rate']
+        return self.session_metadata[session_id]['sampling_rate']
 
     def _load_localization_data(self):
         """Load localization data for this electrode's subject"""
@@ -122,6 +122,10 @@ class MGHSubject:
         filtered_electrode_labels = [e.replace("CM", "").replace("ANT", "") for e in filtered_electrode_labels]
         # replace the dashed names with clean names
         filtered_electrode_labels = [self._process_channel_name(e) for e in filtered_electrode_labels]
+
+        # remove electrodes that are not of the format [A-Za-z]+\d+ (where \d+ is any number)
+        filtered_electrode_labels = [e for e in filtered_electrode_labels if re.match(r'[A-Za-z]+\d+$', e)]
+
         return filtered_electrode_labels
 
     def get_electrode_coordinates(self, session_id=None):
