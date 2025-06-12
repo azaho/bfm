@@ -3,197 +3,144 @@ import psutil
 import torch
 import numpy as np
 import argparse
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-def get_default_configs(random_string, wandb_project):
-    training_config = {
-        'n_epochs': 100,
-        'p_test': 0.1,
+@dataclass
+class ParamConfig:
+    value: Any
+    type: type
+    help: str
+    include_in_dirname: bool = False
+    dirname_format: Optional[str] = None
+    default: Any = None
 
-        'optimizer': 'Muon',
-        'batch_size': 100,
-        'learning_rate': 0.003,
-        'weight_decay': 0.0001,
-        'p_electrodes_per_stream': 0.5,
-        'future_bin_idx': 1,
-        'lr_schedule': "linear", # none, linear, cosine
-        'warmup_steps': 100,
-        
-        'train_subject_trials': [('btbank3', 1)],
-        'eval_subject_trials': [('btbank3', 0)],
+CONFIG_SCHEMA = {
+    'training': {
+        'n_epochs': ParamConfig(100, int, 'Number of epochs to train'),
+        'p_test': ParamConfig(0.1, float, 'Proportion of data to use for testing'),
+        'optimizer': ParamConfig('Muon', str, 'Optimizer type'),
+        'batch_size': ParamConfig(100, int, 'Batch size for training'),
+        'learning_rate': ParamConfig(0.003, float, 'Learning rate'),
+        'weight_decay': ParamConfig(0.0001, float, 'Weight decay for optimizer'),
+        'p_electrodes_per_stream': ParamConfig(0.5, float, 'Proportion of electrodes per stream'),
+        'future_bin_idx': ParamConfig(1, int, 'Future bin index'),
+        'lr_schedule': ParamConfig('linear', str, 'Learning rate schedule (none, linear, cosine)'),
+        'warmup_steps': ParamConfig(100, int, 'Warmup steps'),
+        'train_subject_trials': ParamConfig([('btbank3', 1)], list, 'Train subject trials'),
+        'eval_subject_trials': ParamConfig([('btbank3', 0)], list, 'Eval subject trials'),
+        'normalize_features': ParamConfig(True, bool, 'Whether to normalize features'),
+        'use_temperature_param': ParamConfig(True, bool, 'Whether to use temperature parameter'),
+        'max_temperature_param': ParamConfig(1000.0, float, 'Maximum temperature parameter value'),
+        'data_dtype': ParamConfig(torch.bfloat16, torch.dtype, 'Data type for tensors'),
+        'random_string': ParamConfig("X", str, 'Random string for seed generation', include_in_dirname=True, dirname_format='r{}'),
+    },
 
-        'normalize_features': True,
-        'use_temperature_param': True,
-        'max_temperature_param': 1000.0,
-        
-        'data_dtype': torch.bfloat16,
-
-        'random_string': random_string,
-    }
-    model_config = {
-        'name': 'M',
-
-        'sample_timebin_size': 0.125, # in seconds
-        'context_length': 2, # in seconds
-        'max_frequency': 200,
-        'max_n_electrodes': 80,
-
+    'model': {
+        'name': ParamConfig('M', str, 'Model name'),
+        'sample_timebin_size': ParamConfig(0.125, float, 'Sample timebin size in seconds', dirname_format='stbs{}'),
+        'context_length': ParamConfig(3, float, 'Context length in seconds'),
+        'max_frequency': ParamConfig(200, int, 'Maximum frequency bin'),
+        'max_n_electrodes': ParamConfig(128, int, 'Maximum number of electrodes to use', dirname_format='nes{}'),
         'electrode_embedding': {
-            'type': 'learned',
-            'coordinate_noise_std': 0.0,
-            'embedding_dim': None,
-            'spectrogram': True,
-            'spectrogram_power': True,
+            'type': ParamConfig('learned', str, 'Type of electrode embedding', dirname_format='ee{}'),
+            'coordinate_noise_std': ParamConfig(0.0, float, 'Coordinate noise std for electrode embedding'),
+            'embedding_dim': ParamConfig(None, int, 'Dimension of electrode embeddings', dirname_format='ed{}'),
+            'spectrogram': ParamConfig(True, bool, 'Whether to use spectrogram'),
+            'spectrogram_power': ParamConfig(True, bool, 'Whether to use spectrogram power'),
         },
-
-        'dtype': torch.float32,
-
+        'dtype': ParamConfig(torch.float32, torch.dtype, 'Model data type'),
         'transformer': {
-            'd_model': 192,
-            'd_model_bin': 192,
-            'n_heads': 12,
-            'n_layers_electrode': 5,
-            'n_layers_time': 5,
-            'dropout': 0.1,
+            'd_model': ParamConfig(192, int, 'Dimension of transformer model', dirname_format='dm{}'),
+            'd_model_bin': ParamConfig(192, int, 'Dimension of transformer model', dirname_format='dmb{}'),
+            'n_heads': ParamConfig(12, int, 'Number of attention heads', dirname_format='nh{}'),
+            'n_layers_electrode': ParamConfig(5, int, 'Number of transformer layers for electrode path', dirname_format='nl{}'),
+            'n_layers_time': ParamConfig(5, int, 'Number of transformer layers for time path'),
+            'dropout': ParamConfig(0.1, float, 'Dropout rate'),
         },
+        'laplacian_rereference': ParamConfig(True, bool, 'Whether to use Laplacian rereference'),
+        'use_mixed_precision': ParamConfig(True, bool, 'Whether to use mixed precision'),
+        'amp_dtype': ParamConfig(torch.bfloat16, torch.dtype, 'AMP data type'),
+    },
 
-        'laplacian_rereference': True,
-
-        'use_mixed_precision': True,
-        'amp_dtype': torch.bfloat16,
+    'cluster': {
+        'save_model_every_n_epochs': ParamConfig(5, int, 'Save model every n epochs'),
+        'eval_model_every_n_epochs': ParamConfig(5, int, 'Eval model every n epochs'),
+        'wandb_project': ParamConfig("", str, 'Wandb project name'),
+        'timestamp': ParamConfig(time.strftime("%Y%m%d_%H%M%S"), str, 'Timestamp'),
+        'cache_subjects': ParamConfig(True, bool, 'Whether to cache subjects'),
+        'num_workers_dataloaders': ParamConfig(4, int, 'Number of workers for dataloaders'),
+        'num_workers_eval': ParamConfig(4, int, 'Number of workers for evaluation'),
+        'prefetch_factor': ParamConfig(2, int, 'Prefetch factor'),
+        'quick_eval': ParamConfig(True, bool, 'Whether to do quick evaluation'),
+        'eval_aggregation_method': ParamConfig('concat', str, 'Evaluation aggregation method'),
     }
-    cluster_config = {
-        'save_model_every_n_epochs': 5,
-        'eval_model_every_n_epochs': 5,
+}
 
-        'wandb_project': wandb_project,
-        'timestamp': time.strftime("%Y%m%d_%H%M%S"),
+def get_default_config(random_string, wandb_project):
+    # Convert schema to actual config
+    def convert_schema_to_config(schema):
+        config = {}
+        for key, value in schema.items():
+            if isinstance(value, ParamConfig):
+                config[key] = value.value
+            elif isinstance(value, dict):
+                config[key] = convert_schema_to_config(value)
+        return config
 
-        'cache_subjects': True,
+    config = convert_schema_to_config(CONFIG_SCHEMA)
+    config['cluster']['wandb_project'] = wandb_project
+    config['training']['random_string'] = random_string
 
-        'num_workers_dataloaders': 4,
-        'num_workers_eval': 4,
-        'prefetch_factor': 2,
+    return config
 
-        'quick_eval': True,
-
-        'eval_aggregation_method': 'concat',
-    }
-    return training_config, model_config, cluster_config
-
-
-def parse_configs_from_args(training_config, model_config, cluster_config):
+def parse_config_from_args(config):
     parser = argparse.ArgumentParser()
     
-    # Transformer model arguments
-    parser.add_argument('--d_model', type=int, default=None, help='Dimension of transformer model')
-    parser.add_argument('--d_model_bin', type=int, default=None, help='Dimension of transformer model')
-    parser.add_argument('--n_heads', type=int, default=None, help='Number of attention heads')
-    parser.add_argument('--n_layers_electrode', type=int, default=None, help='Number of transformer layers for electrode path')
-    parser.add_argument('--n_layers_time', type=int, default=None, help='Number of transformer layers for time path')
-    parser.add_argument('--dropout', type=float, default=None, help='Dropout rate')
-    parser.add_argument('--embedding_dim', type=int, default=None, help='Dimension of electrode embeddings')
-    parser.add_argument('--max_frequency', type=int, default=None, help='Maximum frequency bin')
-    parser.add_argument('--sample_timebin_size', type=float, default=None, help='Sample timebin size in seconds')
-    parser.add_argument('--context_length', type=float, default=None, help='Context length in seconds')
-    parser.add_argument('--max_n_electrodes', type=int, default=None, help='Maximum number of electrodes to use')
-    parser.add_argument('--normalize_features', type=int, default=None, help='Whether to normalize features')
-    parser.add_argument('--use_temperature_param', type=int, default=None, help='Whether to use temperature parameter') 
-    parser.add_argument('--max_temperature_param', type=float, default=None, help='Maximum temperature parameter value')
-    parser.add_argument('--electrode_embedding_type', type=str, default=None, help='Type of electrode embedding')
-    parser.add_argument('--electrode_embedding_coordinate_noise_std', type=float, default=None, help='Coordinate noise std for electrode embedding')
-    parser.add_argument('--cache_subjects', type=int, default=None, help='Whether to cache subjects')
-    parser.add_argument('--wandb_project', type=str, default=None, help='Wandb project name')
-    parser.add_argument('--num_workers_dataloaders', type=int, default=None, help='Number of workers for dataloaders')
-    parser.add_argument('--random_string', type=str, default=None, help='Random string for seed generation')
-    parser.add_argument('--save_model_every_n_epochs', type=int, default=None, help='Save model every n epochs')
-    parser.add_argument('--n_epochs', type=int, default=None, help='Number of epochs to train')
-    parser.add_argument('--train_subject_trials', type=str, default=None, help='Train subject trials')
-    parser.add_argument('--eval_subject_trials', type=str, default=None, help='Eval subject trials')
-    parser.add_argument('--future_bin_idx', type=int, default=None, help='Future bin index')
-    parser.add_argument('--lr_schedule', type=str, default=None, help='Learning rate schedule (none, linear, cosine)')
-    parser.add_argument('--warmup_steps', type=int, default=None, help='Warmup steps')
-    parser.add_argument('--batch_size', type=int, default=None, help='Batch size for training')
-    parser.add_argument('--learning_rate', type=float, default=None, help='Learning rate')
-    parser.add_argument('--weight_decay', type=float, default=None, help='Weight decay for optimizer')
-    parser.add_argument('--optimizer', type=str, default=None, help='Optimizer type')
-    parser.add_argument('--p_electrodes_per_stream', type=float, default=None, help='Proportion of electrodes per stream')
+    def add_args_from_schema(schema, prefix=''):
+        for key, value in schema.items():
+            if isinstance(value, ParamConfig):
+                arg_name = f'--{prefix}{key}' if prefix else f'--{key}'
+                parser.add_argument(arg_name, type=value.type, default=None, help=value.help)
+            elif isinstance(value, dict):
+                new_prefix = f'{prefix}{key}.' if prefix else f'{key}.'
+                add_args_from_schema(value, new_prefix)
+
+    add_args_from_schema(CONFIG_SCHEMA)
     args = parser.parse_args()
+
+    def update_config_from_args(config, schema, args, prefix=''):
+        for key, value in schema.items():
+            if isinstance(value, ParamConfig):
+                arg_name = f'{prefix}{key}' if prefix else key
+                if hasattr(args, arg_name) and getattr(args, arg_name) is not None:
+                    config[key] = getattr(args, arg_name)
+            elif isinstance(value, dict):
+                new_prefix = f'{prefix}{key}.' if prefix else f'{key}.'
+                update_config_from_args(config[key], value, args, new_prefix)
+
+    update_config_from_args(config, CONFIG_SCHEMA, args)
+
+def update_dir_name(config):
+    dir_name = config['model']['name']
+    def add_to_dirname(config, schema, prefix=''):
+        nonlocal dir_name
+        for key, value in schema.items():
+            if isinstance(value, ParamConfig):
+                if value.include_in_dirname:
+                    config_value = config[key]
+                    if value.dirname_format:
+                        dir_name += '_' + value.dirname_format.format(config_value)
+                    else:
+                        dir_name += f"_{key}{config_value}"
+            elif isinstance(value, dict):
+                new_prefix = f'{prefix}{key}.' if prefix else f'{key}.'
+                add_to_dirname(config[key], value, new_prefix)
+
+    add_to_dirname(config, CONFIG_SCHEMA)
     
-    # Update configs with command line args if provided
-    if args.d_model is not None:
-        model_config['transformer']['d_model'] = args.d_model
-    if args.d_model_bin is not None:
-        model_config['transformer']['d_model_bin'] = args.d_model_bin
-    if args.n_heads is not None:
-        model_config['transformer']['n_heads'] = args.n_heads
-    if args.n_layers_electrode is not None:
-        model_config['transformer']['n_layers_electrode'] = args.n_layers_electrode
-    if args.n_layers_time is not None:
-        model_config['transformer']['n_layers_time'] = args.n_layers_time
-    if args.dropout is not None:
-        model_config['transformer']['dropout'] = args.dropout
-    if args.batch_size is not None:
-        training_config['batch_size'] = args.batch_size
-    if args.learning_rate is not None:
-        training_config['learning_rate'] = args.learning_rate
-    if args.weight_decay is not None:
-        training_config['weight_decay'] = args.weight_decay
-    if args.optimizer is not None:
-        training_config['optimizer'] = args.optimizer
-    if args.p_electrodes_per_stream is not None:
-        training_config['p_electrodes_per_stream'] = args.p_electrodes_per_stream
-    if args.cache_subjects is not None:
-        cluster_config['cache_subjects'] = bool(args.cache_subjects)
-    if args.random_string is not None:
-        training_config['random_string'] = args.random_string
-    if args.electrode_embedding_type is not None:
-        model_config['electrode_embedding']['type'] = args.electrode_embedding_type
-    if args.electrode_embedding_coordinate_noise_std is not None:
-        model_config['electrode_embedding']['coordinate_noise_std'] = args.electrode_embedding_coordinate_noise_std
-    if args.wandb_project is not None:
-        cluster_config['wandb_project'] = args.wandb_project
-    if args.embedding_dim is not None:
-        model_config['electrode_embedding']['embedding_dim'] = args.embedding_dim
-    if args.max_frequency is not None:
-        model_config['max_frequency'] = args.max_frequency if args.max_frequency != -1 else None
-    if args.train_subject_trials is not None:
-        train_subject_trials = []
-        for subject_trial in args.train_subject_trials.replace(" ", "").split(","):
-            subject_identifier, trial_id = subject_trial.split("_")[0], subject_trial.split("_")[1]
-            trial_id = int(trial_id)
-            train_subject_trials.append((subject_identifier, trial_id))
-        training_config['train_subject_trials'] = train_subject_trials
-    if args.eval_subject_trials is not None:
-        eval_subject_trials = []
-        for subject_trial in args.eval_subject_trials.replace(" ", "").split(","):
-            if "_" not in subject_trial:
-                continue # empty string
-            subject_identifier, trial_id = subject_trial.split("_")[0], subject_trial.split("_")[1]
-            trial_id = int(trial_id)
-            eval_subject_trials.append((subject_identifier, trial_id))
-        training_config['eval_subject_trials'] = eval_subject_trials
-    if args.num_workers_dataloaders is not None:
-        cluster_config['num_workers_dataloaders'] = args.num_workers_dataloaders
-    if args.save_model_every_n_epochs is not None:
-        cluster_config['save_model_every_n_epochs'] = args.save_model_every_n_epochs
-    if args.sample_timebin_size is not None:
-        model_config['sample_timebin_size'] = args.sample_timebin_size
-    if args.context_length is not None:
-        model_config['context_length'] = args.context_length
-    if args.n_epochs is not None:
-        training_config['n_epochs'] = args.n_epochs
-    if args.future_bin_idx is not None:
-        training_config['future_bin_idx'] = args.future_bin_idx
-    if args.lr_schedule is not None:
-        training_config['lr_schedule'] = args.lr_schedule
-    if args.max_n_electrodes is not None:
-        model_config['max_n_electrodes'] = args.max_n_electrodes
-    if args.normalize_features is not None:
-        training_config['normalize_features'] = bool(args.normalize_features)
-    if args.use_temperature_param is not None:
-        training_config['use_temperature_param'] = bool(args.use_temperature_param)
-    if args.warmup_steps is not None:
-        training_config['warmup_steps'] = args.warmup_steps
+    config['cluster']['dir_name'] = dir_name
+    return dir_name
 
 max_log_priority = 1
 def log(message, priority=0, indent=0):
@@ -205,57 +152,12 @@ def log(message, priority=0, indent=0):
     ram_usage = process.memory_info().rss / 1024**3
     print(f"[{current_time} gpu {gpu_memory_reserved:.1f}G ram {ram_usage:.1f}G] {' '*4*indent}{message}")
 
-
-def update_random_seed(training_config):
-    random_seed = hash(training_config['random_string']) % (2**32)
-    training_config['random_seed'] = random_seed
+def update_random_seed(config):
+    random_seed = hash(config['training']['random_string']) % (2**32)
+    config['training']['random_seed'] = random_seed
     torch.manual_seed(random_seed)
     np.random.seed(random_seed)
     return random_seed
-
-
-def update_dir_name(model_config, training_config, cluster_config):
-    dir_name = model_config['name']
-    dir_name += f"_nst{len(training_config['train_subject_trials'])}"
-
-    dir_name += f"_dm{model_config['transformer']['d_model']}"
-    dir_name += f"_dmb{model_config['transformer']['d_model_bin']}"
-    dir_name += f"_nh{model_config['transformer']['n_heads']}"
-    dir_name += f"_nl{model_config['transformer']['n_layers_electrode']}" + f"_{model_config['transformer']['n_layers_time']}"
-    if model_config['max_n_electrodes'] != 80:
-        dir_name += f"_nes{model_config['max_n_electrodes']}"
-    if training_config['normalize_features']:
-        dir_name += f"_nf"
-    if not training_config['use_temperature_param']:
-        dir_name += f"_nUTP"
-
-    if model_config['sample_timebin_size'] != 0.125:
-        dir_name += f"_stbs{model_config['sample_timebin_size']}"
-
-    if model_config['electrode_embedding']['type'] == 'coordinate_init':
-        dir_name += f"_eeCI"
-    elif model_config['electrode_embedding']['type'] == 'noisy_coordinate':
-        dir_name += f"_eeNC_ecns{model_config['electrode_embedding']['coordinate_noise_std']}"
-    elif model_config['electrode_embedding']['type'] == 'learned':
-        dir_name += f"_eeL"
-    elif model_config['electrode_embedding']['type'] == 'zero':
-        dir_name += f"_eeZ"
-    else:
-        dir_name += f"_ee{model_config['electrode_embedding']['type'].upper()}"
-
-    if 'p_electrodes_per_stream' in training_config and training_config['p_electrodes_per_stream'] != 0.5:
-        dir_name += f"_pps{training_config['p_electrodes_per_stream']}"
-    if model_config['electrode_embedding']['embedding_dim'] is not None:
-        dir_name += f"_ed{model_config['electrode_embedding']['embedding_dim']}"
-    if training_config['batch_size'] != 100:
-        dir_name += f"_bs{training_config['batch_size']}"
-    if training_config['weight_decay'] != 0.0:
-        dir_name += f"_wd{training_config['weight_decay']}"
-    if training_config['optimizer'] != 'Muon':
-        dir_name += f"_opt{training_config['optimizer']}"
-    dir_name += f"_r{training_config['random_string']}"
-    cluster_config['dir_name'] = dir_name
-    return dir_name
 
 # Convert torch dtypes to strings before saving
 def convert_dtypes(config):
@@ -264,6 +166,7 @@ def convert_dtypes(config):
     elif isinstance(config, torch.dtype):
         return str(config)
     return config
+
 # Convert string dtypes back to torch dtypes
 def unconvert_dtypes(config):
     if isinstance(config, dict):
