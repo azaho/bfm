@@ -27,8 +27,8 @@ CONFIG_SCHEMA = {
         'future_bin_idx': ParamConfig(1, int, 'Future bin index'),
         'lr_schedule': ParamConfig('linear', str, 'Learning rate schedule (none, linear, cosine)'),
         'warmup_steps': ParamConfig(100, int, 'Warmup steps'),
-        'train_subject_trials': ParamConfig([('btbank3', 1)], list, 'Train subject trials'),
-        'eval_subject_trials': ParamConfig([('btbank3', 0)], list, 'Eval subject trials'),
+        'train_subject_trials': ParamConfig("btbank3_1", str, 'Train subject trials'), # a string like btbank3_1,btbank3_2,...
+        'eval_subject_trials': ParamConfig("btbank3_0", str, 'Eval subject trials'), # a string like btbank3_0,btbank3_1,...
         'normalize_features': ParamConfig(True, bool, 'Whether to normalize features'),
         'use_temperature_param': ParamConfig(True, bool, 'Whether to use temperature parameter'),
         'max_temperature_param': ParamConfig(1000.0, float, 'Maximum temperature parameter value'),
@@ -56,7 +56,7 @@ CONFIG_SCHEMA = {
             'n_heads': ParamConfig(12, int, 'Number of attention heads', dirname_format='nh{}'),
             'n_layers_electrode': ParamConfig(5, int, 'Number of transformer layers for electrode path', dirname_format='nl{}'),
             'n_layers_time': ParamConfig(5, int, 'Number of transformer layers for time path'),
-            'dropout': ParamConfig(0.1, float, 'Dropout rate'),
+            'dropout': ParamConfig(0.1, float, 'Dropout rate', include_in_dirname=True, dirname_format='dr{}'),
         },
         'laplacian_rereference': ParamConfig(True, bool, 'Whether to use Laplacian rereference'),
         'use_mixed_precision': ParamConfig(True, bool, 'Whether to use mixed precision'),
@@ -120,6 +120,14 @@ def parse_config_from_args(config):
                 update_config_from_args(config[key], value, args, new_prefix)
 
     update_config_from_args(config, CONFIG_SCHEMA, args)
+
+def parse_subject_trials_from_config(config):
+    train_subject_trials = config['training']['train_subject_trials'] # a string like btbank1_1,btbank1_2,...
+    eval_subject_trials = config['training']['eval_subject_trials']
+    train_subject_trials = [[subject_identifier.split('_')[0], int(subject_identifier.split('_')[1])] for subject_identifier in train_subject_trials.split(',')]
+    eval_subject_trials = [[subject_identifier.split('_')[0], int(subject_identifier.split('_')[1])] for subject_identifier in eval_subject_trials.split(',')]
+    config['training']['train_subject_trials'] = train_subject_trials
+    config['training']['eval_subject_trials'] = eval_subject_trials
 
 def update_dir_name(config):
     dir_name = config['model']['name']

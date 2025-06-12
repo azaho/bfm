@@ -51,7 +51,7 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
         --training.random_string $random_string \
         --training.train_subject_trials $train_subject_trials \
         --training.eval_subject_trials $eval_subject_trials \
-        --training.dropout $dropout \
+        --model.transformer.dropout $dropout \
         --cluster.wandb_project $wandb_project &
 done
 

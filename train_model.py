@@ -10,13 +10,14 @@ from model_model import FFTaker, OriginalModel
 from model_electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
 from dataset import load_dataloaders, load_subjects
 from evaluation_neuroprobe import FrozenModelEvaluation_SS_SM
-from train_utils import log, update_dir_name, update_random_seed, convert_dtypes, parse_config_from_args, get_default_config, get_shared_memory_info
+from train_utils import log, update_dir_name, update_random_seed, convert_dtypes, parse_config_from_args, get_default_config, get_shared_memory_info, parse_subject_trials_from_config
 from torch.optim.lr_scheduler import ChainedScheduler
 
 ### LOADING CONFIGS ###
 
 config = get_default_config(random_string="TEMP", wandb_project="")
 parse_config_from_args(config)
+parse_subject_trials_from_config(config)
 
 dir_name = update_dir_name(config)
 update_random_seed(config)
