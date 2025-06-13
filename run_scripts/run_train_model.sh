@@ -7,8 +7,8 @@
 #SBATCH --mem=384G
 #SBATCH -t 16:00:00      
 #SBATCH --array=1-3
-#SBATCH --output logs/%A_%a.out
-#SBATCH --error logs/%A_%a.err
+#SBATCH --output run_logs/%A_%a.out
+#SBATCH --error run_logs/%A_%a.err
 #SBATCH -p normal
 source .venv/bin/activate
 export TMPDIR=/om2/scratch/tmp

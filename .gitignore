@@ -1,19 +1,11 @@
 .venv/
 __pycache__/
 .env
-.temp/
 wandb/
-logs/
-profiler_logs/
 
-models_data/
+run*/
 
-#btbench/
-btbench_subject_metadata/
-
-analyses/eval_features/
-analyses/eval_results/
-analyses/eval_results_old/
-analyses/btbench_map_figure/
-eval_results*/
-eval_logs/
+andrii/analyses/eval_features/
+andrii/analyses/eval_results/
+andrii/analyses/eval_results_old/
+andrii/analyses/btbench_map_figure/

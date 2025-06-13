@@ -5,7 +5,7 @@ from sklearn.preprocessing import StandardScaler
 import numpy as np
 from neuroprobe.train_test_splits import generate_splits_SS_SM
 from neuroprobe.config import NEUROPROBE_LITE_ELECTRODES
-from train_utils import log
+from utils_train import log
 import torch
 import gc
 import torch.cuda
@@ -107,7 +107,7 @@ class FrozenModelEvaluation_SS_SM():
             electrode_labels = self.all_subject_electrode_labels[subject_identifier]
 
             if self.laplacian_rereference:
-                from laplacian_rereferencing import laplacian_rereference_batch
+                from utils_laplacian_rereferencing import laplacian_rereference_batch
                 batch = {'data': batch_input, 'electrode_labels': [self.all_subject_electrode_labels[subject_identifier]] * batch_input.shape[0]}
                 batch = laplacian_rereference_batch(batch, remove_non_laplacian=False)
                 batch_input = batch['data']

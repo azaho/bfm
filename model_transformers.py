@@ -2,7 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from muon import orthogonalize
+from utils_muon import orthogonalize
 
 
 class BFModule(nn.Module):

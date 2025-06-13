@@ -7,8 +7,8 @@
 #SBATCH --mem=48G
 #SBATCH -t 1:00:00         # total run time limit (HH:MM:SS) (increased to 24 hours)
 #SBATCH --array=1-168  # 285 if doing mini btbench
-#SBATCH --output eval_logs/%A_%a.out # STDOUT
-#SBATCH --error eval_logs/%A_%a.err # STDERR
+#SBATCH --output eval_run_logs/%A_%a.out # STDOUT
+#SBATCH --error eval_run_logs/%A_%a.err # STDERR
 #SBATCH -p use-everything
 
 export PYTHONUNBUFFERED=1
