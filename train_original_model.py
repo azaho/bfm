@@ -5,46 +5,49 @@ import numpy as np
 from torch.amp import autocast, GradScaler, autocast_mode
 import gc
 
-from utils_muon import Muon
-from model_model import FFTaker, OriginalModel
-from model_electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
+from utils.muon_optimizer import Muon
+from model.original_model import OriginalModel
+from model.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
 from dataset import load_dataloaders, load_subjects
-from evaluation_neuroprobe import FrozenModelEvaluation_SS_SM
-from utils_train import log, update_dir_name, update_random_seed, convert_dtypes, parse_config_from_args, get_default_config, get_shared_memory_info, parse_subject_trials_from_config
+from evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
+from utils.training_config import log, update_dir_name, update_random_seed, convert_dtypes, parse_config_from_args, get_default_config, parse_subject_trials_from_config
 from torch.optim.lr_scheduler import ChainedScheduler
 
 ### LOADING CONFIGS ###
 
-config = get_default_config(random_string="TEMP", wandb_project="")
-parse_config_from_args(config)
-parse_subject_trials_from_config(config)
+config = get_default_config(random_string="TEMP", wandb_project="") # Outputs a dictionary, see utils/training_config.py for how it looks like
+parse_config_from_args(config) # Parses the command line arguments and updates the config dictionary
+parse_subject_trials_from_config(config) # Parses the subject trials from the config dictionary
 
-dir_name = update_dir_name(config)
-update_random_seed(config)
-config['cluster']['wandb_name'] = config['cluster']['dir_name']
+dir_name = update_dir_name(config) # This is used to name the directory where the model is saved
+update_random_seed(config) # This is used to set the random seed for the model (for reproducibility)
 log(f"Directory name: {dir_name}", priority=0)
 
-if len(config['cluster']['wandb_project'])==0: wandb = False
+# Weights & Biases dashboard setup
+config['cluster']['wandb_name'] = config['cluster']['dir_name'] # This is used to name the wandb run
+if len(config['cluster']['wandb_project'])==0: wandb = False # If wandb project is not set, we do not use wandb
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 log(f"Using device: {device}", priority=0)
 
 ### LOAD SUBJECTS ###
 
 log(f"Loading subjects...", priority=0)
-all_subjects = load_subjects(config['training']['train_subject_trials'], config['training']['eval_subject_trials'], config['training']['data_dtype'], 
+# all_subjects is a dictionary of subjects, with the subject identifier as the key and the subject object as the value
+all_subjects = load_subjects(config['training']['train_subject_trials'], 
+                             config['training']['eval_subject_trials'], config['training']['data_dtype'], 
                              cache=config['cluster']['cache_subjects'], allow_corrupted=False)
 
 ### LOAD MODEL ###
 
-assert config['model']['electrode_embedding']['spectrogram'] == True, "For the moment, we only support spectrogram"
-assert config['model']['electrode_embedding']['spectrogram_power'] == True, "For the moment, we only support spectrogram power"
+assert config['model']['signal_preprocessing']['spectrogram'] == True, "For the moment, we only support spectrogram"
 
 model = OriginalModel(
     d_model=config['model']['transformer']['d_model'],
     n_layers_electrode=config['model']['transformer']['n_layers_electrode'],
     n_layers_time=config['model']['transformer']['n_layers_time'],
     n_heads=config['model']['transformer']['n_heads'],
-    dropout=config['model']['transformer']['dropout']
+    dropout=config['training']['dropout']
 ).to(device, dtype=config['model']['dtype'])
 
 ### LOAD ELECTRODE EMBEDDINGS ###
@@ -56,11 +59,11 @@ electrode_embeddings = {
     'noisy_coordinate': ElectrodeEmbedding_NoisyCoordinate,
 }[config['model']['electrode_embedding']['type']](
     config['model']['transformer']['d_model'], 
-    embedding_dim=config['model']['electrode_embedding']['embedding_dim'],
+    embedding_dim=config['model']['electrode_embedding']['dim'],
     coordinate_noise_std=config['model']['electrode_embedding']['coordinate_noise_std'],
 ).to(device, dtype=config['model']['dtype'])
 
-for subject in all_subjects.values():
+for subject in all_subjects.values(): # we need to add every subject one by one to create the embeddings map (every electrode of every subject gets its own embedding)
     log(f"Adding subject {subject.subject_identifier} to electrode embeddings...", priority=0)
     electrode_embeddings.add_subject(subject)
 electrode_embeddings = electrode_embeddings.to(device, dtype=config['model']['dtype']) # moving to device again to ensure the new parameters are on the correct device
@@ -70,32 +73,11 @@ electrode_embeddings = electrode_embeddings.to(device, dtype=config['model']['dt
 log(f"Loading dataloaders...", priority=0)
 train_dataloader, test_dataloader = load_dataloaders(
     all_subjects, config['training']['train_subject_trials'], config['training']['p_test'], 
-    config['model']['context_length'], config['training']['data_dtype'], 
-    config['training']['batch_size'],
+    config['model']['context_length'], config['training']['data_dtype'], config['training']['batch_size'],
     num_workers_dataloaders=config['cluster']['num_workers_dataloaders'], 
     prefetch_factor=config['cluster']['prefetch_factor'],
     max_n_electrodes=config['model']['max_n_electrodes'],
     output_embeddings_map=electrode_embeddings.embeddings_map
-)
-
-### LOAD EVALUATION ###
-
-eval_subject_trials = [(all_subjects[subject_identifier], trial_id) for subject_identifier, trial_id in config['training']['eval_subject_trials']]
-# Below for all the tasks in Neuroprobe
-eval_tasks = ['frame_brightness', 'global_flow', 'local_flow', 'global_flow_angle', 'local_flow_angle', 'face_num', 'volume', 'pitch', 'delta_volume', 
-              'delta_pitch', 'speech', 'onset', 'gpt2_surprisal', 'word_length', 'word_gap', 'word_index', 'word_head_pos', 'word_part_speech', 'speaker']
-# Below for just two tasks in Neuroprobe (minimal eval)
-eval_tasks = ['gpt2_surprisal', 'speech']
-evaluation = FrozenModelEvaluation_SS_SM(
-    eval_tasks, eval_subject_trials, 
-    config['training']['data_dtype'], config['training']['batch_size'], # Can have a bigger batch size here if that speeds things up
-    electrode_embeddings.embeddings_map,
-    num_workers_eval=config['cluster']['num_workers_eval'],
-    prefetch_factor=config['cluster']['prefetch_factor'],
-    feature_aggregation_method=config['cluster']['eval_aggregation_method'],
-    max_n_electrodes=config['model']['max_n_electrodes'],
-    laplacian_rereference=config['model']['laplacian_rereference'],
-    voltage_normalization=False
 )
 
 ### LOAD OPTIMIZER AND LEARNING RATE SCHEDULER ###
@@ -109,7 +91,7 @@ log(f"Total parameters: {n_model_params + n_embed_params:,}", priority=0)
 config['model']['n_params'] = {'model': n_model_params, 'embeddings': n_embed_params, 'total': n_model_params + n_embed_params}
 
 optimizers = []
-if config['training']['optimizer'] == 'Muon':
+if config['training']['optimizer'] == 'Muon': # Muon is like the newest and coolest optimizer that works better than Adam
     # Muon only supports matrix parameters, so we use adam for the other parameters
     matrix_params = [p for p in all_params if p.ndim == 2] 
     other_params = [p for p in all_params if p.ndim != 2]
@@ -119,7 +101,7 @@ if config['training']['optimizer'] == 'Muon':
 else:
     optimizers = [torch.optim.AdamW(all_params, lr=config['training']['learning_rate'], weight_decay=config['training']['weight_decay'], betas=(0.9, 0.95))]
 
-schedulers = []
+schedulers = [] # Learning rate scheduling (warmup and falloff, both optional)
 for optimizer in optimizers:
     total_steps = config['training']['n_epochs'] * len(train_dataloader)
     warmup = (torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1e-5, end_factor=1.0, total_iters=config['training']['warmup_steps']) if config['training']['warmup_steps'] > 0
@@ -136,6 +118,8 @@ for optimizer in optimizers:
 def calculate_loss_function(batch, output_accuracy=True):
     # batch['data'] shape: (batch_size, n_electrodes, n_timebins)
     # batch['electrode_index'] shape: (batch_size, n_electrodes)
+    # This function will output a dictionary of losses, with the keys being the loss names and the values being the loss values.
+    # The final loss is the mean of all the losses. Accuracies are exempt and are just used for logging.
     losses = {}
     def _add_to_loss_contrastive(output, target, loss_suffix):
         # output and target shape: (batch_size, n_timebins-future_bin_idx, d_model)
@@ -158,9 +142,13 @@ def calculate_loss_function(batch, output_accuracy=True):
     # Note that due to the RandomELectrodeCollator in the dataset class, the electrodes are already shuffled and cut to max_n_electrodes
     batch_size, n_electrodes, n_samples = batch['data'].shape
     
-    if config['model']['laplacian_rereference']:
-        from utils_laplacian_rereferencing import laplacian_rereference_batch
+    if config['model']['signal_preprocessing']['laplacian_rereference']:
+        from utils.laplacian_rereferencing import laplacian_rereference_batch
         batch = laplacian_rereference_batch(batch, remove_non_laplacian=False)
+        
+    if config['model']['signal_preprocessing']['normalize_voltage']:
+        batch['data'] = batch['data'] - torch.mean(batch['data'], dim=[0, 2], keepdim=True)
+        batch['data'] = batch['data'] / (torch.std(batch['data'], dim=[0, 2], keepdim=True) + 1)
 
     electrode_data_a = batch['data'][:, :n_electrodes//2, :]
     embeddings_a = electrode_embeddings(batch['electrode_index'][:, :n_electrodes//2])
@@ -191,18 +179,63 @@ def calculate_pretrain_test_loss():
         n_batches += 1
     return {k: v / n_batches for k, v in losses.items()}
 
-### PREPARATION FOR TRAINING ###
+### LOAD EVALUATION ###
+
+def generate_frozen_features(batch):
+    # batch['data'] shape: (batch_size, n_electrodes, n_timebins)
+    # batch['electrode_labels'] shape: list of length 1 (since it's the same across the batch), each element is a list of electrode labels
+    # batch['subject_identifier']: str
+    electrode_indices = []
+    for electrode_label in batch['electrode_labels'][0]:
+        key = (subject.subject_identifier, electrode_label)
+        electrode_indices.append(electrode_embeddings.embeddings_map[key])
+    batch['electrode_index'] = torch.tensor(electrode_indices, device=model.device, dtype=torch.long).unsqueeze(0).expand(batch['data'].shape[0], -1) # shape: (batch_size, n_electrodes)
+        
+    if config['model']['signal_preprocessing']['laplacian_rereference']:
+        from utils.laplacian_rereferencing import laplacian_rereference_batch
+        batch = laplacian_rereference_batch(batch, remove_non_laplacian=False)
+    
+    if config['model']['signal_preprocessing']['normalize_voltage']:
+        batch['data'] = batch['data'] - torch.mean(batch['data'], dim=[0, 2], keepdim=True)
+        batch['data'] = batch['data'] / (torch.std(batch['data'], dim=[0, 2], keepdim=True) + 1)
+
+    features = model(batch['data'], batch['electrode_index'], evaluation_features=True) # shape: (batch_size, 1, n_timebins, d_model)
+    if config['cluster']['eval_aggregation_method'] == 'mean':
+        features = features.mean(dim=[1, 2])
+    elif config['cluster']['eval_aggregation_method'] == 'concat':
+        features = features.reshape(batch['data'].shape[0], -1)
+    return features
+
+# Below for all the tasks in Neuroprobe
+# eval_tasks = ['frame_brightness', 'global_flow', 'local_flow', 'global_flow_angle', 'local_flow_angle', 'face_num', 'volume', 'pitch', 'delta_volume', 
+#               'delta_pitch', 'speech', 'onset', 'gpt2_surprisal', 'word_length', 'word_gap', 'word_index', 'word_head_pos', 'word_part_speech', 'speaker']
+# Below for just two tasks in Neuroprobe (minimal eval)
+eval_tasks = ['gpt2_surprisal', 'speech']
+evaluation = FrozenModelEvaluation_SS_SM(
+    # model evaluation function
+    model_evaluation_function=generate_frozen_features,
+    # benchmark parameters 
+    eval_names=eval_tasks, lite=True,
+    subject_trials=[(all_subjects[subject_identifier], trial_id) for subject_identifier, trial_id in config['training']['eval_subject_trials']],
+    # dataloader parameters
+    dtype=config['training']['data_dtype'],
+    batch_size=config['training']['batch_size'],
+    num_workers_eval=config['cluster']['num_workers_eval'],
+    prefetch_factor=config['cluster']['prefetch_factor'],
+)
+
+### EVALUATION OF THE MODEL BEFORE TRAINING ###
 
 log(f"Evaluating model...", priority=0)
 eval_results = {}
 model.eval()
 electrode_embeddings.eval()
 # 
-eval_raw = evaluation.evaluate_on_all_metrics(model, electrode_embeddings, quick_eval=config['cluster']['quick_eval'], only_keys_containing='auroc/average', raw_data=True, key_prefix="raw_")
+eval_raw = evaluation.evaluate_on_all_metrics(quick_eval=config['cluster']['quick_eval'], only_keys_containing='auroc/average', raw_data=True, key_prefix="raw_")
 eval_results.update(eval_raw)
 print("eval_raw", eval_raw)
 #
-eval_full_model = evaluation.evaluate_on_all_metrics(model, electrode_embeddings, quick_eval=config['cluster']['quick_eval'], only_keys_containing='auroc/average')
+eval_full_model = evaluation.evaluate_on_all_metrics(quick_eval=config['cluster']['quick_eval'], only_keys_containing='auroc/average')
 print("eval_full_model", eval_full_model)
 eval_results.update(eval_full_model)
 #
@@ -210,15 +243,17 @@ if wandb: wandb.log(eval_results, step=1)
 del eval_full_model, eval_raw
 torch.cuda.empty_cache()
 gc.collect()
-# eval_results = {}
+
+### PREPARATION FOR TRAINING ###
 
 if wandb: 
+    os.makedirs("runs/wandb", exist_ok=True)
     wandb.init(project=config['cluster']['wandb_project'], name=config['cluster']['wandb_name'], id=config['cluster']['wandb_name'],
-    config=config, settings=wandb.Settings(init_timeout=480))
+               config=config, settings=wandb.Settings(init_timeout=480, dir="runs/wandb"))
 
-def save_model(eval_results, epoch):
-    model_path = f"models_data/{config['cluster']['dir_name']}/model_epoch_{epoch}.pth"
-    os.makedirs(f"models_data/{config['cluster']['dir_name']}", exist_ok=True)
+def save_model(eval_results, epoch, save_in_dir="runs/data/", training_statistics_store=None):
+    model_path = f"{save_in_dir}{config['cluster']['dir_name']}/model_epoch_{epoch}.pth"
+    os.makedirs(f"{save_in_dir}{config['cluster']['dir_name']}", exist_ok=True)
     torch.save({
         'eval_results': eval_results,
         'epoch': epoch,
@@ -227,6 +262,9 @@ def save_model(eval_results, epoch):
         'optimizer_state_dicts': [optimizer.state_dict() for optimizer in optimizers],
         'config': convert_dtypes(config),
     }, model_path)
+    if training_statistics_store is not None:
+        with open(f"{save_in_dir}{config['cluster']['dir_name']}/training_statistics.json", 'w') as f:
+            json.dump(training_statistics_store, f)
 save_model(eval_results, 0)
 
 ### TRAINING ###
@@ -319,10 +357,8 @@ for epoch_i in range(config['training']['n_epochs']):
     if wandb: wandb.log(eval_results, step=epoch_i+2) # XXX adding step=1 to the first log
     training_statistics_store[-1].update(eval_results)
 
-    # Save the model
+    # Save the model every N steps or at the end of the training
     if (epoch_i+1) % config['cluster']['save_model_every_n_epochs'] == 0 or epoch_i+1 == config['training']['n_epochs']:
-        save_model(eval_results, epoch_i+1)
-        statistics_path = f"models_data/{config['cluster']['dir_name']}/training_statistics.json"
-        with open(statistics_path, 'w') as f:
-            json.dump(training_statistics_store, f)
+        save_model(eval_results, epoch_i+1, training_statistics_store=training_statistics_store)
+
 if wandb: wandb.finish()

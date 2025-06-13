@@ -3,9 +3,8 @@ __pycache__/
 .env
 wandb/
 
-run*/
+runs/**
+!runs/scripts/
 
-andrii/analyses/eval_features/
-andrii/analyses/eval_results/
-andrii/analyses/eval_results_old/
-andrii/analyses/btbench_map_figure/
+# Not committing any personal working directories
+_*/
