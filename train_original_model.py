@@ -218,6 +218,7 @@ evaluation = FrozenModelEvaluation_SS_SM(
     eval_names=eval_tasks, lite=True,
     subject_trials=[(all_subjects[subject_identifier], trial_id) for subject_identifier, trial_id in config['training']['eval_subject_trials']],
     # dataloader parameters
+    device=device,
     dtype=config['training']['data_dtype'],
     batch_size=config['training']['batch_size'],
     num_workers_eval=config['cluster']['num_workers_eval'],

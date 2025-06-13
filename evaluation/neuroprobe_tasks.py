@@ -19,6 +19,7 @@ class FrozenModelEvaluation_SS_SM():
                  eval_names, subject_trials, 
                  lite=True, 
                  # dataloader parameters
+                 device=torch.device('cuda'),
                  dtype=torch.float32, batch_size=100,
                  num_workers_eval=4, prefetch_factor=2,
                  # regression parameters
@@ -38,6 +39,7 @@ class FrozenModelEvaluation_SS_SM():
         self.subject_trials = subject_trials
         self.all_subjects = set([subject for subject, trial_id in self.subject_trials])
         self.all_subject_identifiers = set([subject.subject_identifier for subject in self.all_subjects])
+        self.device = device
         self.dtype = dtype
         self.batch_size = batch_size
         self.lite = lite
@@ -63,13 +65,12 @@ class FrozenModelEvaluation_SS_SM():
 
     def _generate_frozen_features(self, dataloader, subject_identifier, 
                                   log_priority=0, raw_data=False):
-        device, dtype = self.model_evaluation_function.device, self.model_evaluation_function.dtype
 
         X, y = [], []
         for i, (batch_input, batch_label) in enumerate(dataloader):
             log(f'generating frozen features for batch {i} of {len(dataloader)}', priority=log_priority, indent=3)
             batch = {
-                'data': batch_input.to(device, dtype=dtype, non_blocking=True), # shape (batch_size, n_electrodes, n_samples),
+                'data': batch_input.to(self.device, dtype=self.dtype, non_blocking=True), # shape (batch_size, n_electrodes, n_samples),
                 'electrode_labels': [self.all_subject_electrode_labels[subject_identifier]],
                 'subject_identifier': subject_identifier
             }
