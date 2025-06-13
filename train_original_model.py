@@ -199,7 +199,9 @@ def generate_frozen_features(batch):
         batch['data'] = batch['data'] - torch.mean(batch['data'], dim=[0, 2], keepdim=True)
         batch['data'] = batch['data'] / (torch.std(batch['data'], dim=[0, 2], keepdim=True) + 1)
 
-    features = model(batch['data'], batch['electrode_index'], evaluation_features=True) # shape: (batch_size, 1, n_timebins, d_model)
+    embeddings = electrode_embeddings(batch['electrode_index'])
+    features = model(batch['data'], embeddings, evaluation_features=True) # shape: (batch_size, 1, n_timebins, d_model)
+
     if config['cluster']['eval_aggregation_method'] == 'mean':
         features = features.mean(dim=[1, 2])
     elif config['cluster']['eval_aggregation_method'] == 'concat':
@@ -207,10 +209,10 @@ def generate_frozen_features(batch):
     return features
 
 # Below for all the tasks in Neuroprobe
-# eval_tasks = ['frame_brightness', 'global_flow', 'local_flow', 'global_flow_angle', 'local_flow_angle', 'face_num', 'volume', 'pitch', 'delta_volume', 
-#               'delta_pitch', 'speech', 'onset', 'gpt2_surprisal', 'word_length', 'word_gap', 'word_index', 'word_head_pos', 'word_part_speech', 'speaker']
+eval_tasks = ['frame_brightness', 'global_flow', 'local_flow', 'global_flow_angle', 'local_flow_angle', 'face_num', 'volume', 'pitch', 'delta_volume', 
+              'delta_pitch', 'speech', 'onset', 'gpt2_surprisal', 'word_length', 'word_gap', 'word_index', 'word_head_pos', 'word_part_speech', 'speaker']
 # Below for just two tasks in Neuroprobe (minimal eval)
-eval_tasks = ['gpt2_surprisal', 'speech']
+# eval_tasks = ['gpt2_surprisal', 'speech']
 evaluation = FrozenModelEvaluation_SS_SM(
     # model evaluation function
     model_evaluation_function=generate_frozen_features,
@@ -346,7 +348,7 @@ for epoch_i in range(config['training']['n_epochs']):
         accuracy_string = f" / ".join([f"{k.split('_')[1]}: {v:.4f}" for k, v in test_loss_dict.items() if 'accuracy' in k])
         log(f"Test loss: {eval_results['test_loss']:.4f} ({losses_string}), Accuracies: {accuracy_string}", priority=0)
         if (epoch_i+1) % config['cluster']['eval_model_every_n_epochs'] == 0:
-            evaluation_results_strings = evaluation.evaluate_on_all_metrics(model, electrode_embeddings, quick_eval=config['cluster']['quick_eval'], only_keys_containing='auroc/average')
+            evaluation_results_strings = evaluation.evaluate_on_all_metrics(quick_eval=config['cluster']['quick_eval'], only_keys_containing='auroc/average')
             eval_results.update(evaluation_results_strings)
             log("eval_full_model" + str(evaluation_results_strings))
             del evaluation_results_strings

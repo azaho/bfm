@@ -82,7 +82,7 @@ CONFIG_SCHEMA = {
         
         'learning_rate': ParamConfig(0.003, float, 'Learning rate'),
         'lr_schedule': ParamConfig('linear', str, 'Learning rate schedule (none, linear, cosine)'),
-        'weight_decay': ParamConfig(0.0001, float, 'Weight decay for optimizer'),
+        'weight_decay': ParamConfig(0.0001, float, 'Weight decay for optimizer', include_in_dirname=True, dirname_format=lambda x: f'wd{x}'),
         'dropout': ParamConfig(0.1, float, 'Dropout rate', include_in_dirname=True, dirname_format=lambda x: f'dr{x}'),
         
         'p_electrodes_per_stream': ParamConfig(0.5, float, 'Proportion of electrodes per stream'),
