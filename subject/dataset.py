@@ -158,69 +158,6 @@ def load_subjects(train_subject_trials, eval_subject_trials, dtype, cache=True, 
 
     return all_subjects
 
-def load_dataloaders(all_subjects, train_subject_trials, p_test, context_length, dtype, 
-                     batch_size, max_n_electrodes=None, output_embeddings_map=None, 
-                     num_workers_dataloaders=12, prefetch_factor=2, test_num_workers_fraction=0.15):
-    # Step 2: Load all datasets 
-    datasets = []
-    for subject_identifier, trial_id in train_subject_trials:
-        log(f"loading dataset for {subject_identifier}_{trial_id}...", indent=1, priority=1)
-        datasets.append(
-            SubjectTrialDataset(
-                all_subjects[subject_identifier], 
-                trial_id, 
-                int(context_length * all_subjects[subject_identifier].get_sampling_rate(trial_id)), 
-                dtype=dtype, 
-                output_embeddings_map=output_embeddings_map,
-                output_subject_trial_id=True,
-                output_electrode_labels=True
-            )
-        )
-        log(f"finished loading dataset for {subject_identifier}_{trial_id}", indent=1, priority=1)
-
-    # Step 3: Split into train and test
-    train_datasets = []
-    test_datasets = []
-    for dataset in datasets:
-        train_size = int(len(dataset) * (1 - p_test))
-        train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, len(dataset) - train_size])
-        train_datasets.append(train_dataset)
-        test_datasets.append(test_dataset)
-    train_dataset = ConcatDataset(train_datasets)
-    test_dataset = ConcatDataset(test_datasets)
-
-    # Step 4: Create dataloaders with custom sampler
-    num_workers_dataloader_test = max(int(num_workers_dataloaders * test_num_workers_fraction), 1)
-    num_workers_dataloader_train = num_workers_dataloaders - num_workers_dataloader_test
-    train_dataloader = DataLoader(
-        train_dataset,
-        batch_sampler=SubjectBatchSampler(
-            [len(ds) for ds in train_datasets],
-            batch_size=batch_size,
-            shuffle=True
-        ),
-        num_workers=num_workers_dataloader_train,
-        pin_memory=True,  # Pin memory for faster GPU transfer
-        persistent_workers=True,  # Keep worker processes alive between iterations
-        prefetch_factor=prefetch_factor,
-        collate_fn=RandomElectrodeCollator(max_n_electrodes)
-    )
-    test_dataloader = DataLoader(
-        test_dataset,
-        batch_sampler=SubjectBatchSampler(
-            [len(ds) for ds in test_datasets],
-            batch_size=batch_size,
-            shuffle=False
-        ),
-        num_workers=num_workers_dataloader_test,
-        pin_memory=True,
-        persistent_workers=True,
-        prefetch_factor=prefetch_factor,
-        collate_fn=RandomElectrodeCollator(max_n_electrodes)
-    )
-    return train_dataloader, test_dataloader
-
-
 if __name__ == "__main__":
     subject = BrainTreebankSubject(3, cache=False)
     dataset = SubjectTrialDataset(subject, 0, 100, torch.float32)

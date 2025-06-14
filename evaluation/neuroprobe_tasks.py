@@ -37,8 +37,9 @@ class FrozenModelEvaluation_SS_SM():
         self.model_evaluation_function = model_evaluation_function
         self.eval_names = eval_names
         self.subject_trials = subject_trials
-        self.all_subjects = set([subject for subject, trial_id in self.subject_trials])
-        self.all_subject_identifiers = set([subject.subject_identifier for subject in self.all_subjects])
+        all_subject_values = set([subject for subject, trial_id in self.subject_trials])
+        self.all_subjects = {subject.subject_identifier: subject for subject in all_subject_values}
+        self.all_subject_identifiers = list(self.all_subjects.keys())
         self.device = device
         self.dtype = dtype
         self.batch_size = batch_size
@@ -60,10 +61,10 @@ class FrozenModelEvaluation_SS_SM():
                 
         self.all_subject_electrode_labels = {
             subject.subject_identifier: NEUROPROBE_LITE_ELECTRODES[subject.subject_identifier] if self.lite else subject.get_electrode_labels()
-            for subject in self.all_subjects
+            for subject in self.all_subjects.values()
         }
 
-    def _generate_frozen_features(self, dataloader, subject_identifier, 
+    def _generate_frozen_features(self, dataloader, subject_identifier, trial_id, 
                                   log_priority=0, raw_data=False):
 
         X, y = [], []
@@ -72,7 +73,11 @@ class FrozenModelEvaluation_SS_SM():
             batch = {
                 'data': batch_input.to(self.device, dtype=self.dtype, non_blocking=True), # shape (batch_size, n_electrodes, n_samples),
                 'electrode_labels': [self.all_subject_electrode_labels[subject_identifier]],
-                'subject_identifier': [subject_identifier]
+                'metadata': {
+                    'subject_identifier': subject_identifier,
+                    'trial_id': trial_id,
+                    'sampling_rate': self.all_subjects[subject_identifier].get_sampling_rate(trial_id),
+                },
             }
 
             if raw_data:
@@ -91,7 +96,7 @@ class FrozenModelEvaluation_SS_SM():
         return np.concatenate(X), np.concatenate(y)
 
 
-    def _evaluate_on_dataset(self, subject, train_dataset, test_dataset, log_priority=0, raw_data=False):
+    def _evaluate_on_dataset(self, subject, trial_id, train_dataset, test_dataset, log_priority=0, raw_data=False):
         subject_identifier = subject.subject_identifier
         train_dataloader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=False, num_workers=self.num_workers_eval, 
                                       prefetch_factor=self.prefetch_factor, pin_memory=True)
@@ -101,7 +106,7 @@ class FrozenModelEvaluation_SS_SM():
         # Generate features for training data
         log('generating frozen train features', priority=log_priority, indent=2)
         X_train, y_train = self._generate_frozen_features(
-            train_dataloader, subject_identifier,
+            train_dataloader, subject_identifier, trial_id,
             log_priority=log_priority, raw_data=raw_data
         )
         log('done generating frozen train features', priority=log_priority, indent=2)
@@ -109,7 +114,7 @@ class FrozenModelEvaluation_SS_SM():
         # Generate features for test data
         log('generating frozen test features', priority=log_priority, indent=2)
         X_test, y_test = self._generate_frozen_features(
-            test_dataloader, subject_identifier,
+            test_dataloader, subject_identifier, trial_id,
             log_priority=log_priority, raw_data=raw_data
         )
         log('done generating frozen test features', priority=log_priority, indent=2)
@@ -152,10 +157,10 @@ class FrozenModelEvaluation_SS_SM():
         log('done evaluating', priority=log_priority, indent=2)
         return auroc, accuracy
     
-    def _evaluate_on_metric_cv(self, subject, train_datasets, test_datasets, log_priority=0, quick_eval=False, raw_data=False):
+    def _evaluate_on_metric_cv(self, subject, trial_id, train_datasets, test_datasets, log_priority=0, quick_eval=False, raw_data=False):
         auroc_list, accuracy_list = [], []
         for train_dataset, test_dataset in zip(train_datasets, test_datasets):
-            auroc, accuracy = self._evaluate_on_dataset(subject, train_dataset, test_dataset, log_priority=log_priority, raw_data=raw_data)
+            auroc, accuracy = self._evaluate_on_dataset(subject, trial_id, train_dataset, test_dataset, log_priority=log_priority, raw_data=raw_data)
             auroc_list.append(auroc)
             accuracy_list.append(accuracy)
             if quick_eval: break
@@ -164,12 +169,12 @@ class FrozenModelEvaluation_SS_SM():
     def evaluate_on_all_metrics(self, log_priority=4, quick_eval=False, key_prefix="", only_keys_containing=None, raw_data=False):
         log('evaluating on all metrics', priority=log_priority, indent=1)
         evaluation_results = {}
-        for subject in self.all_subjects:
+        for subject_identifier, subject in self.all_subjects.items():
             for eval_name in self.eval_names:
-                trial_ids = [trial_id for _subject, trial_id in self.subject_trials if _subject.subject_identifier == subject.subject_identifier]
+                trial_ids = [trial_id for _subject, trial_id in self.subject_trials if _subject.subject_identifier == subject_identifier]
                 for trial_id in trial_ids:
                     splits = self.evaluation_datasets[(eval_name, subject.subject_identifier, trial_id)]
-                    auroc, accuracy = self._evaluate_on_metric_cv(subject, splits[0], splits[1], log_priority=log_priority+1, quick_eval=quick_eval, raw_data=raw_data)
+                    auroc, accuracy = self._evaluate_on_metric_cv(subject, trial_id, splits[0], splits[1], log_priority=log_priority+1, quick_eval=quick_eval, raw_data=raw_data)
                     evaluation_results[(eval_name, subject.subject_identifier, trial_id)] = (auroc, accuracy)
         
         evaluation_results_strings = self._format_evaluation_results_strings(evaluation_results)

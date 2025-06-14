@@ -4,12 +4,12 @@ import json
 import pandas as pd
 import numpy as np
 import torch
-from subject.subject_interface import SubjectInterface
+from subject.subject import Subject
 
 BRAINTREEBANK_ROOT_DIR = "/om2/user/zaho/braintreebank/braintreebank" # Root directory for the braintreebank data
 import os; os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE" # Disable file locking for HDF5 files. This is helpful for parallel processing.
 
-class BrainTreebankSubject(SubjectInterface):
+class BrainTreebankSubject(Subject):
     """ 
         This class is used to load the neural data for a given subject and trial.
         It also contains methods to get the data for a given electrode and trial, and to get the spectrogram for a given electrode and trial.

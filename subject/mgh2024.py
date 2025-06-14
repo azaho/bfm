@@ -5,11 +5,11 @@ import torch
 import h5py
 import re
 import pandas as pd
-from subject.subject_interface import SubjectInterface
+from subject.subject import Subject
 
 MGH_ROOT_DIR = "/om2/data/public/Infolab/mgh2024_data" # Root directory for the data
 
-class MGH2024Subject(SubjectInterface):
+class MGH2024Subject(Subject):
     """ 
         This class is used to load the neural data for a given subject and session.
         It also contains methods to get the data for a given electrode and session.

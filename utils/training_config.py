@@ -14,6 +14,7 @@ class ParamConfig:
     include_in_dirname: bool = False
     dirname_format: Optional[callable] = None
     default: Any = None
+    required: bool = False
 
 CONFIG_SCHEMA = {
     'model': {
@@ -71,6 +72,8 @@ CONFIG_SCHEMA = {
     },
 
     'training': {
+        'setup_name': ParamConfig("andrii_v0", str, 'Setup name', required=True),
+
         'train_subject_trials': ParamConfig("btbank3_1", str, 'Train subject trials'), # a string like btbank3_1,btbank3_2,...
         'eval_subject_trials': ParamConfig("btbank3_0", str, 'Eval subject trials'), # a string like btbank3_0,btbank3_1,...
         'data_dtype': ParamConfig(torch.bfloat16, torch.dtype, 'Data type for tensors'),
@@ -118,11 +121,25 @@ def get_default_config(random_string, wandb_project):
 def parse_config_from_args(config):
     parser = argparse.ArgumentParser()
     
+    def bool_type(x):
+        if isinstance(x, bool):
+            return x
+        if isinstance(x, (int, float)):
+            return bool(x)
+        if isinstance(x, str):
+            if x.lower() in ('true', 't', 'yes', 'y', '1'):
+                return True
+            if x.lower() in ('false', 'f', 'no', 'n', '0'):
+                return False
+        raise argparse.ArgumentTypeError(f'Boolean value expected, got {x}')
+    
     def add_args_from_schema(schema, prefix=''):
         for key, value in schema.items():
             if isinstance(value, ParamConfig):
                 arg_name = f'--{prefix}{key}' if prefix else f'--{key}'
-                parser.add_argument(arg_name, type=value.type, default=None, help=value.help)
+                # Use bool_type for boolean parameters
+                arg_type = bool_type if value.type == bool else value.type
+                parser.add_argument(arg_name, type=arg_type, default=None, help=value.help, required=value.required)
             elif isinstance(value, dict):
                 new_prefix = f'{prefix}{key}.' if prefix else f'{key}.'
                 add_args_from_schema(value, new_prefix)
@@ -151,7 +168,7 @@ def parse_subject_trials_from_config(config):
     config['training']['eval_subject_trials'] = eval_subject_trials
 
 def update_dir_name(config):
-    dir_name = config['model']['name']
+    dir_name = config['training']['setup_name']
     def add_to_dirname(config, schema, prefix=''):
         nonlocal dir_name
         for key, value in schema.items():

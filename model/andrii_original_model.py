@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
-from model.transformer_implementation import BFModule, Transformer
+from model.transformer_implementation import Transformer
+from model.BFModule import BFModule
 import numpy as np
 
 class SpectrogramPreprocessor(BFModule):

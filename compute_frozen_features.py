@@ -3,7 +3,7 @@ import os, json
 import numpy as np
 from model.andrii_original_model import OriginalModel
 from model.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
-from dataset import load_dataloaders, load_subjects
+from subject.dataset import load_dataloaders, load_subjects
 from evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
 from utils.training_config import log, convert_dtypes, unconvert_dtypes
 

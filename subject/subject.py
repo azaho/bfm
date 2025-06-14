@@ -1,4 +1,4 @@
-class SubjectInterface:
+class Subject:
     """
     Abstract base class defining the interface for subject neural data access.
     All subject-specific implementations (MGH, BrainTreebank, etc.) should inherit from this.
