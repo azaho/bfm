@@ -111,7 +111,7 @@ class FrozenModelSeizureEvaluation:
 
         # Initialize evaluation datasets
         self.evaluation_datasets = {}
-        from evaluation.mgh_seizure import MGHSeizureDataset
+        from evaluation.mgh2024_seizure import MGHSeizureDataset
         for subject in self.subjects:
             for session_id in self.session_ids:
                 try:

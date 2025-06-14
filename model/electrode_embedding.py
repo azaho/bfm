@@ -3,7 +3,7 @@ import torch.nn as nn
 from model.transformer_implementation import BFModule
 
 class ElectrodeEmbedding(BFModule):
-    def __init__(self, d_model, embedding_dim=None, embedding_fanout_requires_grad=True, embedding_requires_grad=True, initial_capacity=100, **kwargs):
+    def __init__(self, d_model, embedding_dim=None, embedding_fanout_requires_grad=True, embedding_requires_grad=True, initial_capacity=16, **kwargs):
         super(ElectrodeEmbedding, self).__init__()
 
         self.embedding_dim = embedding_dim if embedding_dim is not None else d_model
@@ -35,9 +35,13 @@ class ElectrodeEmbedding(BFModule):
             self._initialize_embeddings(new_capacity)
             self.embeddings.weight.data[:old_embeddings.shape[0]] = old_embeddings
 
-    def forward(self, electrode_indices):
+    def forward_indices(self, electrode_indices):
         # electrode_indices is a tensor of shape (batch_size, n_electrodes)
         return self.embed_transformation(self.embeddings(electrode_indices))
+    
+    def forward(self, batch):
+        # batch['electrode_index'] is a tensor of shape (batch_size, n_electrodes)
+        return self.forward_indices(batch['electrode_index'])
 
     def add_raw(self, subject_identifier, electrode_labels):
         self._ensure_capacity(self._get_current_size() + len(electrode_labels))
@@ -51,6 +55,9 @@ class ElectrodeEmbedding(BFModule):
         if 'embeddings_map' in state_dict:
             self.embeddings_map = state_dict['embeddings_map']
             del state_dict['embeddings_map'] # Remove embeddings_map from state dict since it's not a tensor parameter
+        # Ensure capacity for the loaded embeddings
+        if 'embeddings' in state_dict:
+            self._ensure_capacity(state_dict['embeddings.weight'].shape[0])
         return super().load_state_dict(state_dict, strict=strict)
 
     def state_dict(self, *args, **kwargs):
@@ -151,7 +158,7 @@ class ElectrodeEmbedding_NoisyCoordinate(ElectrodeEmbedding_Learned):
             embedding_index = self.embeddings_map[(subject.subject_identifier, electrode_label)]
             self.embeddings.weight.data[embedding_index] = electrode_coordinates[i:i+1] # Just store the L, I, P coordinates
 
-    def forward(self, electrode_indices):
+    def forward_indices(self, electrode_indices):
         electrode_coordinates = super().forward(electrode_indices)
         electrode_coordinates += torch.randn_like(electrode_coordinates) * self.coordinate_noise_std
         return coordinates_positional_encoding(electrode_coordinates, self.embedding_dim)

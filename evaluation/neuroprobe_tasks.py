@@ -72,7 +72,7 @@ class FrozenModelEvaluation_SS_SM():
             batch = {
                 'data': batch_input.to(self.device, dtype=self.dtype, non_blocking=True), # shape (batch_size, n_electrodes, n_samples),
                 'electrode_labels': [self.all_subject_electrode_labels[subject_identifier]],
-                'subject_identifier': subject_identifier
+                'subject_identifier': [subject_identifier]
             }
 
             if raw_data:

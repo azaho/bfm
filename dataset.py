@@ -46,6 +46,13 @@ class SubjectTrialDataset(Dataset):
             output['electrode_labels'] = self.subject.electrode_labels # Also output the electrode label
         if self.output_embeddings_map: 
             output['electrode_index'] = self.electrode_indices
+
+        output['metadata'] = {
+            'subject_identifier': self.subject.subject_identifier,
+            'trial_id': self.trial_id,
+            'sampling_rate': self.subject.get_sampling_rate(self.trial_id),
+        }
+        
         return output
 
 class RandomElectrodeCollator:
@@ -85,6 +92,9 @@ class RandomElectrodeCollator:
             output['electrode_index'] = torch.stack(processed_electrode_indices)
         if len(processed_electrode_labels) > 0:
             output['electrode_labels'] = processed_electrode_labels
+        
+        if 'metadata' in batch[0]:
+            output['metadata'] = batch[0]['metadata'] # assume all metadata is the same for all items in the batch
         
         # Copy through any other fields that don't need processing
         for key in batch[0].keys():

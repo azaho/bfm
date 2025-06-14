@@ -74,7 +74,7 @@ def laplacian_rereference_neural_data(electrode_data, electrode_labels, remove_n
     return rereferenced_data, laplacian_electrodes if remove_non_laplacian else electrode_labels, original_electrode_indices
 
 
-def laplacian_rereference_batch(batch, remove_non_laplacian=True):
+def laplacian_rereference_batch(batch, remove_non_laplacian=True, inplace=False):
     """
     Rereference the neural data using the laplacian method (subtract the mean of the neighbors, as determined by the electrode labels)
     inputs:
@@ -88,6 +88,8 @@ def laplacian_rereference_batch(batch, remove_non_laplacian=True):
             'electrode_labels': lists of electrode labels of length n_electrodes_rereferenced (n_electrodes_rereferenced could be different from n_electrodes if remove_non_laplacian is True)
             'electrode_index': lists of electrode indices of length n_electrodes_rereferenced (n_electrodes_rereferenced could be different from n_electrodes if remove_non_laplacian is True)
     """
+    assert inplace, "laplacian_rereference_batch currently only supports inplace=True"
+
     electrode_data = batch['data'] # shape: (batch_size, n_electrodes, n_samples)
     electrode_labels = batch['electrode_labels'] # shape: (batch_size, n_electrodes)
 
@@ -104,7 +106,7 @@ def laplacian_rereference_batch(batch, remove_non_laplacian=True):
 
 
 if __name__ == "__main__":
-    from subject_braintreebank import BrainTreebankSubject
+    from subject.braintreebank import BrainTreebankSubject
     subject = BrainTreebankSubject(1, cache=False)
     print(f"Subject electrode labels (length: {len(subject.get_electrode_labels())}): ", subject.get_electrode_labels())
 

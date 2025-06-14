@@ -55,8 +55,9 @@ CONFIG_SCHEMA = {
 
     'cluster': {
         'wandb_project': ParamConfig("", str, 'wandb.com project name'), # If empty, no wandb is used
-        'save_model_every_n_epochs': ParamConfig(5, int, 'Save the model weights and training statistics every n epochs'),
-        'eval_model_every_n_epochs': ParamConfig(5, int, 'Evaluate the model every n epochs'),
+        'save_model_every_n_epochs': ParamConfig(1, int, 'Save the model weights and training statistics every n epochs'),
+        'eval_model_every_n_epochs': ParamConfig(1, int, 'Evaluate the model every n epochs'),
+        'eval_at_beginning': ParamConfig(True, bool, 'Whether to evaluate the model at the beginning of the training'),
 
         'timestamp': ParamConfig(time.strftime("%Y%m%d_%H%M%S"), str, 'Timestamp'), # the time when the model was trained
         'cache_subjects': ParamConfig(True, bool, 'Whether to cache subjects'), # Whether to cache the subject datasets in RAM, or to load them from the disk as the training proceeds.

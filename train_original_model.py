@@ -6,12 +6,13 @@ from torch.amp import autocast, GradScaler, autocast_mode
 import gc
 
 from utils.muon_optimizer import Muon
-from model.original_model import OriginalModel
+from model.andrii_original_model import OriginalModel
 from model.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
 from dataset import load_dataloaders, load_subjects
 from evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
 from utils.training_config import log, update_dir_name, update_random_seed, convert_dtypes, parse_config_from_args, get_default_config, parse_subject_trials_from_config
 from torch.optim.lr_scheduler import ChainedScheduler
+from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
 
 ### LOADING CONFIGS ###
 
@@ -116,25 +117,29 @@ for optimizer in optimizers:
 ### LOSS FUNCTION CALCULATION ###
 
 def calculate_loss_function(batch, output_accuracy=True):
-    # batch['data'] shape: (batch_size, n_electrodes, n_timebins)
-    # batch['electrode_index'] shape: (batch_size, n_electrodes)
-    # This function will output a dictionary of losses, with the keys being the loss names and the values being the loss values.
-    # The final loss is the mean of all the losses. Accuracies are exempt and are just used for logging.
+    # INPUT:
+    #   batch['data'] shape: (batch_size, n_electrodes, n_timesamples)
+    #   batch['electrode_index'] shape: (batch_size, n_electrodes)
+    #   batch['metadata']: dictionary containing metadata like the subject identifier and trial id, sampling rate, etc.
+    # OUTPUT:
+    #   This function will output a dictionary of losses, with the keys being the loss names and the values being the loss values.
+    #   The final loss is the mean of all the losses. Accuracies are exempt and are just used for logging.
+    
     losses = {}
     def _add_to_loss_contrastive(output, target, loss_suffix):
-        # output and target shape: (batch_size, n_timebins-future_bin_idx, d_model)
+        # output and target shape: (batch_size, n_electrodes, n_timebins-future_bin_idx, d_model)
         if config['training']['normalize_features']:
             output_ = output / (torch.norm(output, dim=-1, keepdim=True) + 0.001)
             target_ = target / (torch.norm(target, dim=-1, keepdim=True) + 0.001)
-        similarity = output_.permute(1, 0, 2) @ target_.permute(1, 2, 0) # shape: (n_timebins-future_bin_idx, batch_size, batch_size)
+        similarity = output_.permute(1, 2, 0, 3) @ target_.permute(1, 2, 3, 0) # shape: (n_electrodes, n_timebins-future_bin_idx, batch_size, batch_size)
         if config['training']['use_temperature_param']:
             similarity = similarity * torch.minimum(torch.exp(model.temperature_param), torch.tensor(config['training']['max_temperature_param'], device=model.device, dtype=model.dtype))
-        expanded_arange = torch.arange(batch_size).unsqueeze(0).repeat(output.shape[1], 1).to(model.device, dtype=torch.long).reshape(-1)
+        expanded_arange = torch.arange(batch_size).unsqueeze(0).unsqueeze(0).repeat(output.shape[1], output.shape[2], 1).to(model.device, dtype=torch.long).reshape(-1)
 
-        loss = torch.nn.functional.cross_entropy(similarity[:, :, :].view(-1, batch_size), expanded_arange)
+        loss = torch.nn.functional.cross_entropy(similarity.view(-1, batch_size), expanded_arange)
         losses[f'contrastive_{loss_suffix}'] = loss
         if output_accuracy:
-            accuracy_bin = (similarity[:, :, :].view(-1, batch_size).argmax(dim=-1) == expanded_arange).float().mean()
+            accuracy_bin = (similarity.view(-1, batch_size).argmax(dim=-1) == expanded_arange).float().mean()
             losses[f'accuracy_{loss_suffix}'] = accuracy_bin
         return losses
     future_bin_idx = config['training']['future_bin_idx']
@@ -143,20 +148,28 @@ def calculate_loss_function(batch, output_accuracy=True):
     batch_size, n_electrodes, n_samples = batch['data'].shape
     
     if config['model']['signal_preprocessing']['laplacian_rereference']:
-        from utils.laplacian_rereferencing import laplacian_rereference_batch
-        batch = laplacian_rereference_batch(batch, remove_non_laplacian=False)
+        laplacian_rereference_batch(batch, remove_non_laplacian=False, inplace=True)
         
     if config['model']['signal_preprocessing']['normalize_voltage']:
         batch['data'] = batch['data'] - torch.mean(batch['data'], dim=[0, 2], keepdim=True)
         batch['data'] = batch['data'] / (torch.std(batch['data'], dim=[0, 2], keepdim=True) + 1)
 
-    electrode_data_a = batch['data'][:, :n_electrodes//2, :]
-    embeddings_a = electrode_embeddings(batch['electrode_index'][:, :n_electrodes//2])
-    electrode_data_b = batch['data'][:, n_electrodes//2:, :]
-    embeddings_b = electrode_embeddings(batch['electrode_index'][:, n_electrodes//2:])
+    # Split the batch into two halves, so that we can compute the contrastive loss on the two halves
+    batch_a = {
+        'data': batch['data'][:, :n_electrodes//2, :],
+        'electrode_index': batch['electrode_index'][:, :n_electrodes//2],
+        'metadata': batch['metadata'],
+    }
+    batch_b = {
+        'data': batch['data'][:, n_electrodes//2:, :],
+        'electrode_index': batch['electrode_index'][:, n_electrodes//2:],
+        'metadata': batch['metadata'],
+    }
 
-    electrode_transformed_data_a, time_transformed_data_a = model(electrode_data_a, embeddings_a) # shape: (batch_size, n_timebins, d_model)
-    electrode_transformed_data_b, time_transformed_data_b = model(electrode_data_b, embeddings_b) # shape: (batch_size, n_timebins, d_model)
+    embeddings_a = electrode_embeddings(batch_a)
+    embeddings_b = electrode_embeddings(batch_b)
+    electrode_transformed_data_a, time_transformed_data_a = model(batch_a, embeddings_a) # shape: (batch_size, 1, n_timebins, d_model)
+    electrode_transformed_data_b, time_transformed_data_b = model(batch_b, embeddings_b) # shape: (batch_size, 1, n_timebins, d_model)
 
     # add two symmetric loss components
     _add_to_loss_contrastive(time_transformed_data_a[:, :-future_bin_idx], electrode_transformed_data_b[:, future_bin_idx:], 'a')
@@ -182,25 +195,29 @@ def calculate_pretrain_test_loss():
 ### LOAD EVALUATION ###
 
 def generate_frozen_features(batch):
-    # batch['data'] shape: (batch_size, n_electrodes, n_timebins)
-    # batch['electrode_labels'] shape: list of length 1 (since it's the same across the batch), each element is a list of electrode labels
-    # batch['subject_identifier']: str
+    # INPUT:
+    #   batch['data'] shape: (batch_size, n_electrodes, n_timebins)
+    #   batch['electrode_labels'] shape: list of length 1 (since it's the same across the batch), each element is a list of electrode labels
+    #   batch['metadata']: dictionary containing metadata like the subject identifier and trial id, sampling rate, etc.
+    # OUTPUT:
+    #   features shape: (batch_size, *)
+    
     electrode_indices = []
+    subject_identifier = batch['metadata']['subject_identifier']
     for electrode_label in batch['electrode_labels'][0]:
-        key = (subject.subject_identifier, electrode_label)
+        key = (subject_identifier, electrode_label)
         electrode_indices.append(electrode_embeddings.embeddings_map[key])
     batch['electrode_index'] = torch.tensor(electrode_indices, device=model.device, dtype=torch.long).unsqueeze(0).expand(batch['data'].shape[0], -1) # shape: (batch_size, n_electrodes)
         
     if config['model']['signal_preprocessing']['laplacian_rereference']:
-        from utils.laplacian_rereferencing import laplacian_rereference_batch
-        batch = laplacian_rereference_batch(batch, remove_non_laplacian=False)
+        laplacian_rereference_batch(batch, remove_non_laplacian=False, inplace=True)
     
     if config['model']['signal_preprocessing']['normalize_voltage']:
         batch['data'] = batch['data'] - torch.mean(batch['data'], dim=[0, 2], keepdim=True)
         batch['data'] = batch['data'] / (torch.std(batch['data'], dim=[0, 2], keepdim=True) + 1)
 
-    embeddings = electrode_embeddings(batch['electrode_index'])
-    features = model(batch['data'], embeddings, evaluation_features=True) # shape: (batch_size, 1, n_timebins, d_model)
+    embeddings = electrode_embeddings(batch)
+    features = model(batch, embeddings, evaluation_features=True) # shape: (batch_size, 1, n_timebins, d_model)
 
     if config['cluster']['eval_aggregation_method'] == 'mean':
         features = features.mean(dim=[1, 2])
@@ -209,10 +226,10 @@ def generate_frozen_features(batch):
     return features
 
 # Below for all the tasks in Neuroprobe
-eval_tasks = ['frame_brightness', 'global_flow', 'local_flow', 'global_flow_angle', 'local_flow_angle', 'face_num', 'volume', 'pitch', 'delta_volume', 
-              'delta_pitch', 'speech', 'onset', 'gpt2_surprisal', 'word_length', 'word_gap', 'word_index', 'word_head_pos', 'word_part_speech', 'speaker']
+# eval_tasks = ['frame_brightness', 'global_flow', 'local_flow', 'global_flow_angle', 'local_flow_angle', 'face_num', 'volume', 'pitch', 'delta_volume', 
+#               'delta_pitch', 'speech', 'onset', 'gpt2_surprisal', 'word_length', 'word_gap', 'word_index', 'word_head_pos', 'word_part_speech', 'speaker']
 # Below for just two tasks in Neuroprobe (minimal eval)
-# eval_tasks = ['gpt2_surprisal', 'speech']
+eval_tasks = ['gpt2_surprisal', 'speech']
 evaluation = FrozenModelEvaluation_SS_SM(
     # model evaluation function
     model_evaluation_function=generate_frozen_features,
@@ -227,32 +244,37 @@ evaluation = FrozenModelEvaluation_SS_SM(
     prefetch_factor=config['cluster']['prefetch_factor'],
 )
 
-### EVALUATION OF THE MODEL BEFORE TRAINING ###
-
-log(f"Evaluating model...", priority=0)
-eval_results = {}
-model.eval()
-electrode_embeddings.eval()
-# 
-eval_raw = evaluation.evaluate_on_all_metrics(quick_eval=config['cluster']['quick_eval'], only_keys_containing='auroc/average', raw_data=True, key_prefix="raw_")
-eval_results.update(eval_raw)
-print("eval_raw", eval_raw)
-#
-eval_full_model = evaluation.evaluate_on_all_metrics(quick_eval=config['cluster']['quick_eval'], only_keys_containing='auroc/average')
-print("eval_full_model", eval_full_model)
-eval_results.update(eval_full_model)
-#
-if wandb: wandb.log(eval_results, step=1)
-del eval_full_model, eval_raw
-torch.cuda.empty_cache()
-gc.collect()
-
-### PREPARATION FOR TRAINING ###
+### WANDB SETUP ###
 
 if wandb: 
     os.makedirs("runs/wandb", exist_ok=True)
     wandb.init(project=config['cluster']['wandb_project'], name=config['cluster']['wandb_name'], id=config['cluster']['wandb_name'],
-               config=config, settings=wandb.Settings(init_timeout=480, dir="runs/wandb"))
+               config=config, settings=wandb.Settings(init_timeout=480), dir="runs/wandb")
+
+### EVALUATION OF THE MODEL BEFORE TRAINING ###
+
+if config['cluster']['eval_at_beginning']:
+    log(f"Evaluating model...", priority=0)
+    eval_results = {}
+    model.eval()
+    electrode_embeddings.eval()
+    # 
+    eval_raw = evaluation.evaluate_on_all_metrics(quick_eval=config['cluster']['quick_eval'], only_keys_containing='auroc/average', raw_data=True, key_prefix="raw_")
+    eval_results.update(eval_raw)
+    log(f"eval_raw: {eval_raw}", priority=0)
+    #
+    eval_full_model = evaluation.evaluate_on_all_metrics(quick_eval=config['cluster']['quick_eval'], only_keys_containing='auroc/average')
+    log(f"eval_full_model: {eval_full_model}", priority=0)
+    eval_results.update(eval_full_model)
+    #
+    if wandb: wandb.log(eval_results, step=1)
+    del eval_full_model, eval_raw
+    torch.cuda.empty_cache()
+    gc.collect()
+else:
+    eval_results = {}
+
+### PREPARATION FOR TRAINING ###
 
 def save_model(eval_results, epoch, save_in_dir="runs/data/", training_statistics_store=None):
     model_path = f"{save_in_dir}{config['cluster']['dir_name']}/model_epoch_{epoch}.pth"
@@ -274,7 +296,7 @@ save_model(eval_results, 0)
 # The data starts out as (batch_size, n_electrodes, n_timesamples)
 # 1. (batch_size, n_electrodes, n_timesamples) -> FFT + linear layer -> (batch_size, n_electrodes, n_timebins, d_model)
 # 2. (batch_size, n_electrodes, n_timebins, d_model) -> electrode transformer -> (batch_size, n_timebins, d_model)
-# 3. (batch_size, n_electrodes, n_timebins, sample_timebin_size) -> time transformer -> (batch_size, n_timebins, d_model)
+# 3. (batch_size, n_timebins, d_model) -> time transformer -> (batch_size, 1, n_timebins, d_model)
 # loss function: compare the output of the time transformer to the input of the time transformer
 
 training_statistics_store = []
@@ -294,15 +316,10 @@ for epoch_i in range(config['training']['n_epochs']):
         for optimizer in optimizers: optimizer.zero_grad()
 
         # Use autocast with specified dtype
-        if config['model']['use_mixed_precision']:
-            with autocast(device_type='cuda', dtype=config['model']['amp_dtype'], enabled=config['model']['use_mixed_precision']):
-                loss_dict = calculate_loss_function(batch)
-                loss = sum([v for k, v in loss_dict.items() if 'accuracy' not in k]) / len([v for k, v in loss_dict.items() if 'accuracy' not in k]) 
-            loss.backward()
-        else:
+        with autocast(device_type='cuda', dtype=config['model']['amp_dtype'], enabled=config['model']['use_mixed_precision']):
             loss_dict = calculate_loss_function(batch)
             loss = sum([v for k, v in loss_dict.items() if 'accuracy' not in k]) / len([v for k, v in loss_dict.items() if 'accuracy' not in k]) 
-            loss.backward()
+        loss.backward()
 
         for key, _loss in loss_dict.items():
             epoch_losses[key] = epoch_losses.get(key, 0) + _loss.item()

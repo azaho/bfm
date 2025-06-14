@@ -3,27 +3,25 @@ import torch.nn as nn
 from model.transformer_implementation import BFModule, Transformer
 import numpy as np
 
-class FFTaker(BFModule):
-    def __init__(self, d_model=192, max_frequency=200, nperseg=400, noverlap=350, output_transform=False):
-        super(FFTaker, self).__init__()
+class SpectrogramPreprocessor(BFModule):
+    def __init__(self, output_dim=-1, max_frequency=200):
+        super(SpectrogramPreprocessor, self).__init__()
         self.max_frequency = max_frequency
-        self.d_model = d_model
-        self.nperseg = nperseg
-        self.noverlap = noverlap
+        self.output_dim = output_dim
 
         assert self.max_frequency == 200, "Max frequency must be 200"
         self.max_frequency_bin = 40 # XXX hardcoded max frequency bin
         
         # Transform FFT output to match expected output dimension
-        self.output_transform = nn.Identity() if not output_transform else nn.Linear(self.max_frequency_bin, 
-                                                                            d_model)
+        self.output_transform = nn.Identity() if self.output_dim == -1 else nn.Linear(self.max_frequency_bin, self.output_dim)
     
-    def forward(self, electrode_data):
-        # electrode_data is of shape (batch_size, n_electrodes, n_samples)
-        batch_size, n_electrodes = electrode_data.shape[:2]
+    def forward(self, batch):
+        # batch['data'] is of shape (batch_size, n_electrodes, n_samples)
+        # batch['metadata'] is a dictionary containing metadata like the subject identifier and trial id, sampling rate, etc.
+        batch_size, n_electrodes = batch['data'].shape[:2]
         
         # Reshape for STFT
-        x = electrode_data.reshape(batch_size * n_electrodes, -1)
+        x = batch['data'].reshape(batch_size * n_electrodes, -1)
         x = x.to(dtype=torch.float32)  # Convert to float32 for STFT
         
         # STFT parameters
@@ -62,9 +60,9 @@ class FFTaker(BFModule):
         
         # Transform to match expected output dimension
         x = x.transpose(2, 3) # (batch_size, n_electrodes, n_timebins, n_freqs)
-        x = self.output_transform(x)  # shape: (batch_size, n_electrodes, n_timebins, first_kernel//n_downsample_factor)
+        x = self.output_transform(x)  # shape: (batch_size, n_electrodes, n_timebins, output_dim)
         
-        return x.to(dtype=electrode_data.dtype)
+        return x.to(dtype=batch['data'].dtype)
         
 
 class ElectrodeTransformer(BFModule):
@@ -97,6 +95,7 @@ class ElectrodeTransformer(BFModule):
         electrode_data = electrode_data.reshape(batch_size, n_timebins, self.d_model)
         return electrode_data
 
+
 class TimeTransformer(BFModule):
     def __init__(self, d_model, n_layers=5, n_heads=12, dropout=0.1):
         super().__init__()
@@ -119,19 +118,22 @@ class OriginalModel(BFModule):
         self.n_layers_electrode = n_layers_electrode
         self.n_layers_time = n_layers_time
         
-        self.fft_preprocessor = FFTaker(d_model=d_model, max_frequency=200, output_transform=True)
+        self.spectrogram_preprocessor = SpectrogramPreprocessor(output_dim=d_model, max_frequency=200)
         self.electrode_transformer = ElectrodeTransformer(d_model, n_layers_electrode, n_heads, dropout)
         self.time_transformer = TimeTransformer(d_model, n_layers_time, n_heads, dropout)
 
         self.temperature_param = nn.Parameter(torch.tensor(0.0))
-    
-    def forward(self, electrode_data, embeddings=None, evaluation_features=False):
-        # electrode_data is of shape (batch_size, n_electrodes, n_timesamples
-        # embeddings is of shape (batch_size, n_electrodes, d_model)
-        electrode_data = self.fft_preprocessor(electrode_data) # shape: (batch_size, n_electrodes, n_timebins, d_model)
+
+    def forward(self, batch, embeddings=None, evaluation_features=False):
+        # batch['data'] is of shape (batch_size, n_electrodes, n_timesamples)
+        # batch['electrode_index'] is of shape (batch_size, n_electrodes)
+        # batch['metadata'] is a dictionary containing metadata like the subject identifier and trial id, sampling rate, etc.        
+        
+        electrode_data = self.spectrogram_preprocessor(batch) # shape: (batch_size, n_electrodes, n_timebins, d_model)
+
         electrode_transformed_data = self.electrode_transformer(electrode_data, embeddings) # shape: (batch_size, n_timebins, d_model)
         if evaluation_features:
             return electrode_transformed_data.unsqueeze(1)
         
         time_transformed_data = self.time_transformer(electrode_transformed_data) # shape: (batch_size, n_timebins, d_model)
-        return electrode_transformed_data, time_transformed_data
+        return electrode_transformed_data.unsqueeze(1), time_transformed_data.unsqueeze(1) # shape: (batch_size, 1, n_timebins, d_model)
