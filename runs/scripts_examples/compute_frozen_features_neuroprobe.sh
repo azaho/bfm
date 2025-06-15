@@ -5,7 +5,7 @@
 #SBATCH --mem=64G
 #SBATCH --gres=gpu:1
 #SBATCH -t 12:00:00         # total run time limit (HH:MM:SS) (increased to 24 hours)
-#####SBATCH --constraint=24GB
+#####SBATCH --constraint=24GB # uncomment if you want to run on a specific GPU type with at least 24GB of memory
 #SBATCH --exclude=dgx001,dgx002
 #SBATCH --array=1-24  # 285 if doing mini btbench
 #SBATCH --output runs/logs/cff_%A_%a.out # STDOUT
