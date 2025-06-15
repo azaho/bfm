@@ -13,12 +13,6 @@
     <a href="https://pytorch.org/">
         <img alt="PyTorch" src="https://img.shields.io/badge/PyTorch-2.0+-ee4c2c.svg">
     </a>
-    <a href="https://mit-license.org/">
-        <img alt="License" src="https://img.shields.io/badge/License-MIT-blue.svg">
-    </a>
-    <a href="https://neuroprobe.dev">
-        <img alt="Website" src="https://img.shields.io/website?url=https%3A%2F%2Fneuroprobe.dev">
-    </a>
 </p>
 
 <p align="center"><strong>Brain Foundation Models</strong></p>
