@@ -1,12 +1,12 @@
 from model.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
 from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
-from utils.training_config import log
+from training_setup.training_config import log
 import torch
 from subject.dataset import SubjectTrialDataset, RandomElectrodeCollator, SubjectBatchSampler
 from torch.utils.data import DataLoader, ConcatDataset
 import os
 import json
-from utils.training_config import convert_dtypes
+from training_setup.training_config import convert_dtypes
 
 class TrainingSetup:
     def __init__(self, all_subjects, config, verbose=True):

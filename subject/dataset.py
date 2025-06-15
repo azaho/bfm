@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import Dataset, ConcatDataset, DataLoader
 from subject.braintreebank import BrainTreebankSubject
 from subject.mgh2024 import MGH2024Subject
-from utils.training_config import log
+from training_setup.training_config import log
 from multiprocessing import Pool
 import torch.multiprocessing as mp
 import random

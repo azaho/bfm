@@ -5,7 +5,7 @@ from sklearn.preprocessing import StandardScaler
 import numpy as np
 from .neuroprobe.train_test_splits import generate_splits_SS_SM
 from .neuroprobe.config import NEUROPROBE_LITE_ELECTRODES
-from utils.training_config import log
+from training_setup.training_config import log
 import torch
 import gc
 import torch.cuda

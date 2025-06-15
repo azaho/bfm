@@ -8,9 +8,9 @@ import gc
 from utils.muon_optimizer import Muon
 from subject.dataset import load_subjects
 from evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
-from utils.training_config import log, update_dir_name, update_random_seed, parse_config_from_args, get_default_config, parse_subject_trials_from_config, convert_dtypes
+from training_setup.training_config import log, update_dir_name, update_random_seed, parse_config_from_args, get_default_config, parse_subject_trials_from_config, convert_dtypes
 from torch.optim.lr_scheduler import ChainedScheduler
-from utils.training_config import convert_dtypes, unconvert_dtypes, parse_subject_trials_from_config
+from training_setup.training_config import convert_dtypes, unconvert_dtypes, parse_subject_trials_from_config
 from torch.utils.data import DataLoader
 
 from evaluation.neuroprobe.datasets import BrainTreebankSubjectTrialBenchmarkDataset
