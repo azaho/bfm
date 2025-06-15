@@ -1,4 +1,30 @@
-# Brain Foundation Models Project
+# Brain Foundation Models
+
+<p align="center">
+  <a href="https://neuroprobe.dev">
+    <img src="assets/brain_animation.gif" alt="Neuroprobe Logo" style="height: 10em" />
+  </a>
+</p>
+
+<p align="center">
+    <a href="https://www.python.org/">
+        <img alt="Python" src="https://img.shields.io/badge/Python-3.8+-1f425f.svg?color=purple">
+    </a>
+    <a href="https://pytorch.org/">
+        <img alt="PyTorch" src="https://img.shields.io/badge/PyTorch-2.0+-ee4c2c.svg">
+    </a>
+    <a href="https://mit-license.org/">
+        <img alt="License" src="https://img.shields.io/badge/License-MIT-blue.svg">
+    </a>
+    <a href="https://neuroprobe.dev">
+        <img alt="Website" src="https://img.shields.io/website?url=https%3A%2F%2Fneuroprobe.dev">
+    </a>
+</p>
+
+<p align="center"><strong>Brain Foundation Models</strong></p>
+
+
+## Setup instructions
 
 1. First, create a virtual environment and install the packages:
 ```
