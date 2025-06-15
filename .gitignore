@@ -4,9 +4,13 @@ __pycache__/
 .env
 wandb/
 
+*.err
+*.out
+
 runs/data/
 runs/logs/
 runs/wandb/
+runs/scripts/*
 
 # Not committing any personal working directories
 _*/
