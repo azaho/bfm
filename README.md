@@ -17,6 +17,10 @@
 
 <p align="center"><strong>Brain Foundation Models</strong></p>
 
+## Onboarding
+
+Please see the video at this link for onboarding (requires an MIT zoom log in):
+[ONBOARDING VIDEO (20min)](https://mit.zoom.us/rec/share/s2XgwBipwcQDJEmb9OICnecNDenA0EyKidxDg_zP5M9GdvXQxbobaZVtM44AI3fe.4jEyRBNSP2bvQ_cU?startTime=1749952722000)
 
 ## Setup instructions
 
