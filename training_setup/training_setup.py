@@ -1,4 +1,3 @@
-from model.andrii_original_model import OriginalModel
 from model.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
 from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
 from utils.training_config import log
@@ -54,7 +53,11 @@ class TrainingSetup:
         model_path = f"{load_from_dir}{self.config['cluster']['dir_name']}/model_epoch_{epoch}.pth"
         state_dicts = torch.load(model_path, map_location=self.config['device'])
         for model_component_name, model_component in self.model_components.items():
-            model_component.load_state_dict(state_dicts["state_dicts"][model_component_name])
+            if "state_dicts" in state_dicts:
+                model_component.load_state_dict(state_dicts["state_dicts"][model_component_name])
+            else:
+                model_component.load_state_dict(state_dicts[model_component_name+"_state_dict"]) # XXX: this is only here for backwards compatibility, can remove soon
+            model_component.to(self.config['device'], dtype=self.config['model']['dtype'])
     
     def model_parameters(self, verbose=False):
         """
@@ -204,6 +207,3 @@ class TrainingSetup:
 
         self.train_dataloader = train_dataloader
         self.test_dataloader = test_dataloader
-
-### PREPARATION FOR TRAINING ###
-

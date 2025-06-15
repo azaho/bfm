@@ -56,7 +56,7 @@ class ElectrodeEmbedding(BFModule):
             self.embeddings_map = state_dict['embeddings_map']
             del state_dict['embeddings_map'] # Remove embeddings_map from state dict since it's not a tensor parameter
         # Ensure capacity for the loaded embeddings
-        if 'embeddings' in state_dict:
+        if 'embeddings.weight' in state_dict:
             self._ensure_capacity(state_dict['embeddings.weight'].shape[0])
         return super().load_state_dict(state_dict, strict=strict)
 

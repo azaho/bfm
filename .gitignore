@@ -5,7 +5,7 @@ __pycache__/
 wandb/
 
 runs/**
-!runs/scripts/
+!runs/scripts_examples/
 
 # Not committing any personal working directories
 _*/

@@ -128,11 +128,6 @@ if config['cluster']['eval_at_beginning']:
     gc.collect()
 
 ### TRAINING ###
-# The data starts out as (batch_size, n_electrodes, n_timesamples)
-# 1. (batch_size, n_electrodes, n_timesamples) -> FFT + linear layer -> (batch_size, n_electrodes, n_timebins, d_model)
-# 2. (batch_size, n_electrodes, n_timebins, d_model) -> electrode transformer -> (batch_size, n_timebins, d_model)
-# 3. (batch_size, n_timebins, d_model) -> time transformer -> (batch_size, 1, n_timebins, d_model)
-# loss function: compare the output of the time transformer to the input of the time transformer
 
 training_setup.save_model(epoch=0)
 

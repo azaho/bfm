@@ -72,7 +72,7 @@ CONFIG_SCHEMA = {
     },
 
     'training': {
-        'setup_name': ParamConfig("andrii_v0", str, 'Setup name', required=True),
+        'setup_name': ParamConfig("andrii0", str, 'Setup name', required=True),
 
         'train_subject_trials': ParamConfig("btbank3_1", str, 'Train subject trials'), # a string like btbank3_1,btbank3_2,...
         'eval_subject_trials': ParamConfig("btbank3_0", str, 'Eval subject trials'), # a string like btbank3_0,btbank3_1,...
@@ -99,6 +99,11 @@ CONFIG_SCHEMA = {
         
         'random_string': ParamConfig("X", str, 'Random string for seed generation', include_in_dirname=True, dirname_format=lambda x: f'r{x}'),
     },
+
+    # This is a dictionary that can be used to store any additional parameters that are not part of the schema. 
+    # For example, if you want to store a param like congig['other']['X'] and it have a value '12345' (only strings are supported)
+    # You can pass it as an argument to the script like this: --other.X 12345
+    'other': {} 
 }
 
 def get_default_config(random_string, wandb_project):
@@ -144,8 +149,15 @@ def parse_config_from_args(config):
                 new_prefix = f'{prefix}{key}.' if prefix else f'{key}.'
                 add_args_from_schema(value, new_prefix)
 
+    # Add a catch-all argument for any unknown arguments
+    parser.add_argument('--other', nargs='*', action='store', help='Additional arguments to be stored in the other dictionary')
+
     add_args_from_schema(CONFIG_SCHEMA)
-    args = parser.parse_args()
+    args, unknown = parser.parse_known_args()
+
+    # Initialize other dictionary if it doesn't exist
+    if 'other' not in config:
+        config['other'] = {}
 
     def update_config_from_args(config, schema, args, prefix=''):
         for key, value in schema.items():
@@ -159,11 +171,24 @@ def parse_config_from_args(config):
 
     update_config_from_args(config, CONFIG_SCHEMA, args)
 
+    # Handle unknown arguments
+    i = 0
+    while i < len(unknown):
+        if unknown[i].startswith('--other.'):
+            key = unknown[i][8:]  # Remove '--other.' prefix
+            if i + 1 < len(unknown) and not unknown[i + 1].startswith('--'):
+                config['other'][key] = unknown[i + 1]
+                i += 2
+            else:
+                i += 1
+        else:
+            i += 1
+
 def parse_subject_trials_from_config(config):
     train_subject_trials = config['training']['train_subject_trials'] # a string like btbank1_1,btbank1_2,...
     eval_subject_trials = config['training']['eval_subject_trials']
-    train_subject_trials = [[subject_identifier.split('_')[0], int(subject_identifier.split('_')[1])] for subject_identifier in train_subject_trials.split(',')]
-    eval_subject_trials = [[subject_identifier.split('_')[0], int(subject_identifier.split('_')[1])] for subject_identifier in eval_subject_trials.split(',')]
+    train_subject_trials = [[subject_identifier.split('_')[0], int(subject_identifier.split('_')[1])] for subject_identifier in train_subject_trials.split(',')] if len(train_subject_trials) > 0 else []
+    eval_subject_trials = [[subject_identifier.split('_')[0], int(subject_identifier.split('_')[1])] for subject_identifier in eval_subject_trials.split(',')] if len(eval_subject_trials) > 0 else []
     config['training']['train_subject_trials'] = train_subject_trials
     config['training']['eval_subject_trials'] = eval_subject_trials
 
@@ -220,3 +245,18 @@ def unconvert_dtypes(config):
     elif isinstance(config, str) and config.startswith('torch.'):
         return getattr(torch, config.split('.')[-1])
     return config
+
+
+# Testing the config parsing
+if __name__ == "__main__":
+    ### LOADING CONFIGS ###
+
+    config = get_default_config(random_string="TEMP", wandb_project="") # Outputs a dictionary, see utils/training_config.py for how it looks like
+    parse_config_from_args(config) # Parses the command line arguments and updates the config dictionary
+    parse_subject_trials_from_config(config) # Parses the subject trials from the config dictionary
+
+    dir_name = update_dir_name(config) # This is used to name the directory where the model is saved, based on the training parameters (the config)
+    update_random_seed(config) # This is used to set the random seed for the model (for reproducibility)
+
+    print("CONFIG:")
+    print(config)
