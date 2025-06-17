@@ -33,18 +33,6 @@ class Subject:
         """
         raise NotImplementedError
 
-    def get_electrode_indices(self, session_id=None):
-        """
-        Get array of electrode indices.
-
-        Args:
-            session_id: Optional session ID if indices vary by session
-
-        Returns:
-            numpy.ndarray: Array of electrode indices
-        """
-        raise NotImplementedError
-
     def get_sampling_rate(self, session_id=None):
         """
         Get sampling rate in Hz.
@@ -69,23 +57,23 @@ class Subject:
         """
         raise NotImplementedError
 
-    def load_neural_data(self, trial_id):
+    def load_neural_data(self, session_id):
         """
         Load neural data for a specific trial/session.
         Implementation should handle caching if enabled.
 
         Args:
-            trial_id: Trial/session identifier
+            session_id: Trial/session identifier
         """
         raise NotImplementedError
 
-    def get_electrode_data(self, electrode_label, trial_id, window_from=None, window_to=None):
+    def get_electrode_data(self, electrode_label, session_id, window_from=None, window_to=None):
         """
         Get data for a specific electrode and time window.
 
         Args:
             electrode_label: Label of electrode to get data for
-            trial_id: Trial/session identifier
+            session_id: Trial/session identifier
             window_from: Start sample index (optional)
             window_to: End sample index (optional)
 
@@ -94,12 +82,12 @@ class Subject:
         """
         raise NotImplementedError
 
-    def get_all_electrode_data(self, trial_id, window_from=None, window_to=None):
+    def get_all_electrode_data(self, session_id, window_from=None, window_to=None):
         """
         Get data for all electrodes in a time window.
 
         Args:
-            trial_id: Trial/session identifier
+            session_id: Trial/session identifier
             window_from: Start sample index (optional)
             window_to: End sample index (optional)
 
@@ -108,11 +96,11 @@ class Subject:
         """
         raise NotImplementedError
 
-    def clear_neural_data_cache(self, trial_id=None):
+    def clear_neural_data_cache(self, session_id=None):
         """
         Clear cached neural data.
 
         Args:
-            trial_id: Optional specific trial/session to clear, otherwise clears all
+            session_id: Optional specific trial/session to clear, otherwise clears all
         """
         raise NotImplementedError
