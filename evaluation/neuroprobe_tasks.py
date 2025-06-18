@@ -83,7 +83,7 @@ class FrozenModelEvaluation_SS_SM():
             if raw_data:
                 features = batch['data'].reshape(batch_input.shape[0], -1)
             else:
-                features = self.model_evaluation_function(batch)
+                features = self.model_evaluation_function(batch).reshape(batch_input.shape[0], -1)
 
             log(f'done generating frozen features for batch {i} of {len(dataloader)}', priority=log_priority, indent=3)
             X.append(features.detach().cpu().float().numpy())
