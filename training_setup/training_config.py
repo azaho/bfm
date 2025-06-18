@@ -45,8 +45,7 @@ CONFIG_SCHEMA = {
         'transformer': {
             'd_model': ParamConfig(192, int, 'Dimensionality of the latent space of the model', dirname_format=lambda x: f'dm{x}'),
             'n_heads': ParamConfig(12, int, 'Number of attention heads', dirname_format=lambda x: f'nh{x}'),
-            'n_layers_electrode': ParamConfig(5, int, 'Number of transformer layers for electrode path', dirname_format=lambda x: f'nl{x}'),
-            'n_layers_time': ParamConfig(5, int, 'Number of transformer layers for time path'),
+            'n_layers': ParamConfig(5, int, 'Number of transformer layers'),
         },
 
         'dtype': ParamConfig(torch.float32, torch.dtype, 'Model data type'), # Data type for the model weights and activations 
@@ -75,7 +74,7 @@ CONFIG_SCHEMA = {
         'setup_name': ParamConfig("andrii0", str, 'Setup name', required=True),
 
         'train_subject_trials': ParamConfig("btbank3_1", str, 'Train subject trials'), # a string like btbank3_1,btbank3_2,...
-        'eval_subject_trials': ParamConfig("btbank3_0", str, 'Eval subject trials'), # a string like btbank3_0,btbank3_1,...
+        'eval_subject_trials': ParamConfig("", str, 'Eval subject trials'), # a string like btbank3_0,btbank3_1,...
         'data_dtype': ParamConfig(torch.bfloat16, torch.dtype, 'Data type for tensors'),
         
         'eval_tasks': ParamConfig("onset,gpt2_surprisal", str, 'Eval tasks from Neuroprobe'), # a list of neuroprobe tasks to evaluate on during pretraining

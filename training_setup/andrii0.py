@@ -182,8 +182,8 @@ class andrii0(TrainingSetup):
 
         self.model = OriginalModel(
             d_model=config['model']['transformer']['d_model'],
-            n_layers_electrode=config['model']['transformer']['n_layers_electrode'],
-            n_layers_time=config['model']['transformer']['n_layers_time'],
+            n_layers_electrode=config['model']['transformer']['n_layers'],
+            n_layers_time=config['model']['transformer']['n_layers'],
             n_heads=config['model']['transformer']['n_heads'],
             dropout=config['training']['dropout']
         ).to(device, dtype=config['model']['dtype'])
@@ -283,7 +283,7 @@ class andrii0(TrainingSetup):
         #   batch['electrode_labels'] shape: list of length 1 (since it's the same across the batch), each element is a list of electrode labels
         #   batch['metadata']: dictionary containing metadata like the subject identifier and trial id, sampling rate, etc.
         # OUTPUT:
-        #   features shape: (batch_size, feature_vector_length) where feature_vector_length can be arbitrary
+        #   features shape: (batch_size, *) where * can be arbitrary (and will be concatenated for regression)
         
         config = self.config
         electrode_indices = []
