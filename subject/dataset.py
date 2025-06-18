@@ -8,7 +8,7 @@ import torch.multiprocessing as mp
 import random
 
 class SubjectTrialDataset(Dataset):
-    def __init__(self, subject, trial_id, window_size, dtype=torch.float32, output_embeddings_map=None, output_subject_trial_id=False, output_electrode_labels=False):
+    def __init__(self, subject, trial_id, window_size, dtype=torch.float32, output_metadata=False, output_electrode_labels=False):
         """
         Args:
             subject (BrainTreebankSubject or MGHSubject): Subject object
@@ -20,13 +20,8 @@ class SubjectTrialDataset(Dataset):
         self.trial_id = trial_id
         self.window_size = window_size
         self.dtype = dtype
-        self.output_embeddings_map = output_embeddings_map
-        self.output_subject_trial_id = output_subject_trial_id
+        self.output_metadata = output_metadata
         self.output_electrode_labels = output_electrode_labels
-
-        self.electrode_keys = [(subject.subject_identifier, electrode_label) for electrode_label in self.subject.electrode_labels]
-        if output_embeddings_map is not None:                
-            self.electrode_indices = torch.tensor([self.output_embeddings_map[key] for key in self.electrode_keys])
 
         subject.load_neural_data(trial_id)
         self.n_windows = self.subject.electrode_data_length[trial_id] // self.window_size
@@ -40,13 +35,11 @@ class SubjectTrialDataset(Dataset):
         window = self.subject.get_all_electrode_data(self.trial_id, start_idx, end_idx).to(dtype=self.dtype)
 
         output = {'data': window}
-        if self.output_subject_trial_id: 
+        if self.output_metadata: 
             output['subject_trial'] = (self.subject.subject_identifier, self.trial_id)
         if self.output_electrode_labels:
             output['electrode_labels'] = self.subject.electrode_labels # Also output the electrode label
-        if self.output_embeddings_map: 
-            output['electrode_index'] = self.electrode_indices
-
+        
         output['metadata'] = {
             'subject_identifier': self.subject.subject_identifier,
             'trial_id': self.trial_id,
@@ -55,51 +48,32 @@ class SubjectTrialDataset(Dataset):
         
         return output
 
-class RandomElectrodeCollator:
-    def __init__(self, max_n_electrodes=None):
-        self.max_n_electrodes = max_n_electrodes
+class PreprocessCollator:
+    def __init__(self, preprocess_functions=[]):
+        self.preprocess_functions = preprocess_functions
 
     def __call__(self, batch):
         # batch is now a list of dictionaries
-        # Extract signals and any additional data
-        data = [item['data'] for item in batch]
-        
-        # Find minimum number of electrodes in batch
-        min_electrodes = min(item['data'].shape[0] for item in batch)
-        max_electrodes = max(item['data'].shape[0] for item in batch)
-        n_electrodes = min(min_electrodes, self.max_n_electrodes) if self.max_n_electrodes else min_electrodes
-
-        selected_idx = torch.randperm(min_electrodes)[:n_electrodes]
 
         # Process each item in batch
-        output = {}
-        
-        # Process signals
-        processed_data = []
-        processed_electrode_indices = []
-        processed_electrode_labels = []
-        for item in batch:
-            data = item['data']
-            if min_electrodes != max_electrodes: # Only if all electrodes are not the same length (assuming they come from different places) # XXX Surely there must be a better way to do this, for example look at variance of electrode_indices
-                selected_idx =  torch.randperm(data.shape[0])[:n_electrodes]
-            if 'electrode_index' in item:
-                processed_electrode_indices.append(item['electrode_index'][selected_idx])
-            if 'electrode_labels' in item:
-                processed_electrode_labels.append([item['electrode_labels'][i] for i in selected_idx])
-            processed_data.append(data[selected_idx])
-        output['data'] = torch.stack(processed_data)
-        if len(processed_electrode_indices) > 0:
-            output['electrode_index'] = torch.stack(processed_electrode_indices)
-        if len(processed_electrode_labels) > 0:
-            output['electrode_labels'] = processed_electrode_labels
-        
+        output = {
+            'data': torch.stack([item['data'] for item in batch]),
+        }
+        if 'electrode_labels' in batch[0]:
+            output['electrode_labels'] = [item['electrode_labels'] for item in batch]
         if 'metadata' in batch[0]:
-            output['metadata'] = batch[0]['metadata'] # assume all metadata is the same for all items in the batch
-        
+            output['metadata'] = batch[0]['metadata']
+
+        # If any preprocess functions are provided, apply them to the batch
+        for preprocess_function in self.preprocess_functions:
+            output = preprocess_function(output)
+            
         # Copy through any other fields that don't need processing
         for key in batch[0].keys():
             if key not in output and key != 'data':
                 output[key] = [item[key] for item in batch]
+                if isinstance(batch[0][key], torch.Tensor): # If the field is a tensor, stack it
+                    output[key] = torch.stack(output[key])
         
         return output
 
