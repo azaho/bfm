@@ -37,16 +37,26 @@ all_subjects = load_subjects(config['training']['train_subject_trials'],
                              config['training']['eval_subject_trials'], config['training']['data_dtype'], 
                              cache=config['cluster']['cache_subjects'], allow_corrupted=False)
 
-### LOAD MODEL ###
+### LOADING TRAINING SETUP ###
 
 # Import the training setup class dynamically based on config
+training_setup_name = config["training"]["setup_name"].lower() # if this is X, the filename should be trianing_setup/X.py and the class name should be XTrainingSetup
 try:
-    setup_module = __import__(f'training_setup.{config["training"]["setup_name"].lower()}', fromlist=[config["training"]["setup_name"]])
-    setup_class = getattr(setup_module, config["training"]["setup_name"])
+    setup_module = __import__(f'training_setup.{training_setup_name}', fromlist=[training_setup_name])
+    setup_class = getattr(setup_module, training_setup_name)
     training_setup = setup_class(all_subjects, config, verbose=True)
 except (ImportError, AttributeError) as e:
     print(f"Could not load training setup '{config['training']['setup_name']}'. Are you sure the filename and the class name are the same and correspond to the parameter? Error: {str(e)}")
     exit()
+
+# Save a copy of the training setup file for reproducibility
+import shutil
+setup_file = f'training_setup/{training_setup_name}.py'
+training_setup_dir = os.path.join('runs/data', dir_name, 'training_setup')
+os.makedirs(training_setup_dir, exist_ok=True)
+shutil.copy2(setup_file, training_setup_dir)    
+
+### LOAD MODEL ###
 
 log(f"Loading model...", priority=0)
 training_setup.initialize_model()
