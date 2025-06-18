@@ -78,7 +78,6 @@ class SpectrogramPreprocessor(BFModule):
         x = x - x.mean(dim=[0, 2], keepdim=True)
         x = x / (x.std(dim=[0, 2], keepdim=True) + 1e-5)
 
-        
         # Transform to match expected output dimension
         x = self.output_transform(x)  # shape: (batch_size, n_electrodes, n_timebins, output_dim)
         
