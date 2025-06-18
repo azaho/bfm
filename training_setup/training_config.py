@@ -22,9 +22,6 @@ CONFIG_SCHEMA = {
         
         'context_length': ParamConfig(3, float, 'Context length in seconds'),
 
-
-        'max_n_electrodes': ParamConfig(128, int, 'Maximum number of electrodes to use', dirname_format=lambda x: f'nes{x}'),
-
         'electrode_embedding': {
             'type': ParamConfig('learned', str, 'Type of electrode embedding', dirname_format=lambda x: f'ee{x}'), # Allowed values: 'learned', 'zero', 'coordinate_init', 'noisy_coordinate'
             'dim': ParamConfig(None, int, 'Dimension of electrode embeddings', dirname_format=lambda x: f'ed{x}'),
@@ -90,6 +87,8 @@ CONFIG_SCHEMA = {
         'weight_decay': ParamConfig(0.0001, float, 'Weight decay for optimizer', include_in_dirname=True, dirname_format=lambda x: f'wd{x}'),
         'dropout': ParamConfig(0.1, float, 'Dropout rate', include_in_dirname=True, dirname_format=lambda x: f'dr{x}'),
         
+        'max_n_electrodes': ParamConfig(128, int, 'Maximum number of electrodes to use during pretraining', dirname_format=lambda x: f'nes{x}'),
+
         'p_electrodes_per_stream': ParamConfig(0.5, float, 'Proportion of electrodes per stream'),
         'future_bin_idx': ParamConfig(1, int, 'Future bin index'),
         'warmup_steps': ParamConfig(100, int, 'Warmup steps'),

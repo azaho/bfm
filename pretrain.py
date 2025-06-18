@@ -97,6 +97,7 @@ for optimizer in optimizers:
 eval_tasks = config['training']['eval_tasks'].split(',')
 evaluation = FrozenModelEvaluation_SS_SM(
     # model evaluation function
+    model_preprocess_functions=training_setup.get_preprocess_functions(pretraining=False),
     model_evaluation_function=training_setup.generate_frozen_features,
     # benchmark parameters 
     eval_names=eval_tasks, lite=True,
@@ -148,8 +149,6 @@ for epoch_i in range(config['training']['n_epochs']):
     # Main training loop
     epoch_losses = {}
     for batch_idx, batch in enumerate(training_setup.train_dataloader):
-        batch['data'] = batch['data'].to(device, dtype=config['model']['dtype'], non_blocking=True) # (batch_size, n_electrodes, n_timesamples)
-        batch['electrode_index'] = batch['electrode_index'].to(device, dtype=torch.long, non_blocking=True)
         subject_identifier, trial_id = batch['subject_trial'][0]
 
         for optimizer in optimizers: optimizer.zero_grad()

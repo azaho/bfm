@@ -118,6 +118,8 @@ for eval_name in eval_tasks:
                     'eval_name': eval_name,
                 }
             }
+            for preprocess_function in training_setup.get_preprocess_functions(pretraining=False):
+                batch = preprocess_function(batch)
             model_output = training_setup.generate_frozen_features(batch)
             log(f"Computed features for batch {batch_idx+1} of {len(dataloader)}: model output shape {model_output.shape}", priority=0, indent=1)
 

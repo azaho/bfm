@@ -97,7 +97,7 @@ def laplacian_rereference_batch(batch, remove_non_laplacian=True, inplace=False)
     # XXX The line above assumes that the electrode labels are the same for all subjects in the batch. This may or may not be the case. Need to find a more efficient way later to do it item per item.
 
     batch['data'] = rereferenced_data
-    batch['electrode_labels'] = rereferenced_labels
+    batch['electrode_labels'] = [rereferenced_labels] * batch['data'].shape[0]
 
     if 'electrode_index' in batch:
         batch['electrode_index'] = batch['electrode_index'][:, original_electrode_indices]
