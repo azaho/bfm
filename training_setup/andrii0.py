@@ -72,6 +72,7 @@ class SpectrogramPreprocessor(BFModule):
         # Reshape back
         _, n_freqs, n_times = x.shape
         x = x.reshape(batch_size, n_electrodes, n_freqs, n_times)
+        x = x.transpose(2, 3) # (batch_size, n_electrodes, n_timebins, n_freqs)
         
         # Z-score normalization
         x = x - x.mean(dim=[0, 2], keepdim=True)
@@ -79,7 +80,6 @@ class SpectrogramPreprocessor(BFModule):
 
         
         # Transform to match expected output dimension
-        x = x.transpose(2, 3) # (batch_size, n_electrodes, n_timebins, n_freqs)
         x = self.output_transform(x)  # shape: (batch_size, n_electrodes, n_timebins, output_dim)
         
         return x.to(dtype=batch['data'].dtype)
