@@ -91,6 +91,7 @@ class roshnipm(TrainingSetup):
         # Get model predictions as features (the learned representations)
         # difference between this and calculate_pretrain_loss is that this doesn't 
         # use the target for loss calculation
+        # only uses data, no electrode_index, no metadata
         pred, _ = self.model(batch['data'])  # (batch, n_bins-1, bin_size)
         
         # Flatten to 2D for downstream evaluation: (batch, (n_bins-1) * bin_size)
