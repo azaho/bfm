@@ -52,6 +52,11 @@ models = [
         'name': 'PopT',
         'color_palette': 'magma',
         'eval_results_path': f'/om2/user/zaho/btbench/eval_results_popt/popt_{split_type}_results.csv'
+    },
+    {
+        'name': 'Logistic Regression',
+        'color_palette': 'magma',
+        'eval_results_path': f'/om2/user/brupesh/bfm/runs/data/eval_results_frozen_features/model_epoch40/'
     }
 ]
 

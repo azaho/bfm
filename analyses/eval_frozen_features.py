@@ -10,15 +10,15 @@ import argparse
 
 parser = argparse.ArgumentParser(description="Evaluate frozen features and generate comparison figure.")
 
-parser.add_argument("--features_root", type=str, default="runs/data/OM_wd0.0_dr0.0_rX1/frozen_features_neuroprobe",
+parser.add_argument("--features_root", type=str, default="/om2/user/brupesh/bfm/runs/data/OM_wd0.0_dr0.0_rX1/frozen_features_neuroprobe/",
                     help="Path to the root folder containing frozen features.")
-parser.add_argument("--save_dir", type=str, default="runs/data/eval_results_frozen_features",
+parser.add_argument("--save_dir", type=str, default="/om2/user/brupesh/bfm/runs/data/eval_results_frozen_features",
                     help="Directory where evaluation results will be saved.")
 parser.add_argument("--model_epoch", type=int, default=40,
                     help="Epoch number of the model to evaluate.")
 parser.add_argument("--n_splits", type=int, default=5,
                     help="Number of folds for KFold cross-validation.")
-parser.add_argument("--overwrite", action="store_true", default=True,
+parser.add_argument("--overwrite", action="store_true", default=False,
                     help="Overwrite existing evaluation results.")
 parser.add_argument("--verbose", action="store_true", default=True,
                     help="Print detailed progress messages.")
@@ -45,14 +45,19 @@ for epoch_dir in os.listdir(FEATURES_ROOT):
             continue
         try:
             parts = fname.replace(".npy", "").split("_")
-            subject_id = int(parts[2][7:])   # from 'btbank1' -> 1
+            subject_id = int(parts[2][6:])
             trial_id = int(parts[3])
             task = parts[4]
         except Exception:
             continue
 
         features_path = os.path.join(full_dir, fname)
-        save_path = os.path.join(SAVE_DIR, epoch_dir, fname.replace(".npy", ".json"))
+
+        filename_core = fname.replace(".npy", "")
+        if filename_core.startswith("frozen_"):
+            filename_core = filename_core[len("frozen_"):]
+        save_path = os.path.join(SAVE_DIR, epoch_dir, filename_core + ".json")
+
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
         if not OVERWRITE and os.path.exists(save_path):
@@ -63,7 +68,7 @@ for epoch_dir in os.listdir(FEATURES_ROOT):
         # Load data
         data = np.load(features_path, allow_pickle=True).item()
         X_all_bins = data['X']
-        print("X_all_bins shape:", X_all_bins.shape)
+        # print("X_all_bins shape:", X_all_bins.shape)
         y = data['y']
 
         X = X_all_bins
@@ -75,6 +80,7 @@ for epoch_dir in os.listdir(FEATURES_ROOT):
         kf = KFold(n_splits=N_SPLITS, shuffle=True, random_state=42)
         fold_aurocs = []
 
+        # train and test on each fold
         for train_idx, test_idx in kf.split(X):
             X_train, X_test = X[train_idx], X[test_idx]
             y_train, y_test = y[train_idx], y[test_idx]
@@ -103,15 +109,23 @@ for epoch_dir in os.listdir(FEATURES_ROOT):
         std_auroc = float(np.std(fold_aurocs))
         results.setdefault(task, []).append(mean_auroc)
 
+        fold_data = [{"test_roc_auc": float(auroc)} for auroc in fold_aurocs]
+
+        # correct format?
+        wrapped_data = {
+            "evaluation_results": {
+                f"btbank{subject_id}_{trial_id}": {
+                    "population": {
+                        "one_second_after_onset": {
+                            "folds": fold_data
+                        }
+                    }
+                }
+            }
+        }
+
         with open(save_path, "w") as f:
-            json.dump({
-                "task": task,
-                "subject": subject_id,
-                "trial": trial_id,
-                "mean_auroc": mean_auroc,
-                "std_auroc": std_auroc,
-                "folds": fold_aurocs
-            }, f, indent=4)
+            json.dump(wrapped_data, f, indent=4)
 
         if VERBOSE:
             print(f"Saved AUROC for {fname}: {mean_auroc:.3f} ± {std_auroc:.3f}")
