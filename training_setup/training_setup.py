@@ -164,9 +164,6 @@ class TrainingSetup:
         losses = {}
         n_batches = 0
         for batch in self.test_dataloader:
-            batch['data'] = batch['data'].to(self.config['device'], dtype=self.config['model']['dtype'], non_blocking=True)
-            batch['electrode_index'] = batch['electrode_index'].to(self.config['device'], dtype=torch.long, non_blocking=True)
-
             loss = self.calculate_pretrain_loss(batch)
             
             for key, value in loss.items():

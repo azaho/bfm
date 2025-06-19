@@ -184,8 +184,7 @@ for epoch_i in range(config['training']['n_epochs']):
                 f"Batch {batch_idx+1}/{len(training_setup.train_dataloader)} ({subject_identifier}_{trial_id}), " + \
                 f"LR: {optimizers[0].param_groups[0]['lr']:.6f}, " + \
                 f"Loss: {loss.item():.4f} ({losses_string}), " + \
-                f"Temp {torch.exp(training_setup.model.temperature_param).item():.4f}" if hasattr(training_setup.model, 'temperature_param') else ""\
-                    , priority=0)
+                (f"Temp {torch.exp(training_setup.model.temperature_param).item():.4f}" if hasattr(training_setup.model, 'temperature_param') else ""), priority=0)
         
         if batch_idx % 20 == 0: # Clear cache every 20 batches
             del loss_dict, loss
