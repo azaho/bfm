@@ -59,6 +59,7 @@ class Mask(BFModule):
 
         n_bins = x.shape[0]
         mask_starts = torch.rand(n_bins) < p
+        if not mask_starts.any(): mask_starts[torch.randint(0, n_bins, (1,))] = True # if got unlucky and nothing was masked, mask a random bin
         masked_indices = torch.zeros(n_bins, dtype=torch.bool)
 
         for i in range(n_bins):
