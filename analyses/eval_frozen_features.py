@@ -77,7 +77,9 @@ for epoch_dir in os.listdir(FEATURES_ROOT):
         X = StandardScaler().fit_transform(X)
 
         # cross-validation auroc vals
-        kf = KFold(n_splits=N_SPLITS, shuffle=True, random_state=42)
+
+        # shuffle must be set to False !!
+        kf = KFold(n_splits=N_SPLITS, shuffle=False, random_state=42)
         fold_aurocs = []
 
         # train and test on each fold
