@@ -56,7 +56,7 @@ models = [
     {
         'name': 'Logistic Regression',
         'color_palette': 'magma',
-        'eval_results_path': f'/om2/user/brupesh/bfm/runs/data/eval_results_frozen_features/model_epoch40/'
+        'eval_results_path': f'/om2/user/brupesh/bfm/runs/data/eval_results_frozen_features_{split_type}/model_epoch40/'
     }
 ]
 
