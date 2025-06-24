@@ -97,6 +97,7 @@ for optimizer in optimizers:
 eval_tasks = config['training']['eval_tasks'].split(',')
 evaluation = FrozenModelEvaluation_SS_SM(
     # model evaluation function
+    model_preprocess_functions=training_setup.get_preprocess_functions(pretraining=False),
     model_evaluation_function=training_setup.generate_frozen_features,
     # benchmark parameters 
     eval_names=eval_tasks, lite=True,
@@ -148,8 +149,6 @@ for epoch_i in range(config['training']['n_epochs']):
     # Main training loop
     epoch_losses = {}
     for batch_idx, batch in enumerate(training_setup.train_dataloader):
-        batch['data'] = batch['data'].to(device, dtype=config['model']['dtype'], non_blocking=True) # (batch_size, n_electrodes, n_timesamples)
-        batch['electrode_index'] = batch['electrode_index'].to(device, dtype=torch.long, non_blocking=True)
         subject_identifier, trial_id = batch['subject_trial'][0]
 
         for optimizer in optimizers: optimizer.zero_grad()
@@ -185,8 +184,7 @@ for epoch_i in range(config['training']['n_epochs']):
                 f"Batch {batch_idx+1}/{len(training_setup.train_dataloader)} ({subject_identifier}_{trial_id}), " + \
                 f"LR: {optimizers[0].param_groups[0]['lr']:.6f}, " + \
                 f"Loss: {loss.item():.4f} ({losses_string}), " + \
-                f"Temp {torch.exp(training_setup.model.temperature_param).item():.4f}" if hasattr(training_setup.model, 'temperature_param') else ""\
-                    , priority=0)
+                (f"Temp {torch.exp(training_setup.model.temperature_param).item():.4f}" if hasattr(training_setup.model, 'temperature_param') else ""), priority=0)
         
         if batch_idx % 20 == 0: # Clear cache every 20 batches
             del loss_dict, loss

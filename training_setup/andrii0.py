@@ -22,7 +22,6 @@ import torch.nn as nn
 
 ### DEFINING THE MODEL COMPONENTS ###
 
-
 class SpectrogramPreprocessor(BFModule):
     def __init__(self, output_dim=-1, max_frequency=200):
         super(SpectrogramPreprocessor, self).__init__()
@@ -72,14 +71,13 @@ class SpectrogramPreprocessor(BFModule):
         # Reshape back
         _, n_freqs, n_times = x.shape
         x = x.reshape(batch_size, n_electrodes, n_freqs, n_times)
+        x = x.transpose(2, 3) # (batch_size, n_electrodes, n_timebins, n_freqs)
         
         # Z-score normalization
         x = x - x.mean(dim=[0, 2], keepdim=True)
         x = x / (x.std(dim=[0, 2], keepdim=True) + 1e-5)
 
-        
         # Transform to match expected output dimension
-        x = x.transpose(2, 3) # (batch_size, n_electrodes, n_timebins, n_freqs)
         x = self.output_transform(x)  # shape: (batch_size, n_electrodes, n_timebins, output_dim)
         
         return x.to(dtype=batch['data'].dtype)
@@ -163,7 +161,6 @@ class OriginalModel(BFModule):
 
 ### DEFINING THE TRAINING SETUP ###
 
-
 class andrii0(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)
@@ -183,8 +180,8 @@ class andrii0(TrainingSetup):
 
         self.model = OriginalModel(
             d_model=config['model']['transformer']['d_model'],
-            n_layers_electrode=config['model']['transformer']['n_layers_electrode'],
-            n_layers_time=config['model']['transformer']['n_layers_time'],
+            n_layers_electrode=config['model']['transformer']['n_layers'],
+            n_layers_time=config['model']['transformer']['n_layers'],
             n_heads=config['model']['transformer']['n_heads'],
             dropout=config['training']['dropout']
         ).to(device, dtype=config['model']['dtype'])
@@ -214,6 +211,32 @@ class andrii0(TrainingSetup):
         self.model_components['model'] = self.model
         self.model_components['electrode_embeddings'] = self.electrode_embeddings
 
+    def _preprocess_add_electrode_indices(self, batch):
+        electrode_indices = []
+        subject_identifier = batch['metadata']['subject_identifier']
+        for electrode_label in batch['electrode_labels'][0]:
+            key = (subject_identifier, electrode_label)
+            electrode_indices.append(self.electrode_embeddings.embeddings_map[key])
+        batch['electrode_index'] = torch.tensor(electrode_indices, dtype=torch.long).unsqueeze(0).expand(batch['data'].shape[0], -1) # shape: (batch_size, n_electrodes)
+        return batch
+    def _preprocess_subset_electrodes(self, batch):
+        batch, selected_idx = super()._preprocess_subset_electrodes(batch, output_selected_idx=True)
+        batch_size = batch['data'].shape[0]
+        if 'electrode_index' in batch:
+            batch['electrode_index'] = batch['electrode_index'][:, selected_idx]
+        return batch
+    
+    # All of these will be applied to the batch before it is passed to the model
+    def get_preprocess_functions(self, pretraining=False):
+        preprocess_functions = []
+        if self.config['model']['signal_preprocessing']['laplacian_rereference']:
+            preprocess_functions.append(self._preprocess_laplacian_rereference)
+        if self.config['model']['signal_preprocessing']['normalize_voltage']:
+            preprocess_functions.append(self._preprocess_normalize_voltage) 
+        preprocess_functions.append(self._preprocess_add_electrode_indices)
+        if pretraining:
+            preprocess_functions.append(self._preprocess_subset_electrodes)
+        return preprocess_functions
 
     def calculate_pretrain_loss(self, batch, output_accuracy=True):
         # INPUT:
@@ -223,6 +246,8 @@ class andrii0(TrainingSetup):
         # OUTPUT:
         #   This function will output a dictionary of losses, with the keys being the loss names and the values being the loss values.
         #   The final loss is the mean of all the losses. Accuracies are exempt and are just used for logging.
+        batch['data'] = batch['data'].to(self.model.device, dtype=self.model.dtype, non_blocking=True)
+        batch['electrode_index'] = batch['electrode_index'].to(self.model.device, non_blocking=True)
         
         losses = {}
         config = self.config
@@ -247,13 +272,6 @@ class andrii0(TrainingSetup):
         # Note that due to the RandomELectrodeCollator in the dataset class, the electrodes are already shuffled and cut to max_n_electrodes
         batch_size, n_electrodes, n_samples = batch['data'].shape
         
-        if config['model']['signal_preprocessing']['laplacian_rereference']:
-            laplacian_rereference_batch(batch, remove_non_laplacian=False, inplace=True)
-            
-        if config['model']['signal_preprocessing']['normalize_voltage']:
-            batch['data'] = batch['data'] - torch.mean(batch['data'], dim=[0, 2], keepdim=True)
-            batch['data'] = batch['data'] / (torch.std(batch['data'], dim=[0, 2], keepdim=True) + 1)
-
         # Split the batch into two halves, so that we can compute the contrastive loss on the two halves
         batch_a = {
             'data': batch['data'][:, :n_electrodes//2, :],
@@ -284,29 +302,16 @@ class andrii0(TrainingSetup):
         #   batch['electrode_labels'] shape: list of length 1 (since it's the same across the batch), each element is a list of electrode labels
         #   batch['metadata']: dictionary containing metadata like the subject identifier and trial id, sampling rate, etc.
         # OUTPUT:
-        #   features shape: (batch_size, feature_vector_length) where feature_vector_length can be arbitrary
-        
-        config = self.config
-        electrode_indices = []
-        subject_identifier = batch['metadata']['subject_identifier']
-        for electrode_label in batch['electrode_labels'][0]:
-            key = (subject_identifier, electrode_label)
-            electrode_indices.append(self.electrode_embeddings.embeddings_map[key])
-        batch['electrode_index'] = torch.tensor(electrode_indices, device=self.model.device, dtype=torch.long).unsqueeze(0).expand(batch['data'].shape[0], -1) # shape: (batch_size, n_electrodes)
-            
-        if config['model']['signal_preprocessing']['laplacian_rereference']:
-            laplacian_rereference_batch(batch, remove_non_laplacian=False, inplace=True)
-        
-        if config['model']['signal_preprocessing']['normalize_voltage']:
-            batch['data'] = batch['data'] - torch.mean(batch['data'], dim=[0, 2], keepdim=True)
-            batch['data'] = batch['data'] / (torch.std(batch['data'], dim=[0, 2], keepdim=True) + 1)
+        #   features shape: (batch_size, *) where * can be arbitrary (and will be concatenated for regression)
+        batch['data'] = batch['data'].to(self.model.device, dtype=self.model.dtype, non_blocking=True)
+        batch['electrode_index'] = batch['electrode_index'].to(self.model.device, non_blocking=True)
 
         embeddings = self.electrode_embeddings(batch)
         features = self.model(batch, embeddings, electrode_transformer_only=True) # shape: (batch_size, n_electrodes + 1, n_timebins, d_model)
         features = features[:, 0:1, :, :] # shape: (batch_size, 1, n_timebins, d_model) -- take just the cls token
 
-        if config['cluster']['eval_aggregation_method'] == 'mean':
+        if self.config['cluster']['eval_aggregation_method'] == 'mean':
             features = features.mean(dim=[1, 2])
-        elif config['cluster']['eval_aggregation_method'] == 'concat':
+        elif self.config['cluster']['eval_aggregation_method'] == 'concat':
             features = features.reshape(batch['data'].shape[0], -1)
         return features

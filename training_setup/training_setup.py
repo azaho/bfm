@@ -2,11 +2,15 @@ from model.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbed
 from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
 from training_setup.training_config import log
 import torch
-from subject.dataset import SubjectTrialDataset, RandomElectrodeCollator, SubjectBatchSampler
+from subject.dataset import SubjectTrialDataset, PreprocessCollator, SubjectBatchSampler
 from torch.utils.data import DataLoader, ConcatDataset
 import os
 import json
 from training_setup.training_config import convert_dtypes
+
+# Note: the functions in this file that have a "NotImplementedError" indicate that
+#   this file is just an interface for a training setup. You will create a new file 
+#   for your training setup, make a class inherit from TrainingSetup and implement the functions in that file.
 
 class TrainingSetup:
     def __init__(self, all_subjects, config, verbose=True):
@@ -25,6 +29,72 @@ class TrainingSetup:
         """
         raise NotImplementedError("This function is not (yet) implemented for this training setup.")
     
+    def calculate_pretrain_loss(self, batch, output_accuracy=True):
+        """
+        Calculate the pretraining loss for a batch of data.
+
+        Args:
+            batch (dict): Dictionary containing:
+                data (torch.Tensor): Shape (batch_size, n_electrodes, n_timesamples)
+                electrode_index (torch.Tensor): Shape (batch_size, n_electrodes)
+                metadata (dict): Contains subject identifier, trial id, sampling rate, etc.
+            output_accuracy (bool): Whether to output accuracy metrics
+
+        Returns:
+            dict: Dictionary of losses where keys are loss names and values are loss values.
+                 The final loss is the mean of all losses. Accuracies are exempt and used only for logging.
+        """
+        raise NotImplementedError("This function is not (yet) implemented for this training setup.")
+
+    def generate_frozen_features(self, batch):
+        """
+        Generate frozen features (meaning, the weights of the model are frozen) for a batch of data. This function is used for the model evaluation on the benchmarks.
+
+        Args:
+            batch (dict): Dictionary containing:
+                data (torch.Tensor): Shape (batch_size, n_electrodes, n_timebins)
+                electrode_labels (list): List of length 1 (same across batch), each element is a list of electrode labels
+                metadata (dict): Contains subject identifier, trial id, sampling rate, etc.
+
+        Returns:
+            torch.Tensor: Features with shape (batch_size, feature_vector_length) where feature_vector_length can be arbitrary
+        """
+        raise NotImplementedError("This function is not (yet) implemented for this training setup.")
+
+    def _preprocess_laplacian_rereference(self, batch):
+        laplacian_rereference_batch(batch, remove_non_laplacian=False, inplace=True)
+        return batch
+    def _preprocess_normalize_voltage(self, batch):
+        batch['data'] = batch['data'] - torch.mean(batch['data'], dim=[0, 2], keepdim=True)
+        batch['data'] = batch['data'] / (torch.std(batch['data'], dim=[0, 2], keepdim=True) + 1)
+        return batch
+    
+    def _preprocess_subset_electrodes(self, batch, output_selected_idx=False):
+        # Find minimum number of electrodes in batch
+        batch_size = batch['data'].shape[0]
+        n_electrodes = batch['data'].shape[1]
+        subset_n_electrodes = min(n_electrodes, self.config['training']['max_n_electrodes']) if self.config['training']['max_n_electrodes']>0 else n_electrodes
+
+        # Randomly subselect / permute electrodes
+        selected_idx = torch.randperm(n_electrodes)[:subset_n_electrodes]
+        batch['data'] = batch['data'][:, selected_idx]
+        if 'electrode_labels' in batch:
+            batch['electrode_labels'] = [[batch['electrode_labels'][0][i] for i in selected_idx]] * batch_size
+
+        if output_selected_idx:
+            return batch, selected_idx
+        else:
+            return batch
+
+    def get_preprocess_functions(self, pretraining=False):
+        """
+        Get the preprocess functions for the training setup.
+        Default: only subset electrodes to the maximum number during pretraining (during eval, pass all electrodes).
+
+        This must be an array of functions, each takes just batch as input and returns the (modified) batch. Modifying it in place is fine (but still return the batch).
+        """
+        return [self._preprocess_subset_electrodes] if pretraining else []
+
     def generate_state_dicts(self):
         """
             This function generates the state dicts for the model components. It is used for saving and retrieving the model.
@@ -83,23 +153,6 @@ class TrainingSetup:
         for model_component in self.model_components.values():
             model_component.eval()
 
-    def calculate_pretrain_loss(self, batch, output_accuracy=True):
-        """
-        Calculate the pretraining loss for a batch of data.
-
-        Args:
-            batch (dict): Dictionary containing:
-                data (torch.Tensor): Shape (batch_size, n_electrodes, n_timesamples)
-                electrode_index (torch.Tensor): Shape (batch_size, n_electrodes)
-                metadata (dict): Contains subject identifier, trial id, sampling rate, etc.
-            output_accuracy (bool): Whether to output accuracy metrics
-
-        Returns:
-            dict: Dictionary of losses where keys are loss names and values are loss values.
-                 The final loss is the mean of all losses. Accuracies are exempt and used only for logging.
-        """
-        raise NotImplementedError("This function is not (yet) implemented for this training setup.")
-
     def calculate_pretrain_test_loss(self):
         """
         Calculate the pretraining test loss. This function uses the calculate_pretrain_loss function.
@@ -111,9 +164,6 @@ class TrainingSetup:
         losses = {}
         n_batches = 0
         for batch in self.test_dataloader:
-            batch['data'] = batch['data'].to(self.config['device'], dtype=self.config['model']['dtype'], non_blocking=True)
-            batch['electrode_index'] = batch['electrode_index'].to(self.config['device'], dtype=torch.long, non_blocking=True)
-
             loss = self.calculate_pretrain_loss(batch)
             
             for key, value in loss.items():
@@ -121,23 +171,6 @@ class TrainingSetup:
                 losses[key] += value
             n_batches += 1
         return {k: v / n_batches for k, v in losses.items()}
-
-    def generate_frozen_features(self, batch):
-        """
-        Generate frozen features (meaning, the weights of the model are frozen) for a batch of data. This function is used for the model evaluation on the benchmarks.
-
-        Args:
-            batch (dict): Dictionary containing:
-                data (torch.Tensor): Shape (batch_size, n_electrodes, n_timebins)
-                electrode_labels (list): List of length 1 (same across batch), each element is a list of electrode labels
-                metadata (dict): Contains subject identifier, trial id, sampling rate, etc.
-
-        Returns:
-            torch.Tensor: Features with shape (batch_size, feature_vector_length) where feature_vector_length can be arbitrary
-        """
-        raise NotImplementedError("This function is not (yet) implemented for this training setup.")
-
-
 
     def load_dataloaders(self):
         """
@@ -157,8 +190,7 @@ class TrainingSetup:
                     trial_id, 
                     int(config['model']['context_length'] * self.all_subjects[subject_identifier].get_sampling_rate(trial_id)), 
                     dtype=config['training']['data_dtype'], 
-                    output_embeddings_map=self.electrode_embeddings.embeddings_map if self.electrode_embeddings is not None else None,
-                    output_subject_trial_id=True,
+                    output_metadata=True,
                     output_electrode_labels=True
                 )
             )
@@ -189,7 +221,7 @@ class TrainingSetup:
             pin_memory=True,  # Pin memory for faster GPU transfer
             persistent_workers=True,  # Keep worker processes alive between iterations
             prefetch_factor=config['cluster']['prefetch_factor'],
-            collate_fn=RandomElectrodeCollator(config['model']['max_n_electrodes'])
+            collate_fn=PreprocessCollator(preprocess_functions=self.get_preprocess_functions(pretraining=True))
         )
         test_dataloader = DataLoader(
             test_dataset,
@@ -202,7 +234,7 @@ class TrainingSetup:
             pin_memory=True,
             persistent_workers=True,
             prefetch_factor=config['cluster']['prefetch_factor'],
-            collate_fn=RandomElectrodeCollator(config['model']['max_n_electrodes'])
+            collate_fn=PreprocessCollator(preprocess_functions=self.get_preprocess_functions(pretraining=True))
         )
 
         self.train_dataloader = train_dataloader

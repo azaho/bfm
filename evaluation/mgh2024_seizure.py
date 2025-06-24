@@ -1,4 +1,4 @@
-from subject_mgh import MGHSubject
+from subject.mgh2024 import MGH2024Subject
 import numpy as np
 import torch
 
@@ -11,6 +11,8 @@ class MGHSeizureDataset(torch.utils.data.Dataset):
         self.subject_id = subject.subject_id
         self.session_id = session_id
         self.output_index = output_index
+
+        subject.load_neural_data(session_id)
 
         self.WINDOW_SIZE = WINDOW_SIZE
 

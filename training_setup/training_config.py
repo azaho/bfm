@@ -22,9 +22,6 @@ CONFIG_SCHEMA = {
         
         'context_length': ParamConfig(3, float, 'Context length in seconds'),
 
-
-        'max_n_electrodes': ParamConfig(128, int, 'Maximum number of electrodes to use', dirname_format=lambda x: f'nes{x}'),
-
         'electrode_embedding': {
             'type': ParamConfig('learned', str, 'Type of electrode embedding', dirname_format=lambda x: f'ee{x}'), # Allowed values: 'learned', 'zero', 'coordinate_init', 'noisy_coordinate'
             'dim': ParamConfig(None, int, 'Dimension of electrode embeddings', dirname_format=lambda x: f'ed{x}'),
@@ -45,8 +42,7 @@ CONFIG_SCHEMA = {
         'transformer': {
             'd_model': ParamConfig(192, int, 'Dimensionality of the latent space of the model', dirname_format=lambda x: f'dm{x}'),
             'n_heads': ParamConfig(12, int, 'Number of attention heads', dirname_format=lambda x: f'nh{x}'),
-            'n_layers_electrode': ParamConfig(5, int, 'Number of transformer layers for electrode path', dirname_format=lambda x: f'nl{x}'),
-            'n_layers_time': ParamConfig(5, int, 'Number of transformer layers for time path'),
+            'n_layers': ParamConfig(5, int, 'Number of transformer layers'),
         },
 
         'dtype': ParamConfig(torch.float32, torch.dtype, 'Model data type'), # Data type for the model weights and activations 
@@ -60,7 +56,6 @@ CONFIG_SCHEMA = {
         'eval_model_every_n_epochs': ParamConfig(1, int, 'Evaluate the model every n epochs'),
         'eval_at_beginning': ParamConfig(True, bool, 'Whether to evaluate the model at the beginning of the training'),
 
-        'timestamp': ParamConfig(time.strftime("%Y%m%d_%H%M%S"), str, 'Timestamp'), # the time when the model was trained
         'cache_subjects': ParamConfig(True, bool, 'Whether to cache subjects'), # Whether to cache the subject datasets in RAM, or to load them from the disk as the training proceeds.
 
         'num_workers_dataloaders': ParamConfig(4, int, 'Number of processes for dataloaders'), # note that you will need to request enough CPU cores to cover all these workers
@@ -75,7 +70,7 @@ CONFIG_SCHEMA = {
         'setup_name': ParamConfig("andrii0", str, 'Setup name', required=True),
 
         'train_subject_trials': ParamConfig("btbank3_1", str, 'Train subject trials'), # a string like btbank3_1,btbank3_2,...
-        'eval_subject_trials': ParamConfig("btbank3_0", str, 'Eval subject trials'), # a string like btbank3_0,btbank3_1,...
+        'eval_subject_trials': ParamConfig("", str, 'Eval subject trials'), # a string like btbank3_0,btbank3_1,...
         'data_dtype': ParamConfig(torch.bfloat16, torch.dtype, 'Data type for tensors'),
         
         'eval_tasks': ParamConfig("onset,gpt2_surprisal", str, 'Eval tasks from Neuroprobe'), # a list of neuroprobe tasks to evaluate on during pretraining
@@ -86,11 +81,13 @@ CONFIG_SCHEMA = {
         'optimizer': ParamConfig('Muon', str, 'Optimizer type'),
         'batch_size': ParamConfig(100, int, 'Batch size for training'),
         
-        'learning_rate': ParamConfig(0.003, float, 'Learning rate'),
+        'learning_rate': ParamConfig(0.003, float, 'Learning rate', include_in_dirname=True, dirname_format=lambda x: f'lr{x}'),
         'lr_schedule': ParamConfig('linear', str, 'Learning rate schedule (none, linear, cosine)'),
         'weight_decay': ParamConfig(0.0001, float, 'Weight decay for optimizer', include_in_dirname=True, dirname_format=lambda x: f'wd{x}'),
         'dropout': ParamConfig(0.1, float, 'Dropout rate', include_in_dirname=True, dirname_format=lambda x: f'dr{x}'),
         
+        'max_n_electrodes': ParamConfig(128, int, 'Maximum number of electrodes to use during pretraining'),
+
         'p_electrodes_per_stream': ParamConfig(0.5, float, 'Proportion of electrodes per stream'),
         'future_bin_idx': ParamConfig(1, int, 'Future bin index'),
         'warmup_steps': ParamConfig(100, int, 'Warmup steps'),
@@ -100,6 +97,7 @@ CONFIG_SCHEMA = {
         'max_temperature_param': ParamConfig(1000.0, float, 'Maximum temperature parameter value'),
         
         'random_string': ParamConfig("X", str, 'Random string for seed generation', include_in_dirname=True, dirname_format=lambda x: f'r{x}'),
+        'timestamp': ParamConfig(time.strftime("%Y%m%d_%H%M%S"), str, 'Timestamp', include_in_dirname=True, dirname_format=lambda x: f't{x}'), # the time when the model was trained
     },
 
     # This is a dictionary that can be used to store any additional parameters that are not part of the schema. 

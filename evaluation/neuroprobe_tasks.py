@@ -13,7 +13,8 @@ import torch.cuda
 # Evaluation class for Same Subject Same Movie (SS-SM), on neuroprobe evals
 class FrozenModelEvaluation_SS_SM():
     def __init__(self,
-                 # model evaluation function
+                 # model preprocess and evaluation function
+                 model_preprocess_functions,
                  model_evaluation_function,
                  # benchmark parameters
                  eval_names, subject_trials, 
@@ -34,6 +35,7 @@ class FrozenModelEvaluation_SS_SM():
                                  subject is a BrainTreebankSubject object and trial_id is an integer.
             dtype (torch.dtype, optional): Data type for tensors.
         """
+        self.model_preprocess_functions = model_preprocess_functions
         self.model_evaluation_function = model_evaluation_function
         self.eval_names = eval_names
         self.subject_trials = subject_trials
@@ -71,7 +73,7 @@ class FrozenModelEvaluation_SS_SM():
         for i, (batch_input, batch_label) in enumerate(dataloader):
             log(f'generating frozen features for batch {i} of {len(dataloader)}', priority=log_priority, indent=3)
             batch = {
-                'data': batch_input.to(self.device, dtype=self.dtype, non_blocking=True), # shape (batch_size, n_electrodes, n_samples),
+                'data': batch_input, # shape (batch_size, n_electrodes, n_samples),
                 'electrode_labels': [self.all_subject_electrode_labels[subject_identifier]],
                 'metadata': {
                     'subject_identifier': subject_identifier,
@@ -83,7 +85,9 @@ class FrozenModelEvaluation_SS_SM():
             if raw_data:
                 features = batch['data'].reshape(batch_input.shape[0], -1)
             else:
-                features = self.model_evaluation_function(batch)
+                for preprocess_function in self.model_preprocess_functions:
+                    batch = preprocess_function(batch)
+                features = self.model_evaluation_function(batch).reshape(batch_input.shape[0], -1)
 
             log(f'done generating frozen features for batch {i} of {len(dataloader)}', priority=log_priority, indent=3)
             X.append(features.detach().cpu().float().numpy())
