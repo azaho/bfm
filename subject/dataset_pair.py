@@ -7,7 +7,7 @@ from multiprocessing import Pool
 import torch.multiprocessing as mp
 import random
 
-class SubjectTrialDataset(Dataset):
+class SubjectTrialPairDataset(Dataset):
     def __init__(self, subject, trial_id, window_size, dtype=torch.float32, output_metadata=False, output_electrode_labels=False):
         """
         Args:
@@ -40,6 +40,9 @@ class SubjectTrialDataset(Dataset):
         if self.output_electrode_labels:
             output['electrode_labels'] = self.subject.electrode_labels # Also output the electrode label
         
+        # options:
+        # 1. have array w/in each metadata item
+        # 2. store metadata_a and metadata_b as separate fields
         output['metadata'] = {
             'subject_identifier': self.subject.subject_identifier,
             'trial_id': self.trial_id,
@@ -48,7 +51,7 @@ class SubjectTrialDataset(Dataset):
         
         return output
 
-class PreprocessCollator:
+class PreprocessCollatorPair:
     def __init__(self, preprocess_functions=[]):
         self.preprocess_functions = preprocess_functions
 
@@ -59,7 +62,7 @@ class PreprocessCollator:
         output = {
             'data': torch.stack([item['data'] for item in batch]),
         }
-        
+        # TODO: fix based on the index (can't just be 0)
         if 'electrode_labels' in batch[0]:
             output['electrode_labels'] = [item['electrode_labels'] for item in batch]
         if 'metadata' in batch[0]:
@@ -70,6 +73,7 @@ class PreprocessCollator:
             output = preprocess_function(output)
             
         # Copy through any other fields that don't need processing
+        # TODO: 0-based indexing here as well
         for key in batch[0].keys():
             if key not in output and key != 'data':
                 output[key] = [item[key] for item in batch]
@@ -79,7 +83,7 @@ class PreprocessCollator:
         return output
 
 # based on random subject/trial, make a batch
-class SubjectBatchSampler(torch.utils.data.Sampler):
+class SubjectBatchPairSampler(torch.utils.data.Sampler):
         def __init__(self, dataset_sizes, batch_size, shuffle=True, drop_last=True):
             self.dataset_sizes = dataset_sizes
             self.batch_size = batch_size
@@ -136,6 +140,6 @@ def load_subjects(train_subject_trials, eval_subject_trials, dtype, cache=True, 
 
 if __name__ == "__main__":
     subject = BrainTreebankSubject(3, cache=False)
-    dataset = SubjectTrialDataset(subject, 0, 100, torch.float32)
+    dataset = SubjectTrialPairDataset(subject, 0, 100, torch.float32)
     print("Length of dataset:", len(dataset))
     print("Shape of dataset[0]:", dataset[0]['data'].shape)
