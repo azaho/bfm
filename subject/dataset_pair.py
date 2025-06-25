@@ -156,6 +156,7 @@ class PreprocessCollatorPair:
         return output
 
 # based on random subject/trial pairs where they're watching the same movie, make a batch
+# TODO: ask about logic in this class
 class SubjectBatchPairSampler(torch.utils.data.Sampler):
         def __init__(self, dataset_sizes, batch_size, shuffle=True, drop_last=True):
             self.dataset_sizes = dataset_sizes

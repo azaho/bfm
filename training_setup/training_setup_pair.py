@@ -266,6 +266,10 @@ class TrainingSetupNewDataloader:
                         movie_duration_a = trigs_df_a[trigs_df_a['type'] == 'end']['movie_time'].iloc[0] if 'end' in trigs_df_a['type'].values else trigs_df_a['movie_time'].max()
                         movie_duration_b = trigs_df_b[trigs_df_b['type'] == 'end']['movie_time'].iloc[0] if 'end' in trigs_df_b['type'].values else trigs_df_b['movie_time'].max()
                         
+                        # Debug: Print movie durations
+                        if self.verbose:
+                            log(f"  Movie durations: {subject_a_id}_{trial_a_id}={movie_duration_a:.2f}s, {subject_b_id}_{trial_b_id}={movie_duration_b:.2f}s", indent=2, priority=1)
+                        
                         # Use the shorter duration to ensure both subjects have data
                         total_time_seconds = min(movie_duration_a, movie_duration_b)
                         
@@ -317,8 +321,8 @@ class TrainingSetupNewDataloader:
                 shuffle=True
             ),
             num_workers=num_workers_dataloader_train,
-            pin_memory=True,  # Pin memory for faster GPU transfer
-            persistent_workers=True,  # Keep worker processes alive between iterations
+            pin_memory=True,  # pin memory for faster GPU transfer
+            persistent_workers=True,  # keep worker processes alive between iterations
             prefetch_factor=config['cluster']['prefetch_factor'],
             collate_fn=PreprocessCollatorPair(preprocess_functions=self.get_preprocess_functions(pretraining=True))
         )
@@ -347,12 +351,14 @@ def __main__():
             # initially tested with lite, then full
             'train_subject_trials': [(f"btbank{subject_id}", trial_id) for subject_id, trial_id in NEUROPROBE_FULL_SUBJECT_TRIALS],  # Convert integer subject IDs to string format that load_subjects expects
             'p_test': 0.2,
+            # TODO: ask about batch size and movie duration
+            # if smallest movie duration is actually 8.3 s, then maximum batch size is 83
             'batch_size': 4,
             'data_dtype': torch.float32,
             'max_n_electrodes': 50  # limit electrodes for testing
         },
         'model': {
-            'context_length': 0.1,  # 100ms windows
+            'context_length': 0.1,  # 100ms windows, results in n_timebins = 204
             'dtype': torch.float32
         },
         'cluster': {
@@ -387,8 +393,8 @@ def __main__():
     for batch in training_setup.train_dataloader:
         print(f"Batch {batch_count + 1}:")
         print(f"  Data shapes: A={batch['data']['a'].shape}, B={batch['data']['b'].shape}")
-        print(f"  Subject trials A: {batch['subject_trial']['a'][:2]}...")  # Show first 2
-        print(f"  Subject trials B: {batch['subject_trial']['b'][:2]}...")  # Show first 2
+        print(f"  Subject trials A: {batch['subject_trial']['a']}")  
+        print(f"  Subject trials B: {batch['subject_trial']['b']}")
         
         if 'metadata' in batch:
             print(f"  Metadata A: {batch['metadata']['a']['subject_identifier']}_{batch['metadata']['a']['trial_id']}")
@@ -399,7 +405,7 @@ def __main__():
             print(f"  Electrode labels B: {len(batch['electrode_labels']['b'])} electrodes")
         
         batch_count += 1
-        if batch_count >= 3:  # Only test first 3 batches
+        if batch_count >= 3:  # only test first 3 batches
             break
     
     print(f"Tested {batch_count} batches")
