@@ -7,9 +7,16 @@ from torch.utils.data import DataLoader, ConcatDataset
 import os
 import json
 from training_setup.training_config import convert_dtypes
+import numpy as np
+from evaluation.neuroprobe.config import ROOT_DIR, SAMPLING_RATE, BRAINTREEBANK_SUBJECT_TRIAL_MOVIE_NAME_MAPPING
+import pandas as pd
+
+# for main function
+from subject.dataset_pair import load_subjects
+from evaluation.neuroprobe.config import NEUROPROBE_FULL_SUBJECT_TRIALS
 
 # TODO: Checking for whether to run eval or not based on presence of 'metadata_a' vs. 'metadata'
-# these lines in pretrain.pyneed to be handled:
+# these lines in pretrain.py need to be handled:
 # model_preprocess_functions=training_setup.get_preprocess_functions(pretraining=False),
 # model_evaluation_function=training_setup.generate_frozen_features,
 
@@ -90,6 +97,8 @@ class TrainingSetupNewDataloader:
         return batch
     
     # TODO: this part should be changed because now we're comparing brains, not electrodes -- ask Andrii
+    # For paired datasets, we might want to ensure both subjects have the same electrode subset
+    # or handle electrode alignment differently since we're comparing brain responses
     def _preprocess_subset_electrodes(self, batch, output_selected_idx=False):
         # Find minimum number of electrodes in each batch for both 'a' and 'b'
         batch_size_a = batch['data']['a'].shape[0]
@@ -204,33 +213,92 @@ class TrainingSetupNewDataloader:
         return {k: v / n_batches for k, v in losses.items()}
 
     def load_dataloaders(self):
-        """
-            This function loads the dataloaders for the training and test sets.
-
-            It must set the self.train_dataloader and self.test_dataloader attributes to the dataloaders (they are used in the pretraining code in pretrain.py)
-        """
+        """Load dataloaders for training and test sets."""
         config = self.config
 
-        # Step 1: Load datasets
-        datasets = []
+        # Step 1: Create paired subject/trial combinations
+        # Group subjects by movie to create pairs
+        movie_to_subject_trials = {}
         for subject_identifier, trial_id in config['training']['train_subject_trials']:
-            if self.verbose: log(f"loading dataset for {subject_identifier}_{trial_id}...", indent=1, priority=1)
-            datasets.append(
-                SubjectTrialPairDataset(
-                    self.all_subjects[subject_identifier], 
-                    trial_id, 
-                    int(config['model']['context_length'] * self.all_subjects[subject_identifier].get_sampling_rate(trial_id)), 
-                    dtype=config['training']['data_dtype'], 
-                    output_metadata=True,
-                    output_electrode_labels=True
-                )
-            )
-            if self.verbose: log(f"finished loading dataset for {subject_identifier}_{trial_id}", indent=1, priority=1)
+            movie_key = f"{subject_identifier}_{trial_id}"
+            if movie_key in BRAINTREEBANK_SUBJECT_TRIAL_MOVIE_NAME_MAPPING:
+                movie_name = BRAINTREEBANK_SUBJECT_TRIAL_MOVIE_NAME_MAPPING[movie_key]
+                # if movie_name not already in movie_to_subject_trials, create an empty list
+                if movie_name not in movie_to_subject_trials:
+                    movie_to_subject_trials[movie_name] = []
+                # add the subject_identifier and trial_id to the list
+                movie_to_subject_trials[movie_name].append((subject_identifier, trial_id))
+        
+        # Create pairs of subjects watching the same movie
+        paired_datasets = []
+        for movie_name, subject_trials in movie_to_subject_trials.items():
+            # if there are at least 2 subjects watching the same movie, create pairs
+            if len(subject_trials) >= 2:
+                # create pairs from all combinations
+                for i in range(len(subject_trials)):
+                    for j in range(i + 1, len(subject_trials)):
+                        subject_a_id, trial_a_id = subject_trials[i]
+                        subject_b_id, trial_b_id = subject_trials[j]
+                        
+                        if self.verbose: 
+                            log(f"Creating paired dataset: {subject_a_id}_{trial_a_id} + {subject_b_id}_{trial_b_id} (movie: {movie_name})", indent=1, priority=1)
+                        
+                        # Calculate window size in samples
+                        window_size = int(config['model']['context_length'] * SAMPLING_RATE)
+                        
+                        # Calculate actual movie duration from trigger times file
+                        # Use the shorter of the two trials to ensure both have data
+                        subject_a = self.all_subjects[subject_a_id]
+                        subject_b = self.all_subjects[subject_b_id]
+                        
+                        # Load neural data for both subjects first
+                        subject_a.load_neural_data(trial_a_id)
+                        subject_b.load_neural_data(trial_b_id)
+                        
+                        # Get movie duration from trigger times
+                        trigger_times_file_a = os.path.join(ROOT_DIR, "subject_timings", f'sub_{int(subject_a_id.replace("btbank", ""))}_trial{int(trial_a_id):03}_timings.csv')
+                        trigger_times_file_b = os.path.join(ROOT_DIR, "subject_timings", f'sub_{int(subject_b_id.replace("btbank", ""))}_trial{int(trial_b_id):03}_timings.csv')
+                        
+                        trigs_df_a = pd.read_csv(trigger_times_file_a)
+                        trigs_df_b = pd.read_csv(trigger_times_file_b)
+                        
+                        # Get the end time from the last row (should be the 'end' type row)
+                        movie_duration_a = trigs_df_a[trigs_df_a['type'] == 'end']['movie_time'].iloc[0] if 'end' in trigs_df_a['type'].values else trigs_df_a['movie_time'].max()
+                        movie_duration_b = trigs_df_b[trigs_df_b['type'] == 'end']['movie_time'].iloc[0] if 'end' in trigs_df_b['type'].values else trigs_df_b['movie_time'].max()
+                        
+                        # Use the shorter duration to ensure both subjects have data
+                        total_time_seconds = min(movie_duration_a, movie_duration_b)
+                        
+                        window_time_seconds = window_size / SAMPLING_RATE
+                        n_windows = int(total_time_seconds / window_time_seconds)
+                        
+                        # Create movie times for consecutive windows
+                        movie_times = np.linspace(0, total_time_seconds, n_windows)
+                        
+                        # Create the paired dataset
+                        dataset = SubjectTrialPairDataset(
+                            subject_a, trial_a_id, window_size,
+                            dtype=config['training']['data_dtype'],
+                            output_metadata=True,
+                            output_electrode_labels=True,
+                            subject_b=subject_b, 
+                            trial_id_b=trial_b_id,
+                            movie_times=movie_times,
+                            trigger_times_dir=os.path.join(ROOT_DIR, "subject_timings"),
+                            sampling_rate=SAMPLING_RATE
+                        )
+                        
+                        paired_datasets.append(dataset)
+                        if self.verbose: 
+                            log(f"Finished creating paired dataset: {len(dataset)} windows", indent=1, priority=1)
+
+        if not paired_datasets:
+            raise ValueError("No valid paired datasets found. Make sure subjects in train_subject_trials watch the same movies.")
 
         # Step 2: Split into train and test
         train_datasets = []
         test_datasets = []
-        for dataset in datasets:
+        for dataset in paired_datasets:
             train_size = int(len(dataset) * (1 - config['training']['p_test']))
             train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, len(dataset) - train_size])
             train_datasets.append(train_dataset)
@@ -272,7 +340,73 @@ class TrainingSetupNewDataloader:
         self.test_dataloader = test_dataloader
 
 def __main__():
-    pass
+    """Test the paired training setup."""
+    
+    test_config = {
+        'training': {
+            # initially tested with lite, then full
+            'train_subject_trials': [(f"btbank{subject_id}", trial_id) for subject_id, trial_id in NEUROPROBE_FULL_SUBJECT_TRIALS],  # Convert integer subject IDs to string format that load_subjects expects
+            'p_test': 0.2,
+            'batch_size': 4,
+            'data_dtype': torch.float32,
+            'max_n_electrodes': 50  # limit electrodes for testing
+        },
+        'model': {
+            'context_length': 0.1,  # 100ms windows
+            'dtype': torch.float32
+        },
+        'cluster': {
+            'num_workers_dataloaders': 2,
+            'prefetch_factor': 2,
+            'dir_name': 'test_paired_setup'
+        }
+    }
+    
+    print(f"Test config: {len(test_config['training']['train_subject_trials'])} subject trials")
+    
+    # load subjects
+    all_subjects = load_subjects(
+        test_config['training']['train_subject_trials'], 
+        [], # no eval trials for testing
+        test_config['training']['data_dtype'],
+        cache=False,
+        allow_corrupted=False
+    )
+    print(f"Loaded {len(all_subjects)} subjects")
+    
+    # creating training setup
+    training_setup = TrainingSetupNewDataloader(all_subjects, test_config, verbose=True)
+    print("Training setup created")
+    
+    # loading dataloaders
+    training_setup.load_dataloaders()
+    print("Dataloaders created")
+    
+    # testing a few batches
+    batch_count = 0
+    for batch in training_setup.train_dataloader:
+        print(f"Batch {batch_count + 1}:")
+        print(f"  Data shapes: A={batch['data']['a'].shape}, B={batch['data']['b'].shape}")
+        print(f"  Subject trials A: {batch['subject_trial']['a'][:2]}...")  # Show first 2
+        print(f"  Subject trials B: {batch['subject_trial']['b'][:2]}...")  # Show first 2
+        
+        if 'metadata' in batch:
+            print(f"  Metadata A: {batch['metadata']['a']['subject_identifier']}_{batch['metadata']['a']['trial_id']}")
+            print(f"  Metadata B: {batch['metadata']['b']['subject_identifier']}_{batch['metadata']['b']['trial_id']}")
+        
+        if 'electrode_labels' in batch:
+            print(f"  Electrode labels A: {len(batch['electrode_labels']['a'])} electrodes")
+            print(f"  Electrode labels B: {len(batch['electrode_labels']['b'])} electrodes")
+        
+        batch_count += 1
+        if batch_count >= 3:  # Only test first 3 batches
+            break
+    
+    print(f"Tested {batch_count} batches")
+    
+    # Test test dataloader
+    test_batch = next(iter(training_setup.test_dataloader))
+    print(f"Test batch data shapes: A={test_batch['data']['a'].shape}, B={test_batch['data']['b'].shape}")
 
 if __name__ == "__main__":
     __main__()

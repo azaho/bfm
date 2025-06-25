@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import Dataset, ConcatDataset, DataLoader
 from subject.braintreebank import BrainTreebankSubject
 from subject.mgh2024 import MGH2024Subject
-from subject.dataset import SubjectTrialDataset
+from subject.dataset import SubjectTrialDataset # for testing purposes
 from training_setup.training_config import log
 from multiprocessing import Pool
 import torch.multiprocessing as mp
@@ -239,7 +239,13 @@ class MovieTimeAlignmentHelper:
         trig_time_col, trig_idx_col = 'movie_time', 'index'
         # Vectorized nearest trigger finding
         start_indices = np.searchsorted(trigs_df[trig_time_col].values, movie_times)
+
+        # Clamp indices to valid range (0 to len-1)
         start_indices = np.maximum(start_indices, 0)
+        # was throwing an error when the movie time was greater than the last trigger time,
+        # so added another clamping step
+        start_indices = np.minimum(start_indices, len(trigs_df) - 1)
+
         # Vectorized sample index calculation
         return np.round(
             trigs_df.loc[start_indices, trig_idx_col].values +
