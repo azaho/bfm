@@ -2,7 +2,7 @@ from model.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbed
 from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
 from training_setup.training_config import log
 import torch
-from subject.dataset import SubjectTrialDataset, PreprocessCollator, SubjectBatchSampler
+from subject.dataset_pair import SubjectTrialPairDataset, PreprocessCollatorPair, SubjectBatchPairSampler
 from torch.utils.data import DataLoader, ConcatDataset
 import os
 import json
@@ -41,9 +41,9 @@ class TrainingSetupNewDataloader:
 
         Args:
             batch (dict): Dictionary containing:
-                data (torch.Tensor): Shape (batch_size, n_electrodes, n_timesamples)
-                electrode_index (torch.Tensor): Shape (batch_size, n_electrodes)
-                metadata (dict): Contains subject identifier, trial id, sampling rate, etc.
+                data (dict): Contains 'a' and 'b' keys, each with shape (batch_size, n_electrodes, n_timesamples)
+                electrode_labels (dict): Contains 'a' and 'b' keys, each with electrode labels
+                metadata (dict): Contains 'a' and 'b' keys, each with subject identifier, trial id, sampling rate, etc.
             output_accuracy (bool): Whether to output accuracy metrics
 
         Returns:
@@ -58,9 +58,9 @@ class TrainingSetupNewDataloader:
 
         Args:
             batch (dict): Dictionary containing:
-                data (torch.Tensor): Shape (batch_size, n_electrodes, n_timebins)
-                electrode_labels (list): List of length 1 (same across batch), each element is a list of electrode labels
-                metadata (dict): Contains subject identifier, trial id, sampling rate, etc.
+                data (dict): Contains 'a' and 'b' keys, each with shape (batch_size, n_electrodes, n_timebins)
+                electrode_labels (dict): Contains 'a' and 'b' keys, each with electrode labels
+                metadata (dict): Contains 'a' and 'b' keys, each with subject identifier, trial id, sampling rate, etc.
 
         Returns:
             torch.Tensor: Features with shape (batch_size, feature_vector_length) where feature_vector_length can be arbitrary
@@ -68,27 +68,52 @@ class TrainingSetupNewDataloader:
         raise NotImplementedError("This function is not (yet) implemented for this training setup.")
 
     def _preprocess_laplacian_rereference(self, batch):
-        laplacian_rereference_batch(batch, remove_non_laplacian=False, inplace=True)
-        return batch
-    def _preprocess_normalize_voltage(self, batch):
-        batch['data'] = batch['data'] - torch.mean(batch['data'], dim=[0, 2], keepdim=True)
-        batch['data'] = batch['data'] / (torch.std(batch['data'], dim=[0, 2], keepdim=True) + 1)
+        # Apply laplacian rereferencing to both 'a' and 'b' data
+        batch_a = {'data': batch['data']['a']}
+        batch_b = {'data': batch['data']['b']}
+        
+        # needed to remove 'data' key first because original function not built for this
+        laplacian_rereference_batch(batch_a, remove_non_laplacian=False, inplace=True)
+        laplacian_rereference_batch(batch_b, remove_non_laplacian=False, inplace=True)
+        
+        batch['data']['a'] = batch_a['data']
+        batch['data']['b'] = batch_b['data']
         return batch
     
+    def _preprocess_normalize_voltage(self, batch):
+        # Normalize both 'a' and 'b' data
+        batch['data']['a'] = batch['data']['a'] - torch.mean(batch['data']['a'], dim=[0, 2], keepdim=True)
+        batch['data']['a'] = batch['data']['a'] / (torch.std(batch['data']['a'], dim=[0, 2], keepdim=True) + 1)
+        
+        batch['data']['b'] = batch['data']['b'] - torch.mean(batch['data']['b'], dim=[0, 2], keepdim=True)
+        batch['data']['b'] = batch['data']['b'] / (torch.std(batch['data']['b'], dim=[0, 2], keepdim=True) + 1)
+        return batch
+    
+    # TODO: this part should be changed because now we're comparing brains, not electrodes -- ask Andrii
     def _preprocess_subset_electrodes(self, batch, output_selected_idx=False):
-        # Find minimum number of electrodes in batch
-        batch_size = batch['data'].shape[0]
-        n_electrodes = batch['data'].shape[1]
-        subset_n_electrodes = min(n_electrodes, self.config['training']['max_n_electrodes']) if self.config['training']['max_n_electrodes']>0 else n_electrodes
+        # Find minimum number of electrodes in each batch for both 'a' and 'b'
+        batch_size_a = batch['data']['a'].shape[0]
+        batch_size_b = batch['data']['b'].shape[0]
+        n_electrodes_a = batch['data']['a'].shape[1]
+        n_electrodes_b = batch['data']['b'].shape[1]
+        
+        subset_n_electrodes_a = min(n_electrodes_a, self.config['training']['max_n_electrodes']) if self.config['training']['max_n_electrodes']>0 else n_electrodes_a
+        subset_n_electrodes_b = min(n_electrodes_b, self.config['training']['max_n_electrodes']) if self.config['training']['max_n_electrodes']>0 else n_electrodes_b
 
-        # Randomly subselect / permute electrodes
-        selected_idx = torch.randperm(n_electrodes)[:subset_n_electrodes]
-        batch['data'] = batch['data'][:, selected_idx]
+        # Randomly subselect / permute electrodes for both 'a' and 'b'
+        selected_idx_a = torch.randperm(n_electrodes_a)[:subset_n_electrodes_a]
+        selected_idx_b = torch.randperm(n_electrodes_b)[:subset_n_electrodes_b]
+        
+        batch['data']['a'] = batch['data']['a'][:, selected_idx_a]
+        batch['data']['b'] = batch['data']['b'][:, selected_idx_b]
+        
         if 'electrode_labels' in batch:
-            batch['electrode_labels'] = [[batch['electrode_labels'][0][i] for i in selected_idx]] * batch_size
+            batch['electrode_labels']['a'] = [batch['electrode_labels']['a'][i] for i in selected_idx_a]
+            batch['electrode_labels']['b'] = [batch['electrode_labels']['b'][i] for i in selected_idx_b]
 
+        # returns a tuple
         if output_selected_idx:
-            return batch, selected_idx
+            return batch, (selected_idx_a, selected_idx_b)
         else:
             return batch
 
@@ -191,7 +216,7 @@ class TrainingSetupNewDataloader:
         for subject_identifier, trial_id in config['training']['train_subject_trials']:
             if self.verbose: log(f"loading dataset for {subject_identifier}_{trial_id}...", indent=1, priority=1)
             datasets.append(
-                SubjectTrialDataset(
+                SubjectTrialPairDataset(
                     self.all_subjects[subject_identifier], 
                     trial_id, 
                     int(config['model']['context_length'] * self.all_subjects[subject_identifier].get_sampling_rate(trial_id)), 
@@ -218,7 +243,7 @@ class TrainingSetupNewDataloader:
         num_workers_dataloader_train = config['cluster']['num_workers_dataloaders'] - num_workers_dataloader_test
         train_dataloader = DataLoader(
             train_dataset,
-            batch_sampler=SubjectBatchSampler(
+            batch_sampler=SubjectBatchPairSampler(
                 [len(ds) for ds in train_datasets],
                 batch_size=config['training']['batch_size'],
                 shuffle=True
@@ -227,11 +252,11 @@ class TrainingSetupNewDataloader:
             pin_memory=True,  # Pin memory for faster GPU transfer
             persistent_workers=True,  # Keep worker processes alive between iterations
             prefetch_factor=config['cluster']['prefetch_factor'],
-            collate_fn=PreprocessCollator(preprocess_functions=self.get_preprocess_functions(pretraining=True))
+            collate_fn=PreprocessCollatorPair(preprocess_functions=self.get_preprocess_functions(pretraining=True))
         )
         test_dataloader = DataLoader(
             test_dataset,
-            batch_sampler=SubjectBatchSampler(
+            batch_sampler=SubjectBatchPairSampler(
                 [len(ds) for ds in test_datasets],
                 batch_size=config['training']['batch_size'],
                 shuffle=False
@@ -240,7 +265,7 @@ class TrainingSetupNewDataloader:
             pin_memory=True,
             persistent_workers=True,
             prefetch_factor=config['cluster']['prefetch_factor'],
-            collate_fn=PreprocessCollator(preprocess_functions=self.get_preprocess_functions(pretraining=True))
+            collate_fn=PreprocessCollatorPair(preprocess_functions=self.get_preprocess_functions(pretraining=True))
         )
 
         self.train_dataloader = train_dataloader

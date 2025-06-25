@@ -137,5 +137,7 @@ def load_subjects(train_subject_trials, eval_subject_trials, dtype, cache=True, 
 if __name__ == "__main__":
     subject = BrainTreebankSubject(3, cache=False)
     dataset = SubjectTrialDataset(subject, 0, 100, torch.float32)
+    # this is the number of windows in the dataset, whereas 100 is the number
+    # of samples in each window
     print("Length of dataset:", len(dataset))
     print("Shape of dataset[0]:", dataset[0]['data'].shape)

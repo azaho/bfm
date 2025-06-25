@@ -2,19 +2,26 @@ import torch
 from torch.utils.data import Dataset, ConcatDataset, DataLoader
 from subject.braintreebank import BrainTreebankSubject
 from subject.mgh2024 import MGH2024Subject
+from subject.dataset import SubjectTrialDataset
 from training_setup.training_config import log
 from multiprocessing import Pool
 import torch.multiprocessing as mp
 import random
+import numpy as np
+import pandas as pd
+import os
+from evaluation.neuroprobe.config import ROOT_DIR, SAMPLING_RATE
 
 class SubjectTrialPairDataset(Dataset):
-    def __init__(self, subject, trial_id, window_size, dtype=torch.float32, output_metadata=False, output_electrode_labels=False):
+    def __init__(self, subject, trial_id, window_size, dtype=torch.float32, output_metadata=False, output_electrode_labels=False,
+                 subject_b=None, trial_id_b=None, movie_times=None, trigger_times_dir=None, sampling_rate=None):
         """
         Args:
             subject (BrainTreebankSubject or MGHSubject): Subject object
             trial_id (int): Trial ID
             dtype (torch.dtype): Data type to load the data in (float32, bfloat16)
             window_size (int): Number of time samples per data item
+            subject_b, trial_id_b, movie_times, trigger_times_dir, sampling_rate: for paired/contrastive mode
         """
         self.subject = subject
         self.trial_id = trial_id
@@ -22,33 +29,75 @@ class SubjectTrialPairDataset(Dataset):
         self.dtype = dtype
         self.output_metadata = output_metadata
         self.output_electrode_labels = output_electrode_labels
+        self.subject_b = subject_b
+        self.trial_id_b = trial_id_b
+        self.movie_times = movie_times
+        self.trigger_times_dir = trigger_times_dir
+        self.sampling_rate = sampling_rate
 
+        # Load neural data for subject A
         subject.load_neural_data(trial_id)
         self.n_windows = self.subject.electrode_data_length[trial_id] // self.window_size
-    
+
+        # Use the alignment helper
+        paired_args = [subject_b, trial_id_b, movie_times, trigger_times_dir, sampling_rate]
+
+        # some argument checks to prevent errors
+        if any(arg is not None for arg in paired_args):
+            if not all(arg is not None for arg in paired_args):
+                raise ValueError("All paired mode arguments (subject_b, trial_id_b, movie_times, trigger_times_dir, sampling_rate) must be provided for paired mode.")
+            if self.subject_b is None:
+                raise ValueError("subject_b must not be None.")
+            
+            self.subject_b.load_neural_data(trial_id_b)
+            self.alignment_helper = MovieTimeAlignmentHelper(
+                self.subject, self.trial_id, self.subject_b, self.trial_id_b,
+                self.movie_times, self.trigger_times_dir, self.sampling_rate
+            )
+            self.indices_a, self.indices_b = self.alignment_helper.get_aligned_indices()
+            self.n_windows = len(self.indices_a)
+
     def __len__(self):
         return self.n_windows
-    
-    def __getitem__(self, idx):
-        start_idx = idx * self.window_size
-        end_idx = start_idx + self.window_size
-        window = self.subject.get_all_electrode_data(self.trial_id, start_idx, end_idx).to(dtype=self.dtype)
 
-        output = {'data': window}
-        if self.output_metadata: 
-            output['subject_trial'] = (self.subject.subject_identifier, self.trial_id)
-        if self.output_electrode_labels:
-            output['electrode_labels'] = self.subject.electrode_labels # Also output the electrode label
+    def __getitem__(self, idx):
+        if self.subject_b is None:
+            raise ValueError("subject_b cannot be None")
+        idx_a = self.indices_a[idx]
+        idx_b = self.indices_b[idx]
+        window_a = self.subject.get_all_electrode_data(self.trial_id, idx_a, idx_a + self.window_size).to(dtype=self.dtype)
+        window_b = self.subject_b.get_all_electrode_data(self.trial_id_b, idx_b, idx_b + self.window_size).to(dtype=self.dtype)
         
-        # options:
-        # 1. have array w/in each metadata item
-        # 2. store metadata_a and metadata_b as separate fields
-        output['metadata'] = {
-            'subject_identifier': self.subject.subject_identifier,
-            'trial_id': self.trial_id,
-            'sampling_rate': self.subject.get_sampling_rate(self.trial_id),
+        # Create nested structure that matches original format
+        output = {
+            'data': {
+                'a': window_a,
+                'b': window_b
+            },
+            'subject_trial': {
+                'a': [(self.subject.subject_identifier, self.trial_id)],
+                'b': [(self.subject_b.subject_identifier, self.trial_id_b)]
+            }
         }
         
+        if self.output_metadata:
+            output['metadata'] = {
+                'a': {
+                    'subject_identifier': self.subject.subject_identifier,
+                    'trial_id': self.trial_id,
+                    'sampling_rate': self.subject.get_sampling_rate(self.trial_id),
+                },
+                'b': {
+                    'subject_identifier': self.subject_b.subject_identifier,
+                    'trial_id': self.trial_id_b,
+                    'sampling_rate': self.subject_b.get_sampling_rate(self.trial_id_b),
+                }
+            }
+        if self.output_electrode_labels:
+            output['electrode_labels'] = {
+                'a': self.subject.electrode_labels,
+                'b': self.subject_b.electrode_labels
+            }
         return output
 
 class PreprocessCollatorPair:
@@ -56,33 +105,57 @@ class PreprocessCollatorPair:
         self.preprocess_functions = preprocess_functions
 
     def __call__(self, batch):
-        # batch is now a list of dictionaries
+        # batch is now a list of dictionaries with nested structure
 
         # Process each item in batch
         output = {
-            'data': torch.stack([item['data'] for item in batch]),
+            'data': {
+                'a': torch.stack([item['data']['a'] for item in batch]),
+                'b': torch.stack([item['data']['b'] for item in batch])
+            },
+            'subject_trial': {
+                'a': [item['subject_trial']['a'] for item in batch],
+                'b': [item['subject_trial']['b'] for item in batch]
+            }
         }
-        # TODO: fix based on the index (can't just be 0)
+        
+        # Handle electrode labels
         if 'electrode_labels' in batch[0]:
-            output['electrode_labels'] = [item['electrode_labels'] for item in batch]
+            output['electrode_labels'] = {
+                'a': batch[0]['electrode_labels']['a'],  # Same across batch
+                'b': batch[0]['electrode_labels']['b']   # Same across batch
+            }
+        
+        # Handle metadata
         if 'metadata' in batch[0]:
-            output['metadata'] = batch[0]['metadata']
+            output['metadata'] = {
+                'a': batch[0]['metadata']['a'],  # Same across batch
+                'b': batch[0]['metadata']['b']   # Same across batch
+            }
 
         # If any preprocess functions are provided, apply them to the batch
         for preprocess_function in self.preprocess_functions:
             output = preprocess_function(output)
             
         # Copy through any other fields that don't need processing
-        # TODO: 0-based indexing here as well
         for key in batch[0].keys():
             if key not in output and key != 'data':
-                output[key] = [item[key] for item in batch]
-                if isinstance(batch[0][key], torch.Tensor): # If the field is a tensor, stack it
-                    output[key] = torch.stack(output[key])
+                if isinstance(batch[0][key], dict):
+                    # Handle nested dictionaries
+                    output[key] = {}
+                    for subkey in batch[0][key].keys():
+                        output[key][subkey] = [item[key][subkey] for item in batch]
+                        if isinstance(batch[0][key][subkey], torch.Tensor):
+                            output[key][subkey] = torch.stack(output[key][subkey])
+                else:
+                    # Handle simple fields
+                    output[key] = [item[key] for item in batch]
+                    if isinstance(batch[0][key], torch.Tensor):
+                        output[key] = torch.stack(output[key])
         
         return output
 
-# based on random subject/trial, make a batch
+# based on random subject/trial pairs where they're watching the same movie, make a batch
 class SubjectBatchPairSampler(torch.utils.data.Sampler):
         def __init__(self, dataset_sizes, batch_size, shuffle=True, drop_last=True):
             self.dataset_sizes = dataset_sizes
@@ -94,13 +167,16 @@ class SubjectBatchPairSampler(torch.utils.data.Sampler):
             all_batches = []
             start_idx = 0
             
+            # size is the number of windows in the subject
             for size in self.dataset_sizes:
                 # Create indices for this subject
                 subject_indices = list(range(start_idx, start_idx + size))
+
                 if self.shuffle:
                     random.shuffle(subject_indices)
                 
                 # Create batches for all subjects
+                # the batches are of the indices of the windows in the subject
                 subject_batches = [subject_indices[i:i + self.batch_size] 
                                 for i in range(0, len(subject_indices), self.batch_size)
                                 if not self.drop_last or i + self.batch_size <= len(subject_indices)]
@@ -138,8 +214,78 @@ def load_subjects(train_subject_trials, eval_subject_trials, dtype, cache=True, 
 
     return all_subjects
 
+# Helper for alignment logic
+# Based on the code in @quickstart.ipynb
+class MovieTimeAlignmentHelper:
+    def __init__(self, subject_a, trial_id_a, subject_b, trial_id_b, movie_times, trigger_times_dir, sampling_rate):
+        self.subject_a = subject_a
+        self.trial_id_a = trial_id_a
+        self.subject_b = subject_b
+        self.trial_id_b = trial_id_b
+        self.movie_times = movie_times
+        self.trigger_times_dir = trigger_times_dir
+        self.sampling_rate = sampling_rate
+        # Precompute indices for both subjects
+        # Extract numeric subject IDs from subject identifiers (e.g., "btbank1" -> 1)
+        sub_id_a = int(subject_a.subject_identifier.replace("btbank", ""))
+        sub_id_b = int(subject_b.subject_identifier.replace("btbank", ""))
+        self.indices_a = self.obtain_neural_data_index(sub_id_a, trial_id_a, movie_times)
+        self.indices_b = self.obtain_neural_data_index(sub_id_b, trial_id_b, movie_times)
+
+    def obtain_neural_data_index(self, sub_id, trial_id, movie_times):
+        # Path to trigger times csv file
+        trigger_times_file = os.path.join(self.trigger_times_dir, f'sub_{sub_id}_trial{int(trial_id):03}_timings.csv')
+        trigs_df = pd.read_csv(trigger_times_file)
+        trig_time_col, trig_idx_col = 'movie_time', 'index'
+        # Vectorized nearest trigger finding
+        start_indices = np.searchsorted(trigs_df[trig_time_col].values, movie_times)
+        start_indices = np.maximum(start_indices, 0)
+        # Vectorized sample index calculation
+        return np.round(
+            trigs_df.loc[start_indices, trig_idx_col].values +
+            (movie_times - trigs_df.loc[start_indices, trig_time_col].values) * self.sampling_rate
+        ).astype(int)
+
+    def get_aligned_indices(self):
+        return self.indices_a, self.indices_b
+
+
 if __name__ == "__main__":
+    # Create two subjects for testing
+    subject_a = BrainTreebankSubject(3, cache=False)
+    subject_b = BrainTreebankSubject(4, cache=False)
+
+    sampling_rate = SAMPLING_RATE  # Use the proper sampling rate
+    window_size = 100
+    
+    # For testing, we need to provide all the paired arguments
+    # Use the proper trigger times directory from the braintreebank data
+    # Calculate how many windows fit in 100 seconds
+    total_time_seconds = 100
+    window_time_seconds = window_size / sampling_rate  # 100/2048 = 0.05 seconds per window
+    n_windows = int(total_time_seconds / window_time_seconds)  # Should be ~2048 windows
+    movie_times = np.linspace(0, total_time_seconds, n_windows)  # Create consecutive windows
+    trigger_times_dir = os.path.join(ROOT_DIR, "subject_timings")  # Use the proper directory
+    
+    dataset = SubjectTrialPairDataset(
+        # window size is 100, number of samples in each window
+        # this is the number of windows in the dataset, whereas 100 is the number
+        # of samples in each window
+        subject_a, 0, window_size, torch.float32, subject_b=subject_b, trial_id_b=0,
+        movie_times=movie_times, trigger_times_dir=trigger_times_dir, sampling_rate=sampling_rate
+    )
+    print("Length of dataset:", len(dataset))
+    print("Shape of dataset[0]['data']['a']:", dataset[0]['data']['a'].shape)
+    print("Shape of dataset[0]['data']['b']:", dataset[0]['data']['b'].shape)
+    print("Subject trial A:", dataset[0]['subject_trial']['a'])
+    print("Subject trial B:", dataset[0]['subject_trial']['b'])
+
     subject = BrainTreebankSubject(3, cache=False)
-    dataset = SubjectTrialPairDataset(subject, 0, 100, torch.float32)
+    dataset = SubjectTrialDataset(subject, 0, 100, torch.float32)
+    print("Length of dataset:", len(dataset))
+    print("Shape of dataset[0]:", dataset[0]['data'].shape)
+
+    subject = BrainTreebankSubject(4, cache=False)
+    dataset = SubjectTrialDataset(subject, 0, 100, torch.float32)
     print("Length of dataset:", len(dataset))
     print("Shape of dataset[0]:", dataset[0]['data'].shape)
