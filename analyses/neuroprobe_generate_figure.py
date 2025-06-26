@@ -136,7 +136,7 @@ def parse_results_hara(model):
             with open(filename, 'r') as json_file:
                 data = json.load(json_file)
             data = data['final_auroc']
-            subject_trial_means.append(value)
+            subject_trial_means.append(data)
         performance_data[task][model['name']] = {
             'mean': np.mean(subject_trial_means),
             'sem': np.std(subject_trial_means) / np.sqrt(len(subject_trial_means))
