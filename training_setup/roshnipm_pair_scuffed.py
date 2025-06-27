@@ -10,6 +10,7 @@ from training_setup.training_config import convert_dtypes
 import numpy as np
 from evaluation.neuroprobe.config import ROOT_DIR, SAMPLING_RATE, BRAINTREEBANK_SUBJECT_TRIAL_MOVIE_NAME_MAPPING
 import pandas as pd
+from training_setup.training_setup import TrainingSetup
 
 # for main function
 from subject.dataset_pair import load_subjects
@@ -25,7 +26,7 @@ from evaluation.neuroprobe.config import NEUROPROBE_FULL_SUBJECT_TRIALS
 #   this file is just an interface for a training setup. You will create a new file 
 #   for your training setup, make a class inherit from TrainingSetup and implement the functions in that file.
 
-class TrainingSetupNewDataloader():
+class roshnipm_pair_scuffed(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         self.config = config
         self.all_subjects = all_subjects
@@ -75,25 +76,25 @@ class TrainingSetupNewDataloader():
         raise NotImplementedError("This function is not (yet) implemented for this training setup.")
 
     def _preprocess_laplacian_rereference(self, batch):
-        # Apply laplacian rereferencing to both 'a' and 'b' data
-        batch_a = {'data': batch['data']['a']}
-        batch_b = {'data': batch['data']['b']}
-        
-        # needed to remove 'data' key first because original function not built for this
+        batch_a = {'data': batch['data']}
         laplacian_rereference_batch(batch_a, remove_non_laplacian=False, inplace=True)
-        laplacian_rereference_batch(batch_b, remove_non_laplacian=False, inplace=True)
+        batch['data'] = batch_a['data']
+
+        if 'data_b' in batch:
+            batch_b = {'data': batch['data_b']}
+            laplacian_rereference_batch(batch_b, remove_non_laplacian=False, inplace=True)
+            batch['data_b'] = batch_b['data']
         
-        batch['data']['a'] = batch_a['data']
-        batch['data']['b'] = batch_b['data']
         return batch
     
     def _preprocess_normalize_voltage(self, batch):
-        # Normalize both 'a' and 'b' data
-        batch['data']['a'] = batch['data']['a'] - torch.mean(batch['data']['a'], dim=[0, 2], keepdim=True)
-        batch['data']['a'] = batch['data']['a'] / (torch.std(batch['data']['a'], dim=[0, 2], keepdim=True) + 1)
+        batch['data'] = batch['data'] - torch.mean(batch['data'], dim=[0, 2], keepdim=True)
+        batch['data'] = batch['data'] / (torch.std(batch['data'], dim=[0, 2], keepdim=True) + 1)
         
-        batch['data']['b'] = batch['data']['b'] - torch.mean(batch['data']['b'], dim=[0, 2], keepdim=True)
-        batch['data']['b'] = batch['data']['b'] / (torch.std(batch['data']['b'], dim=[0, 2], keepdim=True) + 1)
+        if 'data_b' in batch:
+            batch['data_b'] = batch['data_b'] - torch.mean(batch['data_b'], dim=[0, 2], keepdim=True)
+            batch['data_b'] = batch['data_b'] / (torch.std(batch['data_b'], dim=[0, 2], keepdim=True) + 1)
+        
         return batch
     
     # TODO: this part should be changed because now we're comparing brains, not electrodes -- ask Andrii
@@ -101,10 +102,10 @@ class TrainingSetupNewDataloader():
     # or handle electrode alignment differently since we're comparing brain responses
     def _preprocess_subset_electrodes(self, batch, output_selected_idx=False):
         # Find minimum number of electrodes in each batch for both 'a' and 'b'
-        batch_size_a = batch['data']['a'].shape[0]
-        batch_size_b = batch['data']['b'].shape[0]
-        n_electrodes_a = batch['data']['a'].shape[1]
-        n_electrodes_b = batch['data']['b'].shape[1]
+        batch_size_a = batch['data'].shape[0]
+        batch_size_b = batch['data_b'].shape[0]
+        n_electrodes_a = batch['data'].shape[1]
+        n_electrodes_b = batch['data_b'].shape[1]
         
         subset_n_electrodes_a = min(n_electrodes_a, self.config['training']['max_n_electrodes']) if self.config['training']['max_n_electrodes']>0 else n_electrodes_a
         subset_n_electrodes_b = min(n_electrodes_b, self.config['training']['max_n_electrodes']) if self.config['training']['max_n_electrodes']>0 else n_electrodes_b
@@ -113,104 +114,19 @@ class TrainingSetupNewDataloader():
         selected_idx_a = torch.randperm(n_electrodes_a)[:subset_n_electrodes_a]
         selected_idx_b = torch.randperm(n_electrodes_b)[:subset_n_electrodes_b]
         
-        batch['data']['a'] = batch['data']['a'][:, selected_idx_a]
-        batch['data']['b'] = batch['data']['b'][:, selected_idx_b]
+        batch['data'] = batch['data'][:, selected_idx_a]
+        batch['data_b'] = batch['data_b'][:, selected_idx_b]
         
         if 'electrode_labels' in batch:
-            batch['electrode_labels']['a'] = [batch['electrode_labels']['a'][i] for i in selected_idx_a]
-            batch['electrode_labels']['b'] = [batch['electrode_labels']['b'][i] for i in selected_idx_b]
+            batch['electrode_labels'] = [batch['electrode_labels'][i] for i in selected_idx_a]
+        if 'electrode_labels_b' in batch:
+            batch['electrode_labels_b'] = [batch['electrode_labels_b'][i] for i in selected_idx_b]
 
         # returns a tuple
         if output_selected_idx:
             return batch, (selected_idx_a, selected_idx_b)
         else:
             return batch
-
-    def get_preprocess_functions(self, pretraining=False):
-        """
-        Get the preprocess functions for the training setup.
-        Default: only subset electrodes to the maximum number during pretraining (during eval, pass all electrodes).
-
-        This must be an array of functions, each takes just batch as input and returns the (modified) batch. Modifying it in place is fine (but still return the batch).
-        """
-        return [self._preprocess_subset_electrodes] if pretraining else []
-
-    def generate_state_dicts(self):
-        """
-            This function generates the state dicts for the model components. It is used for saving and retrieving the model.
-        """
-        return {"state_dicts": 
-            {
-                model_component_name: model_component.state_dict() 
-                for model_component_name, model_component in self.model_components.items()
-            }
-        }
-    
-    def save_model(self, epoch, eval_results={}, save_in_dir="runs/data/", training_statistics_store=None):
-        model_path = f"{save_in_dir}{self.config['cluster']['dir_name']}/model_epoch_{epoch}.pth"
-        os.makedirs(f"{save_in_dir}{self.config['cluster']['dir_name']}", exist_ok=True)
-        torch.save({
-            'eval_results': eval_results,
-            'epoch': epoch,
-            'state_dicts': self.generate_state_dicts()['state_dicts'],
-            'config': convert_dtypes(self.config),
-        }, model_path)
-        if training_statistics_store is not None:
-            with open(f"{save_in_dir}{self.config['cluster']['dir_name']}/training_statistics.json", 'w') as f:
-                json.dump(training_statistics_store, f)
-    
-    def load_model(self, epoch, load_from_dir="runs/data/"):
-        model_path = f"{load_from_dir}{self.config['cluster']['dir_name']}/model_epoch_{epoch}.pth"
-        state_dicts = torch.load(model_path, map_location=self.config['device'])
-        for model_component_name, model_component in self.model_components.items():
-            if "state_dicts" in state_dicts:
-                model_component.load_state_dict(state_dicts["state_dicts"][model_component_name])
-            else:
-                model_component.load_state_dict(state_dicts[model_component_name+"_state_dict"]) # XXX: this is only here for backwards compatibility, can remove soon
-            model_component.to(self.config['device'], dtype=self.config['model']['dtype'])
-    
-    def model_parameters(self, verbose=False):
-        """
-            This function returns all of the parameters in the model, and stores the number of parameters in the config.
-            It must output a list of all parameters in the model.
-        """
-        if 'n_params' not in self.config['model']: self.config['model']['n_params'] = {}
-        all_params = []
-        for model_component_name, model_component in self.model_components.items():
-            all_params.extend(list(model_component.parameters()))
-            if verbose: log(f"{model_component_name} parameters: {sum(p.numel() for p in model_component.parameters()):,}", priority=0)
-            self.config['model']['n_params'][model_component_name] = sum(p.numel() for p in model_component.parameters())
-        total_n_params = sum(p.numel() for p in all_params)
-        log(f"Total model parameters: {total_n_params:,}", priority=0)
-        self.config['model']['n_params']['total'] = total_n_params
-        return all_params
-    
-    def train_mode(self):
-        for model_component in self.model_components.values():
-            model_component.train()
-    
-    def eval_mode(self):
-        for model_component in self.model_components.values():
-            model_component.eval()
-
-    def calculate_pretrain_test_loss(self):
-        """
-        Calculate the pretraining test loss. This function uses the calculate_pretrain_loss function.
-
-        Returns:
-            dict: Dictionary of losses where keys are loss names and values are loss values.
-                 The final loss is the mean of all losses. Accuracies are exempt and used only for logging.
-        """
-        losses = {}
-        n_batches = 0
-        for batch in self.test_dataloader:
-            loss = self.calculate_pretrain_loss(batch)
-            
-            for key, value in loss.items():
-                if key not in losses: losses[key] = 0
-                losses[key] += value
-            n_batches += 1
-        return {k: v / n_batches for k, v in losses.items()}
 
     def load_dataloaders(self):
         """Load dataloaders for training and test sets."""
