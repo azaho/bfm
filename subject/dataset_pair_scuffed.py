@@ -43,37 +43,63 @@ class SubjectTrialPairDataset(Dataset):
         paired_args = [subject_b, trial_id_b, movie_times, trigger_times_dir, sampling_rate]
 
         # some argument checks to prevent errors
-        if any(arg is not None for arg in paired_args):
-            if not all(arg is not None for arg in paired_args):
-                raise ValueError("All paired mode arguments (subject_b, trial_id_b, movie_times, trigger_times_dir, sampling_rate) must be provided for paired mode.")
-            if self.subject_b is None:
-                raise ValueError("subject_b must not be None.")
-            
-            self.subject_b.load_neural_data(trial_id_b)
-            self.alignment_helper = MovieTimeAlignmentHelper(
-                self.subject, self.trial_id, self.subject_b, self.trial_id_b,
-                self.movie_times, self.trigger_times_dir, self.sampling_rate
-            )
-            self.indices_a, self.indices_b = self.alignment_helper.get_aligned_indices()
-            self.n_windows = len(self.indices_a)
+        if not all(arg is not None for arg in paired_args):
+            raise ValueError("All paired mode arguments (subject_b, trial_id_b, movie_times, trigger_times_dir, sampling_rate) must be provided for paired mode.")
+        if self.subject_b is None:
+            raise ValueError("subject_b must not be None.")
+        
+        self.subject_b.load_neural_data(trial_id_b)
+        
+        # Calculate aligned indices directly
+        sub_id_a = int(self.subject.subject_identifier.replace("btbank", ""))
+        sub_id_b = int(self.subject_b.subject_identifier.replace("btbank", ""))
+        self.indices = self.obtain_neural_data_index(sub_id_a, trial_id, movie_times)
+        self.indices_b = self.obtain_neural_data_index(sub_id_b, trial_id_b, movie_times)
+        self.n_windows = len(self.indices)
+
+    def obtain_neural_data_index(self, sub_id, trial_id, movie_times):
+        # Path to trigger times csv file
+        trigger_times_file = os.path.join(self.trigger_times_dir, f'sub_{sub_id}_trial{int(trial_id):03}_timings.csv')
+        trigs_df = pd.read_csv(trigger_times_file)
+        trig_time_col, trig_idx_col = 'movie_time', 'index'
+        # Vectorized nearest trigger finding
+        start_indices = np.searchsorted(trigs_df[trig_time_col].values, movie_times)
+
+        # Clamp indices to valid range (0 to len-1)
+        start_indices = np.maximum(start_indices, 0)
+        # was throwing an error when the movie time was greater than the last trigger time,
+        # so added another clamping step
+        start_indices = np.minimum(start_indices, len(trigs_df) - 1)
+
+        # Vectorized sample index calculation
+        return np.round(
+            trigs_df.loc[start_indices, trig_idx_col].values +
+            (movie_times - trigs_df.loc[start_indices, trig_time_col].values) * self.sampling_rate
+        ).astype(int)
+
+    def get_aligned_indices(self):
+        return self.indices, self.indices_b
 
     def __len__(self):
         return self.n_windows
 
     def __getitem__(self, idx):
-        if self.subject_b is None:
-            raise ValueError("subject_b cannot be None")
-        idx_a = self.indices_a[idx]
-        idx_b = self.indices_b[idx]
-        window_a = self.subject.get_all_electrode_data(self.trial_id, idx_a, idx_a + self.window_size).to(dtype=self.dtype)
-        window_b = self.subject_b.get_all_electrode_data(self.trial_id_b, idx_b, idx_b + self.window_size).to(dtype=self.dtype)
+        #if self.subject_b is None:
+        #    raise ValueError("subject_b cannot be None")
+        idx_a = self.indices[idx]
+        
+        window = self.subject.get_all_electrode_data(self.trial_id, idx_a, idx_a + self.window_size).to(dtype=self.dtype)
+
+        if self.subject_b is not None:
+            idx_b = self.indices_b[idx]
+            window_b = self.subject_b.get_all_electrode_data(self.trial_id_b, idx_b, idx_b + self.window_size).to(dtype=self.dtype)
+        else:
+            window_b = None
         
         # Create nested structure that matches original format
         output = {
-            'data': window_a,
+            'data': window,
             'data_b': window_b,
-            'subject_trial': [(self.subject.subject_identifier, self.trial_id)],
-            'subject_trial_b': [(self.subject_b.subject_identifier, self.trial_id_b)]
         }
         
         if self.output_metadata:
@@ -86,11 +112,13 @@ class SubjectTrialPairDataset(Dataset):
                 'subject_identifier': self.subject_b.subject_identifier,
                 'trial_id': self.trial_id_b,
                 'sampling_rate': self.subject_b.get_sampling_rate(self.trial_id_b),
-            }
+            } if self.subject_b is not None else None
+            output['subject_trial'] = (self.subject.subject_identifier, self.trial_id)
+            output['subject_trial_b'] = (self.subject_b.subject_identifier, self.trial_id_b) if self.subject_b is not None else None
             
         if self.output_electrode_labels:
             output['electrode_labels'] = self.subject.electrode_labels
-            output['electrode_labels_b'] = self.subject_b.electrode_labels
+            output['electrode_labels_b'] = self.subject_b.electrode_labels if self.subject_b is not None else None
         return output
 
 class PreprocessCollatorPair:
@@ -103,16 +131,16 @@ class PreprocessCollatorPair:
         # Process each item in batch
         output = {
             'data': torch.stack([item['data'] for item in batch]),
-            'data_b': torch.stack([item['data_b'] for item in batch]),
-            'subject_trial': [item['subject_trial'] for item in batch],
-            'subject_trial_b': [item['subject_trial_b'] for item in batch]
+            'data_b': torch.stack([item['data_b'] for item in batch])
         }
         
         # Handle electrode labels
         if 'electrode_labels' in batch[0]:
-            output['electrode_labels'] = batch[0]['electrode_labels']
+            # made a list of a list
+            output['electrode_labels'] = [batch[0]['electrode_labels']]
         if 'electrode_labels_b' in batch[0]:
-            output['electrode_labels_b'] = batch[0]['electrode_labels_b']
+            # made a list of a list
+            output['electrode_labels_b'] = [batch[0]['electrode_labels_b']]
         
         # Handle metadata
         if 'metadata' in batch[0]:
@@ -201,48 +229,6 @@ def load_subjects(train_subject_trials, eval_subject_trials, dtype, cache=True, 
             raise ValueError(f"Unknown subject identifier: {subject_identifier}")
 
     return all_subjects
-
-# Helper for alignment logic
-# Based on the code in @quickstart.ipynb
-class MovieTimeAlignmentHelper:
-    def __init__(self, subject_a, trial_id_a, subject_b, trial_id_b, movie_times, trigger_times_dir, sampling_rate):
-        self.subject_a = subject_a
-        self.trial_id_a = trial_id_a
-        self.subject_b = subject_b
-        self.trial_id_b = trial_id_b
-        self.movie_times = movie_times
-        self.trigger_times_dir = trigger_times_dir
-        self.sampling_rate = sampling_rate
-        # Precompute indices for both subjects
-        # Extract numeric subject IDs from subject identifiers (e.g., "btbank1" -> 1)
-        sub_id_a = int(subject_a.subject_identifier.replace("btbank", ""))
-        sub_id_b = int(subject_b.subject_identifier.replace("btbank", ""))
-        self.indices_a = self.obtain_neural_data_index(sub_id_a, trial_id_a, movie_times)
-        self.indices_b = self.obtain_neural_data_index(sub_id_b, trial_id_b, movie_times)
-
-    def obtain_neural_data_index(self, sub_id, trial_id, movie_times):
-        # Path to trigger times csv file
-        trigger_times_file = os.path.join(self.trigger_times_dir, f'sub_{sub_id}_trial{int(trial_id):03}_timings.csv')
-        trigs_df = pd.read_csv(trigger_times_file)
-        trig_time_col, trig_idx_col = 'movie_time', 'index'
-        # Vectorized nearest trigger finding
-        start_indices = np.searchsorted(trigs_df[trig_time_col].values, movie_times)
-
-        # Clamp indices to valid range (0 to len-1)
-        start_indices = np.maximum(start_indices, 0)
-        # was throwing an error when the movie time was greater than the last trigger time,
-        # so added another clamping step
-        start_indices = np.minimum(start_indices, len(trigs_df) - 1)
-
-        # Vectorized sample index calculation
-        return np.round(
-            trigs_df.loc[start_indices, trig_idx_col].values +
-            (movie_times - trigs_df.loc[start_indices, trig_time_col].values) * self.sampling_rate
-        ).astype(int)
-
-    def get_aligned_indices(self):
-        return self.indices_a, self.indices_b
-
 
 if __name__ == "__main__":
     # Create two subjects for testing

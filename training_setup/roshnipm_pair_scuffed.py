@@ -8,13 +8,12 @@ import os
 import json
 from training_setup.training_config import convert_dtypes
 import numpy as np
-from evaluation.neuroprobe.config import ROOT_DIR, SAMPLING_RATE, BRAINTREEBANK_SUBJECT_TRIAL_MOVIE_NAME_MAPPING
+from evaluation.neuroprobe.config import ROOT_DIR, SAMPLING_RATE, BRAINTREEBANK_SUBJECT_TRIAL_MOVIE_NAME_MAPPING, NEUROPROBE_FULL_SUBJECT_TRIALS
 import pandas as pd
 from training_setup.training_setup import TrainingSetup
 
 # for main function
 from subject.dataset_pair import load_subjects
-from evaluation.neuroprobe.config import NEUROPROBE_FULL_SUBJECT_TRIALS
 
 # TODO: Checking for whether to run eval or not based on presence of 'metadata_a' vs. 'metadata'
 # these lines in pretrain.py need to be handled:

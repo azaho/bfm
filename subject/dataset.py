@@ -35,7 +35,7 @@ class SubjectTrialDataset(Dataset):
         window = self.subject.get_all_electrode_data(self.trial_id, start_idx, end_idx).to(dtype=self.dtype)
 
         output = {'data': window}
-        if self.output_metadata: 
+        if self.output_metadata: # this doesn't make sense, why isn't this around the 'metadata' key as well?
             output['subject_trial'] = (self.subject.subject_identifier, self.trial_id)
         if self.output_electrode_labels:
             output['electrode_labels'] = self.subject.electrode_labels # Also output the electrode label

@@ -3,9 +3,23 @@ from model.preprocessing.laplacian_rereferencing import laplacian_rereference_ba
 from training_setup.training_config import log
 import torch
 from training_setup.training_setup import TrainingSetup
+# from subject.dataset import SubjectTrialDataset, PreprocessCollator, SubjectBatchSampler
+from subject.dataset_pair import load_subjects
+from subject.dataset_pair_scuffed import SubjectTrialPairDataset, PreprocessCollatorPair, SubjectBatchPairSampler, load_subjects
 from model.BFModule import BFModule
 from model.transformer_implementation import Transformer
 import torch.nn as nn
+from torch.utils.data import DataLoader, ConcatDataset
+import os
+
+import numpy as np
+from evaluation.neuroprobe.config import ROOT_DIR, SAMPLING_RATE, BRAINTREEBANK_SUBJECT_TRIAL_MOVIE_NAME_MAPPING
+import pandas as pd
+from training_setup.training_setup import TrainingSetup
+
+# for main function
+from evaluation.neuroprobe.config import NEUROPROBE_FULL_SUBJECT_TRIALS
+
 
 # This file first defines the model components, then the training setup.
 
@@ -375,6 +389,142 @@ class roshnipm_pair(TrainingSetup):
             features = features.reshape(batch['data'].shape[0], -1)
         return features
 
+    # TODO: change to be the contrastive loss in the two subjects
+    # everything should work without this extra function overriding the original training_setup.py load_dataloaders
+    # Task 1: make dataset_pair_scuffed.py work with the original training_setup.py load_dataloaders
+    # Task 2: make the contrastive loss work with the new dataset_pair_scuffed.py
     def load_dataloaders(self):
-        ### TODO
-        pass
+        """
+            This function loads the dataloaders for the training and test sets.
+
+            It must set the self.train_dataloader and self.test_dataloader attributes to the dataloaders (they are used in the pretraining code in pretrain.py)
+        """
+        config = self.config
+
+        # Step 1: Load datasets
+        # Group subjects by movie to create pairs
+        movie_to_subject_trials = {}
+        # for now, bypassing movie list
+        for subject_identifier, trial_id in config['training']['train_subject_trials']:
+            movie_key = f"{subject_identifier}_{trial_id}"
+            if movie_key in BRAINTREEBANK_SUBJECT_TRIAL_MOVIE_NAME_MAPPING:
+                movie_name = BRAINTREEBANK_SUBJECT_TRIAL_MOVIE_NAME_MAPPING[movie_key]
+                # if movie_name not already in movie_to_subject_trials, create an empty list
+                if movie_name not in movie_to_subject_trials:
+                    movie_to_subject_trials[movie_name] = []
+                # add the subject_identifier and trial_id to the list
+                movie_to_subject_trials[movie_name].append((subject_identifier, trial_id))
+
+        print(movie_to_subject_trials)
+        
+        # Create pairs of subjects watching the same movie
+        paired_datasets = []
+        for movie_name, subject_trials in movie_to_subject_trials.items():
+            # if there are at least 2 subjects watching the same movie, create pairs
+            if len(subject_trials) >= 2:
+                # create pairs from all combinations
+                for i in range(len(subject_trials)):
+                    for j in range(i + 1, len(subject_trials)):
+                        subject_a_id, trial_a_id = subject_trials[i]
+                        subject_b_id, trial_b_id = subject_trials[j]
+                        
+                        if self.verbose: 
+                            log(f"Creating paired dataset: {subject_a_id}_{trial_a_id} + {subject_b_id}_{trial_b_id} (movie: {movie_name})", indent=1, priority=1)
+                        
+                        # Calculate window size in samples
+                        window_size = int(config['model']['context_length'] * SAMPLING_RATE)
+                        
+                        # Calculate actual movie duration from trigger times file
+                        # Use the shorter of the two trials to ensure both have data
+                        print(self.all_subjects)
+
+                        subject_a = self.all_subjects[subject_a_id]
+                        subject_b = self.all_subjects[subject_b_id]
+                        
+                        # Get movie duration from trigger times
+                        trigger_times_file_a = os.path.join(ROOT_DIR, "subject_timings", f'sub_{int(subject_a_id.replace("btbank", ""))}_trial{int(trial_a_id):03}_timings.csv')
+                        trigger_times_file_b = os.path.join(ROOT_DIR, "subject_timings", f'sub_{int(subject_b_id.replace("btbank", ""))}_trial{int(trial_b_id):03}_timings.csv')
+                        
+                        trigs_df_a = pd.read_csv(trigger_times_file_a)
+                        trigs_df_b = pd.read_csv(trigger_times_file_b)
+                        
+                        # Get the end time from the last row (should be the 'end' type row)
+                        movie_duration_a = trigs_df_a[trigs_df_a['type'] == 'end']['movie_time'].iloc[-1] if 'end' in trigs_df_a['type'].values else trigs_df_a['movie_time'].max()
+                        movie_duration_b = trigs_df_b[trigs_df_b['type'] == 'end']['movie_time'].iloc[-1] if 'end' in trigs_df_b['type'].values else trigs_df_b['movie_time'].max()
+                        
+                        # Debug: Print movie durations
+                        if self.verbose:
+                            log(f"  Movie durations: {subject_a_id}_{trial_a_id}={movie_duration_a:.2f}s, {subject_b_id}_{trial_b_id}={movie_duration_b:.2f}s", indent=2, priority=1)
+                        
+                        # Use the shorter duration to ensure both subjects have data
+                        total_time_seconds = min(movie_duration_a, movie_duration_b)
+                        
+                        window_time_seconds = window_size / SAMPLING_RATE
+                        n_windows = int(total_time_seconds / window_time_seconds)
+                        
+                        # Create movie times for consecutive windows
+                        movie_times = np.linspace(0, total_time_seconds, n_windows)
+                        
+                        # Create the paired dataset
+                        dataset = SubjectTrialPairDataset(
+                            subject_a, trial_a_id, window_size,
+                            dtype=config['training']['data_dtype'],
+                            output_metadata=True,
+                            output_electrode_labels=True,
+                            subject_b=subject_b, 
+                            trial_id_b=trial_b_id,
+                            movie_times=movie_times,
+                            trigger_times_dir=os.path.join(ROOT_DIR, "subject_timings"),
+                            sampling_rate=SAMPLING_RATE
+                        )
+                        
+                        paired_datasets.append(dataset)
+                        if self.verbose: 
+                            log(f"Finished creating paired dataset: {len(dataset)} windows", indent=1, priority=1)
+
+        if not paired_datasets:
+            raise ValueError("No valid paired datasets found. Make sure subjects in train_subject_trials watch the same movies.")
+
+        # Step 2: Split into train and test
+        train_datasets = []
+        test_datasets = []
+        for dataset in paired_datasets:
+            train_size = int(len(dataset) * (1 - config['training']['p_test']))
+            train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, len(dataset) - train_size])
+            train_datasets.append(train_dataset)
+            test_datasets.append(test_dataset)
+        train_dataset = ConcatDataset(train_datasets)
+        test_dataset = ConcatDataset(test_datasets)
+
+        # Step 3: Create dataloaders with custom sampler
+        num_workers_dataloader_test = max(int(config['cluster']['num_workers_dataloaders'] * 0.15), 1)
+        num_workers_dataloader_train = config['cluster']['num_workers_dataloaders'] - num_workers_dataloader_test
+        train_dataloader = DataLoader(
+            train_dataset,
+            batch_sampler=SubjectBatchPairSampler(
+                [len(ds) for ds in train_datasets],
+                batch_size=config['training']['batch_size'],
+                shuffle=True
+            ),
+            num_workers=num_workers_dataloader_train,
+            pin_memory=True,  # pin memory for faster GPU transfer
+            persistent_workers=True,  # keep worker processes alive between iterations
+            prefetch_factor=config['cluster']['prefetch_factor'],
+            collate_fn=PreprocessCollatorPair(preprocess_functions=self.get_preprocess_functions(pretraining=True))
+        )
+        test_dataloader = DataLoader(
+            test_dataset,
+            batch_sampler=SubjectBatchPairSampler(
+                [len(ds) for ds in test_datasets],
+                batch_size=config['training']['batch_size'],
+                shuffle=False
+            ),
+            num_workers=num_workers_dataloader_test,
+            pin_memory=True,
+            persistent_workers=True,
+            prefetch_factor=config['cluster']['prefetch_factor'],
+            collate_fn=PreprocessCollatorPair(preprocess_functions=self.get_preprocess_functions(pretraining=True))
+        )
+
+        self.train_dataloader = train_dataloader
+        self.test_dataloader = test_dataloader

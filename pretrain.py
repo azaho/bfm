@@ -157,10 +157,7 @@ for epoch_i in range(config['training']['n_epochs']):
     for batch_idx, batch in enumerate(training_setup.train_dataloader):
         # so far just storing training statistics for subject A
         # TODO: change this to store training statistics for both subjects
-        if config['training']['paired_mode']:
-            subject_identifier, trial_id = batch['subject_trial']['a'][0]
-        else:
-            subject_identifier, trial_id = batch['subject_trial'][0]
+        subject_identifier, trial_id = batch['subject_trial'][0]
 
         for optimizer in optimizers: optimizer.zero_grad()
 
