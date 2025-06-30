@@ -193,7 +193,7 @@ class BrainBERT(BFModule):
 
         output['data'] = output['data'].reshape(batch_size * n_electrodes, n_timebins, n_freqs)
         output['data'] = self.transformer(output['data'], stop_at_block=stop_at_block) # shape: (batch_size * n_electrodes, n_timebins, max_frequency_bin)
-        output['data'] = output['data'].reshape(batch_size, n_electrodes, n_timebins, n_freqs)
+        output['data'] = output['data'].reshape(batch_size, n_electrodes, n_timebins, output['data'].shape[-1])
 
         return output
 
