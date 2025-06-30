@@ -31,6 +31,9 @@ from evaluation.neuroprobe.config import NEUROPROBE_FULL_SUBJECT_TRIALS
 # 3. (batch_size, n_timebins, d_model) -> time transformer -> (batch_size, 1, n_timebins, d_model)
 # loss function: compare the output of the time transformer on half of electrodes 
 #   to the output of the electrode transformer on the other half on the next timestep, using a contrastive loss
+#
+# NOTE: For paired training (comparing two brains), may need to reduce batch_size by ~50% 
+# since you're processing twice the data per batch compared to single-brain training.
 ###
 
 
@@ -48,6 +51,7 @@ class SpectrogramPreprocessor(BFModule):
         # Transform FFT output to match expected output dimension
         self.output_transform = nn.Identity() if self.output_dim == -1 else nn.Linear(self.max_frequency_bin, self.output_dim)
     
+    # edited to process both subjects
     def forward(self, batch):
         # batch['data'] is of shape (batch_size, n_electrodes, n_samples)
         # batch['metadata'] is a dictionary containing metadata like the subject identifier and trial id, sampling rate, etc.
@@ -72,10 +76,9 @@ class SpectrogramPreprocessor(BFModule):
                       return_complex=True,
                       normalized=False,
                       center=True)
-        
         # Take magnitude
         x = torch.abs(x)
-        
+
         # Pad or trim to max_frequency dimension
         if x.shape[1] < self.max_frequency_bin:
             x = torch.nn.functional.pad(x, (0, 0, 0, self.max_frequency_bin - x.shape[1]))
@@ -86,7 +89,7 @@ class SpectrogramPreprocessor(BFModule):
         _, n_freqs, n_times = x.shape
         x = x.reshape(batch_size, n_electrodes, n_freqs, n_times)
         x = x.transpose(2, 3) # (batch_size, n_electrodes, n_timebins, n_freqs)
-        
+
         # Z-score normalization
         x = x - x.mean(dim=[0, 2], keepdim=True)
         x = x / (x.std(dim=[0, 2], keepdim=True) + 1e-5)
@@ -288,7 +291,8 @@ class roshnipm_pair(TrainingSetup):
             electrode_indices.append(self.electrode_embeddings.embeddings_map[key])
         batch['electrode_index'] = torch.tensor(electrode_indices, dtype=torch.long).unsqueeze(0).expand(batch['data'].shape[0], -1) # shape: (batch_size, n_electrodes)
         
-        if 'electrode_index_b' in batch:
+        # edited to process both subjects
+        if 'data_b' in batch:
             electrode_indices = []
             subject_identifier = batch['metadata_b']['subject_identifier']
             for electrode_label in batch['electrode_labels_b'][0]:
@@ -321,6 +325,9 @@ class roshnipm_pair(TrainingSetup):
         #   The final loss is the mean of all the losses. Accuracies are exempt and are just used for logging.
         batch['data'] = batch['data'].to(self.model.device, dtype=self.model.dtype, non_blocking=True)
         batch['electrode_index'] = batch['electrode_index'].to(self.model.device, non_blocking=True)
+        if 'data_b' in batch:
+            batch['data_b'] = batch['data_b'].to(self.model.device, dtype=self.model.dtype, non_blocking=True)
+            batch['electrode_index_b'] = batch['electrode_index_b'].to(self.model.device, non_blocking=True)
         
         losses = {}
         config = self.config
@@ -345,16 +352,16 @@ class roshnipm_pair(TrainingSetup):
         # Note that due to the RandomELectrodeCollator in the dataset class, the electrodes are already shuffled and cut to max_n_electrodes
         batch_size, n_electrodes, n_samples = batch['data'].shape
         
-        # Split the batch into two halves, so that we can compute the contrastive loss on the two halves
+        # Split the batch into two halves, so that we can compute the contrastive loss between the two halves
         batch_a = {
-            'data': batch['data'][:, :n_electrodes//2, :],
-            'electrode_index': batch['electrode_index'][:, :n_electrodes//2],
+            'data': batch['data'][:, :, :],
+            'electrode_index': batch['electrode_index'],
             'metadata': batch['metadata'],
         }
         batch_b = {
-            'data': batch['data'][:, n_electrodes//2:, :],
-            'electrode_index': batch['electrode_index'][:, n_electrodes//2:],
-            'metadata': batch['metadata'],
+            'data': batch['data_b'][:, :, :],
+            'electrode_index': batch['electrode_index_b'],
+            'metadata': batch['metadata_b'],
         }
 
         embeddings_a = self.electrode_embeddings(batch_a)
