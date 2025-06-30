@@ -19,6 +19,8 @@ split_type = args.split_type
 metric = 'AUROC' # 'AUROC'
 assert metric == 'AUROC', 'Metric must be AUROC; no other metric is supported'
 
+separate_overall_yscale = True # Whether to have the "Task Mean" figure panel have a 0.5-0.6 ylim instead of 0.5-0.9 (used to better see the difference between models)
+n_fig_legend_cols = 3
 
 ### DEFINE MODELS ###
 
@@ -43,11 +45,11 @@ models = [
         'color_palette': 'plasma',
         'eval_results_path': f'/om2/user/zaho/BrainBERT/eval_results_lite_{split_type}/brainbert_frozen_mean_granularity_{-1}/'
     },
-    {
-        'name': 'PopT (frozen)',
-        'color_palette': 'magma',
-        'eval_results_path': f'/om2/user/zaho/btbench/eval_results_popt/population_frozen_{split_type}_results.csv'
-    },
+    # {
+    #     'name': 'PopT (frozen)',
+    #     'color_palette': 'magma',
+    #     'eval_results_path': f'/om2/user/zaho/btbench/eval_results_popt/population_frozen_{split_type}_results.csv'
+    # },
     {
         'name': 'PopT',
         'color_palette': 'magma',
@@ -131,7 +133,7 @@ def parse_results_hara(model):
             with open(filename, 'r') as json_file:
                 data = json.load(json_file)
             data = data['final_auroc']
-            subject_trial_means.append(value)
+            subject_trial_means.append(data)
         performance_data[task][model['name']] = {
             'mean': np.mean(subject_trial_means),
             'sem': np.std(subject_trial_means) / np.sqrt(len(subject_trial_means))
@@ -210,7 +212,7 @@ for model in models:
 # Create figure with 4x5 grid - reduced size
 n_cols = 5
 n_rows = math.ceil((len(task_name_mapping)+1)/n_cols)
-fig, axs = plt.subplots(n_rows, n_cols, figsize=(8/5*n_cols, 6/4*n_rows+.6))
+fig, axs = plt.subplots(n_rows, n_cols, figsize=(8/5*n_cols, 6/4*n_rows+.6 * len(models) / n_fig_legend_cols/3/2))
 
 # Flatten axs for easier iteration
 axs_flat = axs.flatten()
@@ -231,8 +233,12 @@ first_ax.set_title('Task Mean', fontsize=12, pad=10, bbox=dict(facecolor='white'
 if metric == 'accuracy':
     first_ax.set_ylim(0.2, 1.0)
 else:
-    first_ax.set_ylim(0.48, 0.87)
-    first_ax.set_yticks([0.5, 0.6, 0.7, 0.8])
+    if separate_overall_yscale:
+        first_ax.set_ylim(0.4925, 0.65)
+        first_ax.set_yticks([0.5, 0.6])
+    else:
+        first_ax.set_ylim(0.48, 0.87)
+        first_ax.set_yticks([0.5, 0.6, 0.7, 0.8])
 first_ax.set_xticks([])
 first_ax.set_ylabel(metric)
 first_ax.axhline(y=0.5, color='black', linestyle='--', alpha=0.5)
@@ -288,8 +294,8 @@ handles = [plt.Rectangle((0,0),1,1, color=model['color']) for model in models]
 handles.append(chance_line)
 fig.legend(handles, [model['name'] for model in models] + ["Chance"],
             loc='lower center', 
-            bbox_to_anchor=(0.5, 0.05),
-            ncol=4 if len(models) == 3 else 3,
+            bbox_to_anchor=(0.5, 0.1),
+            ncol=n_fig_legend_cols,
             frameon=False)
 
 # Adjust layout with space at the bottom for legend
