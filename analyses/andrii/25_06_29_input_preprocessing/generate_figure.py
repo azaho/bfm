@@ -271,7 +271,7 @@ fig.legend(handles, [model['name'] for model in models] + ["Chance"],
 plt.tight_layout(rect=[0, 0.2 if len(task_name_mapping)<10 or len(models)>3 else 0.1, 1, 1], w_pad=0.4)
 
 # Save figure
-save_path = f'analyses/andrii/input_preprocessing/figure_neuroprobe_performance.pdf'
+save_path = f'bfm/analyses/andrii/25_06_29_input_preprocessing/figure_neuroprobe_performance.pdf'
 os.makedirs(os.path.dirname(save_path), exist_ok=True)
 plt.savefig(save_path, dpi=300, bbox_inches='tight')
 print(f'Saved figure to {save_path}')
