@@ -57,6 +57,36 @@ class SubjectTrialPairDataset(Dataset):
         self.indices_b = self.obtain_neural_data_index(sub_id_b, trial_id_b, movie_times)
         self.n_windows = len(self.indices)
 
+        # check if the electrodes are in the same regions between the two subjects
+        regions_a = [self.subject.get_electrode_metadata(e)['DesikanKilliany'] for e in self.subject.electrode_labels]
+        regions_b = [self.subject_b.get_electrode_metadata(e)['DesikanKilliany'] for e in self.subject_b.electrode_labels]
+
+        common_regions = set(regions_a) & set(regions_b)
+        if len(common_regions) == 0:
+            raise ValueError("No common regions found between subjects.")
+
+        # for debugging/understanding dataset
+        print(f"regions_a (length: {len(regions_a)}): {regions_a}\n\n")
+        print(f"regions_b (length: {len(regions_b)}): {regions_b}\n\n")
+        print(f"common regions (length: {len(common_regions)}): {common_regions}\n\n")
+
+        # for each region, select all electrodes in that region
+        indices_a = []
+        indices_b = []
+        for region in common_regions:
+            indices_a.extend([i for i, r in enumerate(regions_a) if r == region])
+            indices_b.extend([i for i, r in enumerate(regions_b) if r == region])
+        print(f"indices_a (length: {len(indices_a)}): {indices_a}\n\n")
+        print(f"indices_b (length: {len(indices_b)}): {indices_b}\n\n")
+
+        self.electrode_labels = [self.subject.electrode_labels[i] for i in indices_a]
+        self.electrode_labels_b = [self.subject_b.electrode_labels[i] for i in indices_b]
+        self.electrode_regions = [regions_a[i] for i in indices_a] # same across both subjects so no repeat
+
+        # later pruned in __getitem__
+        self.prune_indices_a = indices_a
+        self.prune_indices_b = indices_b
+
     def obtain_neural_data_index(self, sub_id, trial_id, movie_times):
         # Path to trigger times csv file
         trigger_times_file = os.path.join(self.trigger_times_dir, f'sub_{sub_id}_trial{int(trial_id):03}_timings.csv')
@@ -89,10 +119,14 @@ class SubjectTrialPairDataset(Dataset):
         idx_a = self.indices[idx]
         
         window = self.subject.get_all_electrode_data(self.trial_id, idx_a, idx_a + self.window_size).to(dtype=self.dtype)
+        # prune the electrodes to the common regions
+        window = window[self.prune_indices_a, :]
 
         if self.subject_b is not None:
             idx_b = self.indices_b[idx]
             window_b = self.subject_b.get_all_electrode_data(self.trial_id_b, idx_b, idx_b + self.window_size).to(dtype=self.dtype)
+            # prune the electrodes to the common regions
+            window_b = window_b[self.prune_indices_b, :]
         else:
             window_b = None
         
@@ -117,8 +151,9 @@ class SubjectTrialPairDataset(Dataset):
             output['subject_trial_b'] = (self.subject_b.subject_identifier, self.trial_id_b) if self.subject_b is not None else None
             
         if self.output_electrode_labels:
-            output['electrode_labels'] = self.subject.electrode_labels
-            output['electrode_labels_b'] = self.subject_b.electrode_labels if self.subject_b is not None else None
+            output['electrode_labels'] = self.electrode_labels
+            output['electrode_labels_b'] = self.electrode_labels_b
+            output['electrode_regions'] = self.electrode_regions
         return output
 
 class PreprocessCollatorPair:

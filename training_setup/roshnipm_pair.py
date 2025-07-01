@@ -36,6 +36,8 @@ from evaluation.neuroprobe.config import NEUROPROBE_FULL_SUBJECT_TRIALS
 # since you're processing twice the data per batch compared to single-brain training.
 ###
 
+### Recommended running command: 
+# python pretrain.py --training.setup_name roshnipm_pair --cluster.cache_subjects 0 --cluster.eval_at_beginning 0 --training.train_subject_trials btbank3_0,btbank7_0,btbank10_0 --training.batch_size=50
 
 ### DEFINING THE MODEL COMPONENTS ###
 
@@ -256,7 +258,6 @@ class roshnipm_pair(TrainingSetup):
             batch['data_b'] = batch['data_b'] / (torch.std(batch['data_b'], dim=[0, 2], keepdim=True) + 1)
         
         return batch
-    
 
     def _preprocess_subset_electrodes(self, batch):
         batch_size = batch['data'].shape[0]
@@ -274,9 +275,10 @@ class roshnipm_pair(TrainingSetup):
             batch_size = batch['data_b'].shape[0]
             n_electrodes = batch['data_b'].shape[1]
             subset_n_electrodes = min(n_electrodes, self.config['training']['max_n_electrodes']) if self.config['training']['max_n_electrodes']>0 else n_electrodes
+            # Randomly subselect / permute electrodes
             selected_idx = torch.randperm(n_electrodes)[:subset_n_electrodes]
             batch['data_b'] = batch['data_b'][:, selected_idx]
-            if 'electrode_labels_b' in batch:   
+            if 'electrode_labels_b' in batch:
                 batch['electrode_labels_b'] = [[batch['electrode_labels_b'][0][i] for i in selected_idx]] * batch_size
             if 'electrode_index_b' in batch:
                 batch['electrode_index_b'] = batch['electrode_index_b'][:, selected_idx]
@@ -305,6 +307,7 @@ class roshnipm_pair(TrainingSetup):
     # All of these will be applied to the batch before it is passed to the model
     def get_preprocess_functions(self, pretraining=False):
         preprocess_functions = []
+        
         if self.config['model']['signal_preprocessing']['laplacian_rereference']:
             preprocess_functions.append(self._preprocess_laplacian_rereference)
         if self.config['model']['signal_preprocessing']['normalize_voltage']:

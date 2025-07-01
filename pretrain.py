@@ -97,24 +97,21 @@ for optimizer in optimizers:
 eval_tasks = config['training']['eval_tasks'].split(',')
 
 # Skip evaluation for paired datasets
-if not config['training']['paired_mode']: # if not paired mode, use the old evaluation setup
-    evaluation = FrozenModelEvaluation_SS_SM(
-        # model evaluation function
-        model_preprocess_functions=training_setup.get_preprocess_functions(pretraining=False),
-        model_evaluation_function=training_setup.generate_frozen_features,
-        # benchmark parameters 
-        eval_names=eval_tasks, lite=True,
-        subject_trials=[(all_subjects[subject_identifier], trial_id) for subject_identifier, trial_id in config['training']['eval_subject_trials']],
-        # dataloader parameters
-        device=device,
-        dtype=config['training']['data_dtype'],
-        batch_size=config['training']['batch_size'],
-        num_workers_eval=config['cluster']['num_workers_eval'],
-        prefetch_factor=config['cluster']['prefetch_factor'],
-    )
-else:
-    evaluation = None
-    log("Skipping evaluation setup for paired dataset", priority=0)
+evaluation = FrozenModelEvaluation_SS_SM(
+    # model evaluation function
+    model_preprocess_functions=training_setup.get_preprocess_functions(pretraining=False),
+    model_evaluation_function=training_setup.generate_frozen_features,
+    # benchmark parameters 
+    eval_names=eval_tasks, lite=True,
+    subject_trials=[(all_subjects[subject_identifier], trial_id) for subject_identifier, trial_id in config['training']['eval_subject_trials']],
+    # dataloader parameters
+    device=device,
+    dtype=config['training']['data_dtype'],
+    batch_size=config['training']['batch_size'],
+    num_workers_eval=config['cluster']['num_workers_eval'],
+    prefetch_factor=config['cluster']['prefetch_factor'],
+)
+print(evaluation)
 
 ### WANDB SETUP ###
 
