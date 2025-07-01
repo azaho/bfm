@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 MOVIES_DIR = '/om2/data/public/braintreebank_movies/'
 # movies_list = [os.path.join(MOVIES_DIR, f) for f in os.listdir(MOVIES_DIR) if os.path.isfile(os.path.join(MOVIES_DIR, f))]
 movies_list = [os.path.join(MOVIES_DIR, f) for f in os.listdir(MOVIES_DIR) 
-               if os.path.isfile(os.path.join(MOVIES_DIR, f)) and f >= 'coraline.mp4']
+               if os.path.isfile(os.path.join(MOVIES_DIR, f)) and f >= 'fantastic-mr-fox.mp4']
 
 def extract_frame_at_time(video_path, timestamp):
     """
