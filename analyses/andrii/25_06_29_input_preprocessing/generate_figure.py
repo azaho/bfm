@@ -7,55 +7,20 @@ import glob, math
 import pandas as pd
 import evaluation.neuroprobe.config as neuroprobe_config
 
-### PARSE ARGUMENTS ###
-
-import argparse
-parser = argparse.ArgumentParser(description='Create performance figure for BTBench evaluation')
-parser.add_argument('--split_type', type=str, default='SS_DM', 
-                    help='Split type to use (SS_SM or SS_DM or DS_DM)')
-args = parser.parse_args()
-split_type = args.split_type
+split_type = "SS_DM"
+assert split_type == 'SS_DM', 'Split type must be SS_DM; no other split type is supported'
 
 metric = 'AUROC' # 'AUROC'
 assert metric == 'AUROC', 'Metric must be AUROC; no other metric is supported'
 
 separate_overall_yscale = True # Whether to have the "Task Mean" figure panel have a 0.5-0.6 ylim instead of 0.5-0.9 (used to better see the difference between models)
-n_fig_legend_cols = 3
+n_fig_legend_cols = 2
 
 ### DEFINE MODELS ###
 
-models = [
-    {
-        'name': 'Linear',
-        'color_palette': 'viridis',
-        'eval_results_path': f'/om2/user/zaho/btbench/eval_results_lite_{split_type}/linear_remove_line_noise/'
-    },
-    {
-        'name': 'Linear (STFT)',
-        'color_palette': 'viridis', 
-        'eval_results_path': f'/om2/user/zaho/btbench/eval_results_lite_{split_type}/linear_fft_realimag/'
-    },
-    {
-        'name': 'Linear (spectrogram)',
-        'color_palette': 'viridis',
-        'eval_results_path': f'/om2/user/zaho/btbench/eval_results_lite_{split_type}/linear_fft_abs/'
-    },
-    {
-        'name': 'BrainBERT',
-        'color_palette': 'plasma',
-        'eval_results_path': f'/om2/user/zaho/BrainBERT/eval_results_lite_{split_type}/brainbert_frozen_mean_granularity_{-1}/'
-    },
-    # {
-    #     'name': 'PopT (frozen)',
-    #     'color_palette': 'magma',
-    #     'eval_results_path': f'/om2/user/zaho/btbench/eval_results_popt/population_frozen_{split_type}_results.csv'
-    # },
-    {
-        'name': 'PopT',
-        'color_palette': 'magma',
-        'eval_results_path': f'/om2/user/zaho/btbench/eval_results_popt/popt_{split_type}_results.csv'
-    }
-]
+with open('config.json', 'r') as f:
+    config = json.load(f)
+models = config
 
 ### DEFINE TASK NAME MAPPING ###
 
@@ -133,7 +98,7 @@ def parse_results_hara(model):
             with open(filename, 'r') as json_file:
                 data = json.load(json_file)
             data = data['final_auroc']
-            subject_trial_means.append(data)
+            subject_trial_means.append(value)
         performance_data[task][model['name']] = {
             'mean': np.mean(subject_trial_means),
             'sem': np.std(subject_trial_means) / np.sqrt(len(subject_trial_means))
@@ -205,7 +170,11 @@ for model in models:
     model['color_palette_id'] = color_palette_ids[model['color_palette']]
     color_palette_ids[model['color_palette']] += 1
 for model in models:
-    model['color'] = sns.color_palette(model['color_palette'], color_palette_ids[model['color_palette']])[model['color_palette_id']]
+    default_colors = ['black', 'white', 'red', 'blue', 'green', 'yellow', 'purple', 'orange', 'brown', 'pink']
+    if model['color_palette'] in default_colors or '#' in model['color_palette']:
+        model['color'] = model['color_palette']
+    else:
+        model['color'] = sns.color_palette(model['color_palette'], color_palette_ids[model['color_palette']])[model['color_palette_id']]
 
 ### PLOT STUFF ###
 
@@ -227,17 +196,17 @@ for i, model in enumerate(models):
     first_ax.bar(i * bar_width, perf['mean'], bar_width,
                 yerr=perf['sem'],
                 color=model['color'],
-                capsize=6)
+                capsize=4)
 
 first_ax.set_title('Task Mean', fontsize=12, pad=10, bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.5'))
 if metric == 'accuracy':
     first_ax.set_ylim(0.2, 1.0)
 else:
     if separate_overall_yscale:
-        first_ax.set_ylim(0.4925, 0.65)
+        first_ax.set_ylim(0.495, 0.6)
         first_ax.set_yticks([0.5, 0.6])
     else:
-        first_ax.set_ylim(0.48, 0.87)
+        first_ax.set_ylim(0.48, 0.8)
         first_ax.set_yticks([0.5, 0.6, 0.7, 0.8])
 first_ax.set_xticks([])
 first_ax.set_ylabel(metric)
@@ -259,7 +228,7 @@ for task, chance_level in task_name_mapping.items():
         ax.bar(i * bar_width, perf['mean'], bar_width,
                 yerr=perf['sem'], 
                 color=model['color'],
-                capsize=6)
+                capsize=4)
     
     # Customize plot
     ax.set_title(task_name_mapping[task], fontsize=12, pad=10)
@@ -294,7 +263,7 @@ handles = [plt.Rectangle((0,0),1,1, color=model['color']) for model in models]
 handles.append(chance_line)
 fig.legend(handles, [model['name'] for model in models] + ["Chance"],
             loc='lower center', 
-            bbox_to_anchor=(0.5, 0.1),
+            bbox_to_anchor=(0.5, -0.06),
             ncol=n_fig_legend_cols,
             frameon=False)
 
@@ -302,7 +271,7 @@ fig.legend(handles, [model['name'] for model in models] + ["Chance"],
 plt.tight_layout(rect=[0, 0.2 if len(task_name_mapping)<10 or len(models)>3 else 0.1, 1, 1], w_pad=0.4)
 
 # Save figure
-save_path = f'analyses/figures/neuroprobe_eval_lite_{split_type}.pdf'
+save_path = f'bfm/analyses/andrii/25_06_29_input_preprocessing/figure_neuroprobe_performance.pdf'
 os.makedirs(os.path.dirname(save_path), exist_ok=True)
 plt.savefig(save_path, dpi=300, bbox_inches='tight')
 print(f'Saved figure to {save_path}')

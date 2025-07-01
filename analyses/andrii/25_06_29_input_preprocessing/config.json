@@ -1,0 +1,141 @@
+
+[
+{
+    "hardcoded": true,
+    "name": "Linear (regression from raw voltage)",
+    "color_palette": "#1f1f1f",
+    "eval_results_path": "/om2/user/zaho/btbench/eval_results_lite_SS_DM/linear_remove_line_noise/",
+    "splits_type": "SS_DM"
+},
+{
+    "hardcoded": true,
+    "name": "Inputs to BrainBERT (Wang et al. 2023)",
+    "color_palette": "#5f5f5f",
+    "eval_results_path": "/om2/user/zaho/BrainBERT/eval_results_lite_SS_DM_inputslinear/brainbert_frozen_mean_granularity_-1/",
+    "splits_type": "SS_DM"
+},
+{
+    "name": "Andrii\"s reimplementation in PyTorch",
+    "color_palette": "#5f5f5f",
+    "eval_results_path": "runs/analyses/andrii/25_06_29_input_preprocessing/andrii_implementation_pytorch_SS_DM",
+    "splits_type": "SS_DM",
+
+    "clip_at_frequency": 200,
+    "nperseg": 400,
+    "noverlap": 350,
+    "window": "hann",
+    "laplacian_rereferencing": true,
+    "line_noise_removal": false
+},
+{
+    "name": "→ skip 200Hz low pass filter",
+    "color_palette": "plasma",
+    "eval_results_path": "runs/analyses/andrii/25_06_29_input_preprocessing/skip_lowpass_filter_SS_DM",
+    "splits_type": "SS_DM",
+
+    "clip_at_frequency": -1,
+    "nperseg": 400,
+    "noverlap": 350,
+    "window": "hann",
+    "laplacian_rereferencing": true,
+    "line_noise_removal": false
+},
+{
+    "name": "→ change hann window to boxcar",
+    "color_palette": "plasma",
+    "eval_results_path": "runs/analyses/andrii/25_06_29_input_preprocessing/change_window_to_boxcar_SS_DM",
+    "splits_type": "SS_DM",
+
+    "clip_at_frequency": 200,
+    "nperseg": 400,
+    "noverlap": 350,
+    "window": "boxcar",
+    "laplacian_rereferencing": true,
+    "line_noise_removal": false
+},
+{
+    "name": "→ change to nperseg=256, noverlap=0",
+    "color_palette": "plasma",
+    "eval_results_path": "runs/analyses/andrii/25_06_29_input_preprocessing/change_nperseg_to_256_noverlap_to_0_SS_DM",
+    "splits_type": "SS_DM",
+
+    "clip_at_frequency": 200,
+    "nperseg": 256,
+    "noverlap": 0,
+    "window": "hann",
+    "laplacian_rereferencing": true,
+    "line_noise_removal": false
+},
+{
+    "name": "→ skip rereferencing",
+    "color_palette": "plasma", 
+    "eval_results_path": "runs/analyses/andrii/25_06_29_input_preprocessing/skip_rereferencing_SS_DM",
+    "splits_type": "SS_DM",
+
+    "clip_at_frequency": 200,
+    "nperseg": 400,
+    "noverlap": 350,
+    "window": "hann",
+    "laplacian_rereferencing": false,
+    "line_noise_removal": false
+},
+{
+    "name": "→ skip rereferencing, keep line noise removal",
+    "color_palette": "plasma",
+    "eval_results_path": "runs/analyses/andrii/25_06_29_input_preprocessing/skip_rereferencing_keep_line_noise_removal_SS_DM",
+    "splits_type": "SS_DM",
+
+    "clip_at_frequency": 200,
+    "nperseg": 400,
+    "noverlap": 350,
+    "window": "hann",
+    "laplacian_rereferencing": false,
+    "line_noise_removal": true
+},
+{
+    "name": "→ skip reref. & go to nperseg=256, noverlap=0",
+    "color_palette": "plasma",
+    "eval_results_path": "runs/analyses/andrii/25_06_29_input_preprocessing/change_nperseg_to_256_noverlap_to_0_skip_rereferencing_keep_line_noise_removal_SS_DM",
+    "splits_type": "SS_DM",
+
+    "clip_at_frequency": 200,
+    "nperseg": 256,
+    "noverlap": 0,
+    "window": "hann",
+    "laplacian_rereferencing": false,
+    "line_noise_removal": false
+},
+{
+    "name": "→ skip reref. and frequency capping",
+    "color_palette": "plasma",
+    "eval_results_path": "runs/analyses/andrii/25_06_29_input_preprocessing/skip_rereferencing_skip_frequency_capping_SS_DM",
+    "splits_type": "SS_DM",
+
+    "clip_at_frequency": -1,
+    "nperseg": 400,
+    "noverlap": 350,
+    "window": "hann",
+    "laplacian_rereferencing": false,
+    "line_noise_removal": false
+},
+{
+    "name": "→ skip reref. and change window to boxcar",
+    "color_palette": "plasma",
+    "eval_results_path": "runs/analyses/andrii/25_06_29_input_preprocessing/skip_rereferencing_change_window_to_boxcar_SS_DM",
+    "splits_type": "SS_DM",
+
+    "clip_at_frequency": 200,
+    "nperseg": 400,
+    "noverlap": 350,
+    "window": "boxcar",
+    "laplacian_rereferencing": false,
+    "line_noise_removal": false
+},
+{
+    "hardcoded": true,
+    "name": "Spectrogram (Andrii\"s original implementation)",
+    "color_palette": "plasma",
+    "eval_results_path": "/om2/user/zaho/btbench/eval_results_lite_SS_DM/linear_fft_abs/",
+    "splits_type": "SS_DM"
+}
+]

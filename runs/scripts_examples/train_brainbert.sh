@@ -20,7 +20,7 @@ train_subject_trials="mgh14_0"
 wandb_project="BBBX"
 
 # these parameters are swept over
-random_string_options=("R1")
+random_string_options=("R3")
 dropout_options=(0.0 0.2)
 weight_decay_options=(0.0 0.001)
 n_layers_options=(5 8 10)
