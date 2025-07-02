@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 MOVIES_DIR = '/om2/data/public/braintreebank_movies/'
 # movies_list = [os.path.join(MOVIES_DIR, f) for f in os.listdir(MOVIES_DIR) if os.path.isfile(os.path.join(MOVIES_DIR, f))]
 movies_list = [os.path.join(MOVIES_DIR, f) for f in os.listdir(MOVIES_DIR) 
-               if os.path.isfile(os.path.join(MOVIES_DIR, f)) and f >= 'lotr-2.mp4']
+               if os.path.isfile(os.path.join(MOVIES_DIR, f)) and f >= 'fantastic-mr-fox.mp4']
 
 def extract_frame_at_time(video_path, timestamp):
     """
@@ -69,7 +69,7 @@ device = torch.device('cuda')
 model, preprocess = clip.load("ViT-B/32", device=device)
 
 # Save CLIP features for every frame of every movie in movies_list
-output_dir = Path("/om2/data/public/braintreebank_movies_clip_preprocessed/")
+output_dir = Path("/om2/data/public/braintreebank_movies_clip_preprocessed_2/")
 output_dir.mkdir(exist_ok=True)
 
 for movie_path in tqdm(movies_list, desc="Movies"):
@@ -82,6 +82,7 @@ for movie_path in tqdm(movies_list, desc="Movies"):
     timestamps = []
 
     for frame_idx in tqdm(range(total_frames), desc=f"Frames in {os.path.basename(movie_path)}", leave=False):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
         ret, frame = cap.read()
         if not ret:
             break
