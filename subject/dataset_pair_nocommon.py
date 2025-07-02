@@ -66,9 +66,9 @@ class SubjectTrialPairDataset(Dataset):
             raise ValueError("No common regions found between subjects.")
 
         # for debugging/understanding dataset
-        print(f"regions_a (length: {len(regions_a)}): {regions_a}\n\n")
-        print(f"regions_b (length: {len(regions_b)}): {regions_b}\n\n")
-        print(f"common regions (length: {len(common_regions)}): {common_regions}\n\n")
+        # print(f"regions_a (length: {len(regions_a)}): {regions_a}\n\n")  # Commented out to avoid output flooding
+        # print(f"regions_b (length: {len(regions_b)}): {regions_b}\n\n")  # Commented out to avoid output flooding
+        # print(f"common regions (length: {len(common_regions)}): {common_regions}\n\n")  # Commented out to avoid output flooding
 
         # for each region, select all electrodes in that region
         indices_a = []
@@ -119,14 +119,10 @@ class SubjectTrialPairDataset(Dataset):
         idx_a = self.indices[idx]
         
         window = self.subject.get_all_electrode_data(self.trial_id, idx_a, idx_a + self.window_size).to(dtype=self.dtype)
-        # prune the electrodes to the common regions
-        window = window[self.prune_indices_a, :]
 
         if self.subject_b is not None:
             idx_b = self.indices_b[idx]
             window_b = self.subject_b.get_all_electrode_data(self.trial_id_b, idx_b, idx_b + self.window_size).to(dtype=self.dtype)
-            # prune the electrodes to the common regions
-            window_b = window_b[self.prune_indices_b, :]
         else:
             window_b = None
         

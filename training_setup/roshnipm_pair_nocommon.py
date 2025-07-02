@@ -37,7 +37,7 @@ from evaluation.neuroprobe.config import NEUROPROBE_FULL_SUBJECT_TRIALS
 
 ### Running command for initial benchmarking: 
 # python pretrain.py --training.setup_name andrii0 --cluster.cache_subjects 1 --cluster.eval_at_beginning 1 --training.train_subject_trials btbank3_0,btbank7_0,btbank10_0,btbank4_1,btbank7_1 --training.eval_subject_trials btbank3_1,btbank3_2,btbank4_0,btbank4_2,btbank10_1  --cluster.eval_model_every_n_epochs 5 --training.eval_tasks speech,gpt2_surprisal
-# python pretrain.py --training.setup_name roshnipm_pair --cluster.cache_subjects 1 --cluster.eval_at_beginning 1 --training.train_subject_trials btbank3_0,btbank7_0,btbank10_0,btbank4_1,btbank7_1 --training.eval_subject_trials btbank3_1,btbank3_2,btbank4_0,btbank4_2,btbank10_1 --training.max_n_electrodes 64 --cluster.eval_model_every_n_epochs 5 --training.eval_tasks speech,gpt2_surprisal
+# python pretrain.py --training.setup_name roshnipm_pair_nocommon --cluster.cache_subjects 1 --cluster.eval_at_beginning 1 --training.train_subject_trials btbank3_0,btbank7_0,btbank10_0,btbank4_1,btbank7_1 --training.eval_subject_trials btbank3_1,btbank3_2,btbank4_0,btbank4_2,btbank10_1 --training.max_n_electrodes 64 --cluster.eval_model_every_n_epochs 5 --training.eval_tasks speech,gpt2_surprisal
 
 ### DEFINING THE MODEL COMPONENTS ###
 
@@ -180,7 +180,7 @@ class OriginalModel(BFModule):
 
 ### DEFINING THE TRAINING SETUP ###
 
-class roshnipm_pair(TrainingSetup):
+class roshnipm_pair_nocommon(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)
 

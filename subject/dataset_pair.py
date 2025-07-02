@@ -43,61 +43,117 @@ class SubjectTrialPairDataset(Dataset):
         paired_args = [subject_b, trial_id_b, movie_times, trigger_times_dir, sampling_rate]
 
         # some argument checks to prevent errors
-        if any(arg is not None for arg in paired_args):
-            if not all(arg is not None for arg in paired_args):
-                raise ValueError("All paired mode arguments (subject_b, trial_id_b, movie_times, trigger_times_dir, sampling_rate) must be provided for paired mode.")
-            if self.subject_b is None:
-                raise ValueError("subject_b must not be None.")
-            
-            self.subject_b.load_neural_data(trial_id_b)
-            self.alignment_helper = MovieTimeAlignmentHelper(
-                self.subject, self.trial_id, self.subject_b, self.trial_id_b,
-                self.movie_times, self.trigger_times_dir, self.sampling_rate
-            )
-            self.indices_a, self.indices_b = self.alignment_helper.get_aligned_indices()
-            self.n_windows = len(self.indices_a)
+        if not all(arg is not None for arg in paired_args):
+            raise ValueError("All paired mode arguments (subject_b, trial_id_b, movie_times, trigger_times_dir, sampling_rate) must be provided for paired mode.")
+        if self.subject_b is None:
+            raise ValueError("subject_b must not be None.")
+        
+        self.subject_b.load_neural_data(trial_id_b)
+        
+        # Calculate aligned indices directly
+        sub_id_a = int(self.subject.subject_identifier.replace("btbank", ""))
+        sub_id_b = int(self.subject_b.subject_identifier.replace("btbank", ""))
+        self.indices = self.obtain_neural_data_index(sub_id_a, trial_id, movie_times)
+        self.indices_b = self.obtain_neural_data_index(sub_id_b, trial_id_b, movie_times)
+        self.n_windows = len(self.indices)
+
+        # check if the electrodes are in the same regions between the two subjects
+        regions_a = [self.subject.get_electrode_metadata(e)['DesikanKilliany'] for e in self.subject.electrode_labels]
+        regions_b = [self.subject_b.get_electrode_metadata(e)['DesikanKilliany'] for e in self.subject_b.electrode_labels]
+
+        common_regions = set(regions_a) & set(regions_b)
+        if len(common_regions) == 0:
+            raise ValueError("No common regions found between subjects.")
+
+        # for debugging/understanding dataset
+        # print(f"regions_a (length: {len(regions_a)}): {regions_a}\n\n")  # Commented out to avoid output flooding
+        # print(f"regions_b (length: {len(regions_b)}): {regions_b}\n\n")  # Commented out to avoid output flooding
+        # print(f"common regions (length: {len(common_regions)}): {common_regions}\n\n")  # Commented out to avoid output flooding
+
+        # for each region, select all electrodes in that region
+        indices_a = []
+        indices_b = []
+        for region in common_regions:
+            indices_a.extend([i for i, r in enumerate(regions_a) if r == region])
+            indices_b.extend([i for i, r in enumerate(regions_b) if r == region])
+        print(f"indices_a (length: {len(indices_a)}): {indices_a}\n\n")
+        print(f"indices_b (length: {len(indices_b)}): {indices_b}\n\n")
+
+        self.electrode_labels = [self.subject.electrode_labels[i] for i in indices_a]
+        self.electrode_labels_b = [self.subject_b.electrode_labels[i] for i in indices_b]
+        self.electrode_regions = [regions_a[i] for i in indices_a] # same across both subjects so no repeat
+
+        # later pruned in __getitem__
+        self.prune_indices_a = indices_a
+        self.prune_indices_b = indices_b
+
+    def obtain_neural_data_index(self, sub_id, trial_id, movie_times):
+        # Path to trigger times csv file
+        trigger_times_file = os.path.join(self.trigger_times_dir, f'sub_{sub_id}_trial{int(trial_id):03}_timings.csv')
+        trigs_df = pd.read_csv(trigger_times_file)
+        trig_time_col, trig_idx_col = 'movie_time', 'index'
+        # Vectorized nearest trigger finding
+        start_indices = np.searchsorted(trigs_df[trig_time_col].values, movie_times)
+
+        # Clamp indices to valid range (0 to len-1)
+        start_indices = np.maximum(start_indices, 0)
+        # was throwing an error when the movie time was greater than the last trigger time,
+        # so added another clamping step
+        start_indices = np.minimum(start_indices, len(trigs_df) - 1)
+
+        # Vectorized sample index calculation
+        return np.round(
+            trigs_df.loc[start_indices, trig_idx_col].values +
+            (movie_times - trigs_df.loc[start_indices, trig_time_col].values) * self.sampling_rate
+        ).astype(int)
+
+    def get_aligned_indices(self):
+        return self.indices, self.indices_b
 
     def __len__(self):
         return self.n_windows
 
     def __getitem__(self, idx):
-        if self.subject_b is None:
-            raise ValueError("subject_b cannot be None")
-        idx_a = self.indices_a[idx]
-        idx_b = self.indices_b[idx]
-        window_a = self.subject.get_all_electrode_data(self.trial_id, idx_a, idx_a + self.window_size).to(dtype=self.dtype)
-        window_b = self.subject_b.get_all_electrode_data(self.trial_id_b, idx_b, idx_b + self.window_size).to(dtype=self.dtype)
+        #if self.subject_b is None:
+        #    raise ValueError("subject_b cannot be None")
+        idx_a = self.indices[idx]
+        
+        window = self.subject.get_all_electrode_data(self.trial_id, idx_a, idx_a + self.window_size).to(dtype=self.dtype)
+        # prune the electrodes to the common regions
+        window = window[self.prune_indices_a, :]
+
+        if self.subject_b is not None:
+            idx_b = self.indices_b[idx]
+            window_b = self.subject_b.get_all_electrode_data(self.trial_id_b, idx_b, idx_b + self.window_size).to(dtype=self.dtype)
+            # prune the electrodes to the common regions
+            window_b = window_b[self.prune_indices_b, :]
+        else:
+            window_b = None
         
         # Create nested structure that matches original format
         output = {
-            'data': {
-                'a': window_a,
-                'b': window_b
-            },
-            'subject_trial': {
-                'a': [(self.subject.subject_identifier, self.trial_id)],
-                'b': [(self.subject_b.subject_identifier, self.trial_id_b)]
-            }
+            'data': window,
+            'data_b': window_b,
         }
         
         if self.output_metadata:
             output['metadata'] = {
-                'a': {
-                    'subject_identifier': self.subject.subject_identifier,
-                    'trial_id': self.trial_id,
-                    'sampling_rate': self.subject.get_sampling_rate(self.trial_id),
-                },
-                'b': {
-                    'subject_identifier': self.subject_b.subject_identifier,
-                    'trial_id': self.trial_id_b,
-                    'sampling_rate': self.subject_b.get_sampling_rate(self.trial_id_b),
-                }
+                'subject_identifier': self.subject.subject_identifier,
+                'trial_id': self.trial_id,
+                'sampling_rate': self.subject.get_sampling_rate(self.trial_id),
             }
+            output['metadata_b'] = {
+                'subject_identifier': self.subject_b.subject_identifier,
+                'trial_id': self.trial_id_b,
+                'sampling_rate': self.subject_b.get_sampling_rate(self.trial_id_b),
+            } if self.subject_b is not None else None
+            output['subject_trial'] = (self.subject.subject_identifier, self.trial_id)
+            output['subject_trial_b'] = (self.subject_b.subject_identifier, self.trial_id_b) if self.subject_b is not None else None
+            
         if self.output_electrode_labels:
-            output['electrode_labels'] = {
-                'a': self.subject.electrode_labels,
-                'b': self.subject_b.electrode_labels
-            }
+            output['electrode_labels'] = self.electrode_labels
+            output['electrode_labels_b'] = self.electrode_labels_b
+            output['electrode_regions'] = self.electrode_regions
         return output
 
 class PreprocessCollatorPair:
@@ -109,29 +165,23 @@ class PreprocessCollatorPair:
 
         # Process each item in batch
         output = {
-            'data': {
-                'a': torch.stack([item['data']['a'] for item in batch]),
-                'b': torch.stack([item['data']['b'] for item in batch])
-            },
-            'subject_trial': {
-                'a': [item['subject_trial']['a'] for item in batch],
-                'b': [item['subject_trial']['b'] for item in batch]
-            }
+            'data': torch.stack([item['data'] for item in batch]),
+            'data_b': torch.stack([item['data_b'] for item in batch])
         }
         
         # Handle electrode labels
         if 'electrode_labels' in batch[0]:
-            output['electrode_labels'] = {
-                'a': batch[0]['electrode_labels']['a'],  # Same across batch
-                'b': batch[0]['electrode_labels']['b']   # Same across batch
-            }
+            # made a list of a list
+            output['electrode_labels'] = [batch[0]['electrode_labels']]
+        if 'electrode_labels_b' in batch[0]:
+            # made a list of a list
+            output['electrode_labels_b'] = [batch[0]['electrode_labels_b']]
         
         # Handle metadata
         if 'metadata' in batch[0]:
-            output['metadata'] = {
-                'a': batch[0]['metadata']['a'],  # Same across batch
-                'b': batch[0]['metadata']['b']   # Same across batch
-            }
+            output['metadata'] = batch[0]['metadata']
+        if 'metadata_b' in batch[0]:
+            output['metadata_b'] = batch[0]['metadata_b']
 
         # If any preprocess functions are provided, apply them to the batch
         for preprocess_function in self.preprocess_functions:
@@ -139,7 +189,7 @@ class PreprocessCollatorPair:
             
         # Copy through any other fields that don't need processing
         for key in batch[0].keys():
-            if key not in output and key != 'data':
+            if key not in output and key != 'data' and key != 'data_b':
                 if isinstance(batch[0][key], dict):
                     # Handle nested dictionaries
                     output[key] = {}
@@ -215,48 +265,6 @@ def load_subjects(train_subject_trials, eval_subject_trials, dtype, cache=True, 
 
     return all_subjects
 
-# Helper for alignment logic
-# Based on the code in @quickstart.ipynb
-class MovieTimeAlignmentHelper:
-    def __init__(self, subject_a, trial_id_a, subject_b, trial_id_b, movie_times, trigger_times_dir, sampling_rate):
-        self.subject_a = subject_a
-        self.trial_id_a = trial_id_a
-        self.subject_b = subject_b
-        self.trial_id_b = trial_id_b
-        self.movie_times = movie_times
-        self.trigger_times_dir = trigger_times_dir
-        self.sampling_rate = sampling_rate
-        # Precompute indices for both subjects
-        # Extract numeric subject IDs from subject identifiers (e.g., "btbank1" -> 1)
-        sub_id_a = int(subject_a.subject_identifier.replace("btbank", ""))
-        sub_id_b = int(subject_b.subject_identifier.replace("btbank", ""))
-        self.indices_a = self.obtain_neural_data_index(sub_id_a, trial_id_a, movie_times)
-        self.indices_b = self.obtain_neural_data_index(sub_id_b, trial_id_b, movie_times)
-
-    def obtain_neural_data_index(self, sub_id, trial_id, movie_times):
-        # Path to trigger times csv file
-        trigger_times_file = os.path.join(self.trigger_times_dir, f'sub_{sub_id}_trial{int(trial_id):03}_timings.csv')
-        trigs_df = pd.read_csv(trigger_times_file)
-        trig_time_col, trig_idx_col = 'movie_time', 'index'
-        # Vectorized nearest trigger finding
-        start_indices = np.searchsorted(trigs_df[trig_time_col].values, movie_times)
-
-        # Clamp indices to valid range (0 to len-1)
-        start_indices = np.maximum(start_indices, 0)
-        # was throwing an error when the movie time was greater than the last trigger time,
-        # so added another clamping step
-        start_indices = np.minimum(start_indices, len(trigs_df) - 1)
-
-        # Vectorized sample index calculation
-        return np.round(
-            trigs_df.loc[start_indices, trig_idx_col].values +
-            (movie_times - trigs_df.loc[start_indices, trig_time_col].values) * self.sampling_rate
-        ).astype(int)
-
-    def get_aligned_indices(self):
-        return self.indices_a, self.indices_b
-
-
 if __name__ == "__main__":
     # Create two subjects for testing
     subject_a = BrainTreebankSubject(3, cache=False)
@@ -282,10 +290,10 @@ if __name__ == "__main__":
         movie_times=movie_times, trigger_times_dir=trigger_times_dir, sampling_rate=sampling_rate
     )
     print("Length of dataset:", len(dataset))
-    print("Shape of dataset[0]['data']['a']:", dataset[0]['data']['a'].shape)
-    print("Shape of dataset[0]['data']['b']:", dataset[0]['data']['b'].shape)
-    print("Subject trial A:", dataset[0]['subject_trial']['a'])
-    print("Subject trial B:", dataset[0]['subject_trial']['b'])
+    print("Shape of dataset[0]['data']:", dataset[0]['data'].shape)
+    print("Shape of dataset[0]['data_b']:", dataset[0]['data_b'].shape)
+    print("Subject trial A:", dataset[0]['subject_trial'])
+    print("Subject trial B:", dataset[0]['subject_trial_b'])
 
     subject = BrainTreebankSubject(3, cache=False)
     dataset = SubjectTrialDataset(subject, 0, 100, torch.float32)
