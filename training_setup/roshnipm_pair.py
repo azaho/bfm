@@ -443,9 +443,6 @@ class roshnipm_pair(TrainingSetup):
                         if self.verbose: 
                             log(f"Creating paired dataset: {subject_a_id}_{trial_a_id} + {subject_b_id}_{trial_b_id} (movie: {movie_name})", indent=1, priority=1)
                         
-                        # Calculate window size in samples
-                        window_size = int(config['model']['context_length'] * SAMPLING_RATE)
-                        
                         # Calculate actual movie duration from trigger times file
                         # Use the shorter of the two trials to ensure both have data
                         print(self.all_subjects)
@@ -461,21 +458,26 @@ class roshnipm_pair(TrainingSetup):
                         trigs_df_b = pd.read_csv(trigger_times_file_b)
                         
                         # Get the end time from the last row (should be the 'end' type row)
-                        movie_duration_a = trigs_df_a[trigs_df_a['type'] == 'end']['movie_time'].iloc[-1] if 'end' in trigs_df_a['type'].values else trigs_df_a['movie_time'].max()
-                        movie_duration_b = trigs_df_b[trigs_df_b['type'] == 'end']['movie_time'].iloc[-1] if 'end' in trigs_df_b['type'].values else trigs_df_b['movie_time'].max()
+                        movie_start_a = trigs_df_a[trigs_df_a['type'] == 'beginning']['movie_time'].iloc[-1]
+                        movie_end_a = trigs_df_a[trigs_df_a['type'] == 'end']['movie_time'].iloc[-1]
+                        movie_start_b = trigs_df_b[trigs_df_b['type'] == 'beginning']['movie_time'].iloc[-1]
+                        movie_end_b = trigs_df_b[trigs_df_b['type'] == 'end']['movie_time'].iloc[-1]
+
+                        # Use the shortest duration to ensure both subjects have data
+                        movie_start = max(movie_start_a, movie_start_b)
+                        movie_end = min(movie_end_a, movie_end_b)
+                        total_time_seconds = movie_end - movie_start
                         
                         # Debug: Print movie durations
                         if self.verbose:
-                            log(f"  Movie durations: {subject_a_id}_{trial_a_id}={movie_duration_a:.2f}s, {subject_b_id}_{trial_b_id}={movie_duration_b:.2f}s", indent=2, priority=1)
+                            log(f"  Movie durations: {subject_a_id}_{trial_a_id}={(movie_end_a - movie_start_a):.2f}s, {subject_b_id}_{trial_b_id}={(movie_end_b - movie_start_b):.2f}s", indent=2, priority=1)
                         
-                        # Use the shorter duration to ensure both subjects have data
-                        total_time_seconds = min(movie_duration_a, movie_duration_b)
-                        
-                        window_time_seconds = window_size / SAMPLING_RATE
-                        n_windows = int(total_time_seconds / window_time_seconds)
+                        # Calculate window size in samples
+                        window_size = int(config['model']['context_length'] * SAMPLING_RATE)
+                        n_windows = int(total_time_seconds / config['model']['context_length'])
                         
                         # Create movie times for consecutive windows
-                        movie_times = np.linspace(0, total_time_seconds, n_windows)
+                        movie_times = np.linspace(movie_start, movie_end, n_windows)
                         
                         # Create the paired dataset
                         dataset = SubjectTrialPairDataset(
@@ -492,7 +494,7 @@ class roshnipm_pair(TrainingSetup):
                         
                         paired_datasets.append(dataset)
                         if self.verbose: 
-                            log(f"Finished creating paired dataset: {len(dataset)} windows", indent=1, priority=1)
+                            log(f"Finished creating paired dataset: {len(dataset)} windows ({movie_start}s - {movie_end}s)", indent=1, priority=1)
 
         if not paired_datasets:
             raise ValueError("No valid paired datasets found. Make sure subjects in train_subject_trials watch the same movies.")

@@ -57,35 +57,9 @@ class SubjectTrialPairDataset(Dataset):
         self.indices_b = self.obtain_neural_data_index(sub_id_b, trial_id_b, movie_times)
         self.n_windows = len(self.indices)
 
-        # check if the electrodes are in the same regions between the two subjects
-        regions_a = [self.subject.get_electrode_metadata(e)['DesikanKilliany'] for e in self.subject.electrode_labels]
-        regions_b = [self.subject_b.get_electrode_metadata(e)['DesikanKilliany'] for e in self.subject_b.electrode_labels]
-
-        common_regions = set(regions_a) & set(regions_b)
-        if len(common_regions) == 0:
-            raise ValueError("No common regions found between subjects.")
-
-        # for debugging/understanding dataset
-        # print(f"regions_a (length: {len(regions_a)}): {regions_a}\n\n")  # Commented out to avoid output flooding
-        # print(f"regions_b (length: {len(regions_b)}): {regions_b}\n\n")  # Commented out to avoid output flooding
-        # print(f"common regions (length: {len(common_regions)}): {common_regions}\n\n")  # Commented out to avoid output flooding
-
-        # for each region, select all electrodes in that region
-        indices_a = []
-        indices_b = []
-        for region in common_regions:
-            indices_a.extend([i for i, r in enumerate(regions_a) if r == region])
-            indices_b.extend([i for i, r in enumerate(regions_b) if r == region])
-        print(f"indices_a (length: {len(indices_a)}): {indices_a}\n\n")
-        print(f"indices_b (length: {len(indices_b)}): {indices_b}\n\n")
-
-        self.electrode_labels = [self.subject.electrode_labels[i] for i in indices_a]
-        self.electrode_labels_b = [self.subject_b.electrode_labels[i] for i in indices_b]
-        self.electrode_regions = [regions_a[i] for i in indices_a] # same across both subjects so no repeat
-
-        # later pruned in __getitem__
-        self.prune_indices_a = indices_a
-        self.prune_indices_b = indices_b
+        # Set electrode labels to all available electrodes (no pruning)
+        self.electrode_labels = list(self.subject.electrode_labels)
+        self.electrode_labels_b = list(self.subject_b.electrode_labels)
 
     def obtain_neural_data_index(self, sub_id, trial_id, movie_times):
         # Path to trigger times csv file
@@ -117,7 +91,6 @@ class SubjectTrialPairDataset(Dataset):
         #if self.subject_b is None:
         #    raise ValueError("subject_b cannot be None")
         idx_a = self.indices[idx]
-        
         window = self.subject.get_all_electrode_data(self.trial_id, idx_a, idx_a + self.window_size).to(dtype=self.dtype)
 
         if self.subject_b is not None:
@@ -149,7 +122,6 @@ class SubjectTrialPairDataset(Dataset):
         if self.output_electrode_labels:
             output['electrode_labels'] = self.electrode_labels
             output['electrode_labels_b'] = self.electrode_labels_b
-            output['electrode_regions'] = self.electrode_regions
         return output
 
 class PreprocessCollatorPair:
@@ -198,7 +170,8 @@ class PreprocessCollatorPair:
                     output[key] = [item[key] for item in batch]
                     if isinstance(batch[0][key], torch.Tensor):
                         output[key] = torch.stack(output[key])
-        
+        # Debug print
+        # print(f"DEBUG: Collate electrode_labels={output.get('electrode_labels')} electrode_labels_b={output.get('electrode_labels_b')}")
         return output
 
 # based on random subject/trial pairs where they're watching the same movie, make a batch
