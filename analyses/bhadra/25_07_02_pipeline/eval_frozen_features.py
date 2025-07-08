@@ -11,10 +11,10 @@ import argparse
 parser = argparse.ArgumentParser(description="Evaluate frozen features for one subject-trial-task combo.")
 
 parser.add_argument("--features_root", type=str,
-    default="/om2/user/brupesh/bfm/runs/data/OM_wd0.0_dr0.0_rX1/frozen_features_neuroprobe",
+    default="/runs/data/OM_wd0.0_dr0.0_rX1/frozen_features_neuroprobe",
     help="Path to the root folder containing frozen features.")
 parser.add_argument("--save_dir", type=str,
-    default="/om2/user/brupesh/bfm/runs/data/eval_results_frozen_features",
+    default="/runs/data/eval_results_frozen_features",
     help="Directory where evaluation results will be saved.")
 parser.add_argument("--model_epoch", type=int,
     default=40,

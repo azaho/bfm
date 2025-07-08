@@ -18,10 +18,10 @@ mpl.rcParams.update({
 parser = argparse.ArgumentParser()
 parser.add_argument('--task', type=str, required=True, help='Task name (e.g., global_flow, speech, onset, etc.)')
 parser.add_argument('--epoch', type=int, default=40, help='Model epoch to use (default: 40)')
-parser.add_argument('--base_dir', type=str, default='/om2/user/brupesh/bfm/runs/data/eval_results_frozen_features_',
-                    help='Base directory prefix before split type (default: /om2/user/brupesh/bfm/runs/data/eval_results_frozen_features_)')
-parser.add_argument('--output_dir', type=str, default='/om2/user/brupesh/bfm/analyses/figures/log_reg_matrices/',
-                    help='Output directory to save plots (default: /om2/user/brupesh/bfm/analyses/figures/log_reg_matrices/)')
+parser.add_argument('--base_dir', type=str, default='/runs/data/eval_results_frozen_features_',
+                    help='Base directory prefix before split type (default: /runs/data/eval_results_frozen_features_)')
+parser.add_argument('--output_dir', type=str, default='/analyses/figures/log_reg_matrices/',
+                    help='Output directory to save plots (default: /analyses/figures/log_reg_matrices/)')
 args = parser.parse_args()
 
 task = args.task
