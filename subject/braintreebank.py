@@ -4,11 +4,62 @@ import json
 import pandas as pd
 import numpy as np
 import torch
-from subject.subject import Subject
+from .subject import Subject
 
 BRAINTREEBANK_ROOT_DIR = "/om2/user/zaho/braintreebank/braintreebank" # Root directory for the braintreebank data
 import os; os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE" # Disable file locking for HDF5 files. This is helpful for parallel processing.
 
+# processing for movie info, adapted from BrainBERT 
+# https://github.com/czlwang/BrainBERT/
+def estimate_sample_index(t, near_t, near_trig, sfreq):
+    """
+    Estimates the word onset data sample by interpolation from nearest trigger.
+    
+    Inputs:
+    t - word movie time
+    near_t - nearest trigger movie time
+    near_trig - nearest trigger sample index
+    
+    Output:
+    Estimated word onset sample index
+    """
+    trig_diff = (t - near_t) * sfreq
+    return round(near_trig + trig_diff)
+
+def add_estimated_sample_index(w_df, t_df, sfreq):
+    """
+    Computes and adds data sample indices to annotated movie word onsets by interpolation from nearest trigger.
+    
+    Inputs:
+    w_df - movie annotated words data frame
+    t_df - computer triggers data frame
+    
+    Output:
+    Movie annotated words data frame augmented with estimated data sample indices
+    """
+    tmp_w_df = w_df.copy(deep=True)
+    last_t = t_df.loc[len(t_df) - 1, 'movie_time']
+    
+    for i, t, endt in zip(w_df.index, w_df['start'], w_df['end']):
+        if t > last_t:  # if movie continues after triggers
+            break
+        idx = (abs(t_df['movie_time'] - t)).idxmin()  # find nearest movie time index
+        tmp_w_df.loc[i, :] = w_df.loc[i, :]
+        tmp_w_df.loc[i, 'est_idx'] = estimate_sample_index(
+            t, t_df.loc[idx, 'movie_time'], t_df.loc[idx, 'index'], sfreq
+        )
+
+        end_idx = (abs(t_df['movie_time'] - endt)).idxmin()
+        tmp_w_df.loc[i, 'est_end_idx'] = estimate_sample_index(
+            endt, t_df.loc[end_idx, 'movie_time'], t_df.loc[end_idx, 'index'], sfreq
+        )
+            
+        tmp_w_df.loc[i, 'est_idx'] = tmp_w_df.loc[i, 'est_idx'].astype(int)
+        tmp_w_df.loc[i, 'est_end_idx'] = tmp_w_df.loc[i, 'est_end_idx'].astype(int)
+
+    return tmp_w_df
+
+    
 class BrainTreebankSubject(Subject):
     """ 
         This class is used to load the neural data for a given subject and trial.
@@ -22,11 +73,18 @@ class BrainTreebankSubject(Subject):
         self.dtype = dtype  # Store dtype as instance variable
 
         self.localization_data = self._load_localization_data()
+        def map_localization_labels(label):
+            label = label.replace("Right-", "").replace("rh-", "").replace("ctx-", "")
+            return label
+        self.localization_data['region_label'] = self.localization_data.DesikanKilliany.apply(map_localization_labels)
+        
         self.electrode_labels = self._get_all_electrode_names()
 
         self.h5_neural_data_keys = {e:"electrode_"+str(i) for i, e in enumerate(self.electrode_labels)} # only used for accessing the neural data in h5 files
         self.electrode_labels = self._filter_electrode_labels()
         self.electrode_ids = {e:i for i, e in enumerate(self.electrode_labels)}
+
+        self.electrode_info = self.localization_data[self.localization_data.Electrode.isin(self.electrode_labels)].reset_index()
 
         self.electrode_data_length = {}
         self.neural_data_cache = {} # structure: {trial_id: torch.Tensor of shape (n_electrodes, n_samples)}
@@ -49,6 +107,31 @@ class BrainTreebankSubject(Subject):
     def get_sampling_rate(self, session_id=None):
         return 2048 # in Hz
 
+    def _load_trial_metadata(self, trial_id):
+        # Path to trigger times csv file
+        root_dir = BRAINTREEBANK_ROOT_DIR
+        trigger_times_file = os.path.join(root_dir, f'subject_timings/sub_{self.subject_id}_trial{trial_id:03}_timings.csv')
+        triggers = pd.read_csv(trigger_times_file)
+        
+        # Path format to trial metadata json file
+        metadata_file = os.path.join(root_dir, f'subject_metadata/sub_{self.subject_id}_trial{trial_id:03}_metadata.json')
+        
+        with open(metadata_file, 'r') as f:
+            meta_dict = json.load(f)
+            title = meta_dict['title']
+            print(f'Movie name for the given subject and trial is: {title}')
+            movie_id = meta_dict['filename']
+            
+        # # Path to transcript csv file
+        transcript_file = os.path.join(root_dir, f'transcripts/{movie_id}/features.csv')
+        words_df = pd.read_csv(transcript_file).set_index('Unnamed: 0').dropna()
+        sfreq = self.get_sampling_rate()
+        words_df = add_estimated_sample_index(words_df, triggers, sfreq)  # align all words to data samples
+        words_df = words_df.dropna().reset_index(drop=True)  # no need to keep words with no start time
+        
+        return meta_dict, words_df, triggers
+
+            
     def _load_localization_data(self):
         """Load localization data for this electrode's subject from depth-wm.csv"""
         loc_file = os.path.join(BRAINTREEBANK_ROOT_DIR, f'localization/sub_{self.subject_id}/depth-wm.csv')
