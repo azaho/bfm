@@ -16,3 +16,6 @@ runs/analyses
 
 # Not committing any personal working directories
 _*/
+
+# MkDocs build output
+site/
