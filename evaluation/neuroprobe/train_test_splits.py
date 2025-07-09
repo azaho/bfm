@@ -3,6 +3,7 @@ from torch.utils.data import Dataset, DataLoader, Subset, ConcatDataset
 from sklearn.model_selection import KFold
 import numpy as np
 
+from .braintreebank_subject import BrainTreebankSubject
 from .datasets import BrainTreebankSubjectTrialBenchmarkDataset
 from .config import *
 
@@ -13,7 +14,7 @@ def generate_splits_DS_DM(all_subjects, test_subject_id, test_trial_id, eval_nam
                           output_indices=False, 
                           start_neural_data_before_word_onset=int(START_NEURAL_DATA_BEFORE_WORD_ONSET * SAMPLING_RATE), 
                           end_neural_data_after_word_onset=int(END_NEURAL_DATA_AFTER_WORD_ONSET * SAMPLING_RATE),
-                          lite=False, allow_partial_cache=True):
+                          lite=False, nano=False, allow_partial_cache=True):
     """Generate train/test splits for Different Subject Different Movie (DS-DM) evaluation.
     
     This function creates train/test splits by using one subject and movie as the test set,
@@ -27,6 +28,7 @@ def generate_splits_DS_DM(all_subjects, test_subject_id, test_trial_id, eval_nam
         eval_name (str): Name of the evaluation metric to use (e.g. "rms")
         dtype (torch.dtype, optional): Data type for tensors. Defaults to torch.float32.
         lite (bool): if True, the eval is Neuroprobe-Lite (the default), otherwise it is Neuroprobe-Full.
+        nano (bool): if True, the eval is Neuroprobe-Nano (the default), otherwise it is Neuroprobe-Lite (if lite is True)
         allow_partial_cache (bool): if True, the dataset will allow partial caching of the neural data. Defaults to True.
 
         # Dataset parameters
@@ -43,12 +45,12 @@ def generate_splits_DS_DM(all_subjects, test_subject_id, test_trial_id, eval_nam
 
     test_dataset = BrainTreebankSubjectTrialBenchmarkDataset(all_subjects[test_subject_id], test_trial_id, dtype=dtype, eval_name=eval_name, 
                                                              output_indices=output_indices, start_neural_data_before_word_onset=start_neural_data_before_word_onset, end_neural_data_after_word_onset=end_neural_data_after_word_onset,
-                                                             lite=lite, allow_partial_cache=allow_partial_cache)
+                                                             lite=lite, nano=nano, allow_partial_cache=allow_partial_cache)
     
     train_subject_id, train_trial_id = DS_DM_TRAIN_SUBJECT_ID, DS_DM_TRAIN_TRIAL_ID
     train_dataset = BrainTreebankSubjectTrialBenchmarkDataset(all_subjects[train_subject_id], train_trial_id, dtype=dtype, eval_name=eval_name, 
                                                                 output_indices=output_indices, start_neural_data_before_word_onset=start_neural_data_before_word_onset, end_neural_data_after_word_onset=end_neural_data_after_word_onset,
-                                                                lite=lite, allow_partial_cache=allow_partial_cache)
+                                                                lite=lite, nano=nano, allow_partial_cache=allow_partial_cache)
 
     return train_dataset, test_dataset
 
@@ -65,6 +67,8 @@ def generate_splits_DS_SM(all_subjects, test_subject_id, test_trial_id, eval_nam
     This function creates train/test splits by using one subject and movie as the test set,
     and using the same movie from all other subjects as the training set. This evaluates
     generalization across subjects while controlling for the movie content.
+
+    NOTE: Neuroprobe-Nano does not support DS-SM because it does not contain splits where subject is different but the movie is the same.
 
     Args:
         all_subjects (dict): Dictionary mapping subject IDs to Subject objects
@@ -87,7 +91,10 @@ def generate_splits_DS_SM(all_subjects, test_subject_id, test_trial_id, eval_nam
     """
     test_movie_name = BRAINTREEBANK_SUBJECT_TRIAL_MOVIE_NAME_MAPPING[f"btbank{test_subject_id}_{test_trial_id}"]
     other_subject_trials_list = []
-    for subject_id, trial_id in NEUROPROBE_LITE_SUBJECT_TRIALS if lite else NEUROPROBE_FULL_SUBJECT_TRIALS:
+
+    subject_trial_array = NEUROPROBE_LITE_SUBJECT_TRIALS if lite else NEUROPROBE_FULL_SUBJECT_TRIALS
+    
+    for subject_id, trial_id in subject_trial_array:
         if BRAINTREEBANK_SUBJECT_TRIAL_MOVIE_NAME_MAPPING[f"btbank{subject_id}_{trial_id}"] == test_movie_name and subject_id != test_subject_id:
             other_subject_trials_list.append((subject_id, trial_id))
 
@@ -118,6 +125,8 @@ def generate_splits_SS_DM(test_subject, test_trial_id, eval_name, dtype=torch.fl
     movies from the same subject as the training set (trimmed at max_other_trials movies). 
     Unlike SS-SM, this does not perform k-fold cross validation since movies are already naturally separated.
 
+    NOTE: Neuroprobe-Nano does not support SS-DM because it only contains one movie per subject.
+
     Args:
         test_subject (Subject): Subject object containing brain recording data
         test_trial_id (int): ID of the trial/movie to use as test set
@@ -138,12 +147,11 @@ def generate_splits_SS_DM(test_subject, test_trial_id, eval_name, dtype=torch.fl
             - test_dataset (Dataset): Dataset for the test trial
     """
     assert len(NEUROPROBE_LONGEST_TRIALS_FOR_SUBJECT[test_subject.subject_id]) > 1, f"Training subject must have at least two trials. But subject {test_subject.subject_id} has only {len(NEUROPROBE_LONGEST_TRIALS_FOR_SUBJECT[test_subject.subject_id])} trials."
-
     
     test_dataset = BrainTreebankSubjectTrialBenchmarkDataset(test_subject, test_trial_id, dtype=dtype, eval_name=eval_name, 
                                                              output_indices=output_indices, start_neural_data_before_word_onset=start_neural_data_before_word_onset, end_neural_data_after_word_onset=end_neural_data_after_word_onset,
                                                              lite=lite, allow_partial_cache=allow_partial_cache)
-    
+        
     if not lite:
         train_trial_id = NEUROPROBE_LONGEST_TRIALS_FOR_SUBJECT[test_subject.subject_id][0]
         if train_trial_id == test_trial_id:
@@ -164,7 +172,7 @@ def generate_splits_SS_SM(test_subject, test_trial_id, eval_name, k_folds=5, dty
                           output_indices=False, 
                           start_neural_data_before_word_onset=int(START_NEURAL_DATA_BEFORE_WORD_ONSET * SAMPLING_RATE), 
                           end_neural_data_after_word_onset=int(END_NEURAL_DATA_AFTER_WORD_ONSET * SAMPLING_RATE),
-                          lite=False, allow_partial_cache=True):
+                          lite=False, nano=False, allow_partial_cache=True):
     """Generate train/test splits for Single Subject Single Movie (SS-SM) evaluation.
     
     This function performs k-fold cross validation on data from a single subject and movie.
@@ -180,6 +188,7 @@ def generate_splits_SS_SM(test_subject, test_trial_id, eval_name, k_folds=5, dty
         k_folds (int, optional): Number of folds for cross validation. Defaults to 5.
         dtype (torch.dtype, optional): Data type for tensors. Defaults to torch.float32.
         lite (bool): if True, the eval is Neuroprobe-Lite (the default), otherwise it is Neuroprobe-Full.
+        nano (bool): if True, the eval is Neuroprobe-Nano (the default), otherwise it is Neuroprobe-Lite (if lite is True)
         allow_partial_cache (bool): if True, the dataset will allow partial caching of the neural data. Defaults to True.
 
         # Dataset parameters
@@ -198,7 +207,7 @@ def generate_splits_SS_SM(test_subject, test_trial_id, eval_name, k_folds=5, dty
 
     dataset = BrainTreebankSubjectTrialBenchmarkDataset(test_subject, test_trial_id, dtype=dtype, eval_name=eval_name, 
                                                         output_indices=output_indices, start_neural_data_before_word_onset=start_neural_data_before_word_onset, end_neural_data_after_word_onset=end_neural_data_after_word_onset,
-                                                        lite=lite, allow_partial_cache=allow_partial_cache)
+                                                        lite=lite, nano=nano, allow_partial_cache=allow_partial_cache)
     kf = KFold(n_splits=k_folds, shuffle=False)  # shuffle=False is important to avoid correlated train/test splits!
     
     for fold, (train_idx, test_idx) in enumerate(kf.split(dataset)):
