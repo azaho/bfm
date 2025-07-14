@@ -23,13 +23,10 @@ import torch.nn as nn
 ### DEFINING THE MODEL COMPONENTS ###
 
 class SpectrogramPreprocessor(BFModule):
-    def __init__(self, output_dim=-1, max_frequency=200):
+    def __init__(self, spectrogram_parameters, output_dim=-1):
         super(SpectrogramPreprocessor, self).__init__()
-        self.max_frequency = max_frequency
         self.output_dim = output_dim
-
-        assert self.max_frequency == 200, "Max frequency must be 200"
-        self.max_frequency_bin = 40 # XXX hardcoded max frequency bin
+        self.spectrogram_parameters = spectrogram_parameters
         
         # Transform FFT output to match expected output dimension
         self.output_transform = nn.Identity() if self.output_dim == -1 else nn.Linear(self.max_frequency_bin, self.output_dim)
@@ -44,10 +41,14 @@ class SpectrogramPreprocessor(BFModule):
         x = x.to(dtype=torch.float32)  # Convert to float32 for STFT
         
         # STFT parameters
-        nperseg = 400
-        noverlap = 350
-        window = torch.hann_window(nperseg, device=x.device)
+        nperseg = self.spectrogram_parameters['nperseg']
+        noverlap = int(self.spectrogram_parameters['poverlap'] * nperseg)
         hop_length = nperseg - noverlap
+        
+        window = {
+            'hann': torch.hann_window,
+            'boxcar': torch.ones,
+        }[self.spectrogram_parameters['window']](nperseg, device=x.device)
         
         # Compute STFT
         x = torch.stft(x,
@@ -61,12 +62,11 @@ class SpectrogramPreprocessor(BFModule):
         
         # Take magnitude
         x = torch.abs(x)
-        
-        # Pad or trim to max_frequency dimension
-        if x.shape[1] < self.max_frequency_bin:
-            x = torch.nn.functional.pad(x, (0, 0, 0, self.max_frequency_bin - x.shape[1]))
-        else:
-            x = x[:, :self.max_frequency_bin]
+
+        # Trim to max frequency
+        sampling_rate = batch['metadata']['sampling_rate']
+        freqs = torch.fft.rfftfreq(nperseg, d=1.0/sampling_rate)
+        x = x[:, :freqs <= self.spectrogram_parameters['max_frequency'], :]
             
         # Reshape back
         _, n_freqs, n_times = x.shape
@@ -81,6 +81,7 @@ class SpectrogramPreprocessor(BFModule):
         x = self.output_transform(x)  # shape: (batch_size, n_electrodes, n_timebins, output_dim)
         
         return x.to(dtype=batch['data'].dtype)
+    
 
 class ElectrodeTransformer(BFModule):
     def __init__(self, d_model, n_layers=5, n_heads=12, dropout=0.1):
