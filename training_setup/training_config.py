@@ -39,6 +39,7 @@ CONFIG_SCHEMA = {
                 'nperseg': ParamConfig(512, int, 'Number of samples per segment for spectrogram'),
                 'poverlap': ParamConfig(0.75, float, 'Proportion of overlap between segments for spectrogram'),
                 'window': ParamConfig('hann', str, 'Window function for spectrogram'), # Allowed values: 'hann', 'boxcar'
+            },
 
             'time_bin_size': ParamConfig(0.125, float, 'Time bin size in seconds'), # Only relevant for spectrogram = 0, when we are binning raw voltage
         },
