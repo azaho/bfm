@@ -28,6 +28,14 @@ class SpectrogramPreprocessor(BFModule):
         self.output_dim = output_dim
         self.spectrogram_parameters = spectrogram_parameters
         
+        # from https://docs.pytorch.org/docs/stable/generated/torch.fft.rfftfreq.html
+        # if n is nperseg, and d is 1/sampling_rate, then f = torch.arange((n + 1) // 2) / (d * n)
+        # note: nperseg is always going to be even, so it simplifies to torch.arange(n/2) / n * sampling_rate
+        # note: n = sampling_rate * tperseg, so it simplifies to torch.arange(sampling_rate * tperseg / 2) / tperseg
+        #    which is a list that goes from 0 to sampling_rate / 2 in increments of sampling_rate / nperseg = 1 / tperseg
+        # so max frequency bin is max_frequency * tperseg + 1 (adding one to make the endpoint inclusive)
+        self.max_frequency_bin = round(self.spectrogram_parameters['max_frequency'] * self.spectrogram_parameters['tperseg'] + 1)
+
         # Transform FFT output to match expected output dimension
         self.output_transform = nn.Identity() if self.output_dim == -1 else nn.Linear(self.max_frequency_bin, self.output_dim)
     
@@ -41,8 +49,9 @@ class SpectrogramPreprocessor(BFModule):
         x = x.to(dtype=torch.float32)  # Convert to float32 for STFT
         
         # STFT parameters
-        nperseg = self.spectrogram_parameters['nperseg']
-        noverlap = int(self.spectrogram_parameters['poverlap'] * nperseg)
+        sampling_rate = batch['metadata']['sampling_rate']
+        nperseg = round(self.spectrogram_parameters['tperseg'] * sampling_rate)
+        noverlap = round(self.spectrogram_parameters['poverlap'] * nperseg)
         hop_length = nperseg - noverlap
         
         window = {
@@ -63,10 +72,8 @@ class SpectrogramPreprocessor(BFModule):
         # Take magnitude
         x = torch.abs(x)
 
-        # Trim to max frequency
-        sampling_rate = batch['metadata']['sampling_rate']
-        freqs = torch.fft.rfftfreq(nperseg, d=1.0/sampling_rate)
-        x = x[:, :freqs <= self.spectrogram_parameters['max_frequency'], :]
+        # Trim to max frequency (using a pre-calculated max frequency bin)
+        x = x[:, :self.max_frequency_bin, :]
             
         # Reshape back
         _, n_freqs, n_times = x.shape
