@@ -133,13 +133,13 @@ class TimeTransformer(BFModule):
         return electrode_transformed_data
 
 class OriginalModel(BFModule):
-    def __init__(self, d_model, n_layers_electrode=5, n_layers_time=5, n_heads=12, dropout=0.1):
+    def __init__(self, d_model, spectrogram_parameters, n_layers_electrode=5, n_layers_time=5, n_heads=12, dropout=0.1):
         super().__init__()
         self.d_model = d_model
         self.n_layers_electrode = n_layers_electrode
         self.n_layers_time = n_layers_time
         
-        self.fft_preprocessor = SpectrogramPreprocessor(output_dim=d_model, max_frequency=200)
+        self.fft_preprocessor = SpectrogramPreprocessor(spectrogram_parameters, output_dim=d_model)
         self.electrode_transformer = ElectrodeTransformer(d_model, n_layers_electrode, n_heads, dropout)
         self.time_transformer = TimeTransformer(d_model, n_layers_time, n_heads, dropout)
 
@@ -180,6 +180,7 @@ class andrii0(TrainingSetup):
         ### LOAD MODEL ###
 
         self.model = OriginalModel(
+            spectrogram_parameters=config['model']['signal_preprocessing']['spectrogram_parameters'],
             d_model=config['model']['transformer']['d_model'],
             n_layers_electrode=config['model']['transformer']['n_layers'],
             n_layers_time=config['model']['transformer']['n_layers'],
