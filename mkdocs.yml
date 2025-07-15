@@ -1,13 +1,17 @@
 site_name: Brain Foundation Models
-site_description: Codebase for the Brain Foundation Models (BFM) project.
+site_description: Codebase Documentation for the Brain Foundation Models (BFM) project.
 site_author: Andrii Zahorodnii
 repo_url: https://github.com/azaho/bfm
 
 nav:
   - Home: index.md
   - Reference:
-      - Overview: docs/overview.md
-
+      - Overview: reference/index.md
+  - Getting Started:
+      - Overview: getting-started/index.md
+      - Installation: getting-started/installation.md
+      - Preliminary Background: getting-started/preliminary-background.md
+      - Onboarding Task: getting-started/onboarding-task.md
 theme:
   name: material
   icon:
@@ -45,3 +49,4 @@ extra_css:
 markdown_extensions:
   - pymdownx.superfences
   - pymdownx.highlight
+  - admonition

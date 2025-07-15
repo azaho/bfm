@@ -1,5 +1,4 @@
 ---
-title: Home
 summary: Landing page for the Brain Foundation Models documentation.
 authors:
     - Andrii Zahorodnii
