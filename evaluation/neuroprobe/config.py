@@ -36,6 +36,7 @@ assert NEURAL_DATA_NONVERBAL_WINDOW_OVERLAP >= 0 and NEURAL_DATA_NONVERBAL_WINDO
 DS_DM_TRAIN_SUBJECT_ID, DS_DM_TRAIN_TRIAL_ID = 2, 4
 # Define the maximum number of samples to use for the lite datasetq
 NEUROPROBE_LITE_MAX_SAMPLES = 3500
+NEUROPROBE_LITE_N_FOLDS = 2
 NEUROPROBE_LITE_SUBJECT_TRIALS = [
     (1, 1), (1, 2), 
     (2, 0), (2, 4),
@@ -46,6 +47,7 @@ NEUROPROBE_LITE_SUBJECT_TRIALS = [
 ]
 
 NEUROPROBE_NANO_MAX_SAMPLES = 1000
+NEUROPROBE_NANO_N_FOLDS = 2
 NEUROPROBE_NANO_SUBJECT_TRIALS = [
     (1, 1), 
     (2, 4),
@@ -76,6 +78,27 @@ NEUROPROBE_TASKS = [
     "word_part_speech",
     "speaker"
 ]
+NEUROPROBE_TASKS_MAPPING = {
+    'onset': 'Sentence Onset',
+    'speech': 'Speech',
+    'volume': 'Volume', 
+    'pitch': 'Voice Pitch',
+    'speaker': 'Speaker Identity',
+    'delta_volume': 'Delta Volume',
+    'delta_pitch': 'Delta Pitch',
+    'gpt2_surprisal': 'GPT-2 Surprisal',
+    'word_length': 'Word Length',
+    'word_gap': 'Inter-word Gap',
+    'word_index': 'Word Position',
+    'word_head_pos': 'Head Word Position',
+    'word_part_speech': 'Part of Speech',
+    'frame_brightness': 'Frame Brightness',
+    'global_flow': 'Global Optical Flow',
+    'local_flow': 'Local Optical Flow',
+    'global_flow_angle': 'Global Flow Angle',
+    'local_flow_angle': 'Local Flow Angle',
+    'face_num': 'Number of Faces',
+}
 
 # Only used for the "Full" Neuroprobe dataset
 NEUROPROBE_FULL_SUBJECT_TRIALS = [

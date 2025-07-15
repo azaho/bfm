@@ -9,12 +9,12 @@ from .config import *
 
 
 def generate_splits_DS_DM(all_subjects, test_subject_id, test_trial_id, eval_name, dtype=torch.float32,
+                          lite=True, nano=False, allow_partial_cache=True,
                           
                           # Dataset parameters
                           output_indices=False, 
                           start_neural_data_before_word_onset=int(START_NEURAL_DATA_BEFORE_WORD_ONSET * SAMPLING_RATE), 
-                          end_neural_data_after_word_onset=int(END_NEURAL_DATA_AFTER_WORD_ONSET * SAMPLING_RATE),
-                          lite=False, nano=False, allow_partial_cache=True):
+                          end_neural_data_after_word_onset=int(END_NEURAL_DATA_AFTER_WORD_ONSET * SAMPLING_RATE)):
     """Generate train/test splits for Different Subject Different Movie (DS-DM) evaluation.
     
     This function creates train/test splits by using one subject and movie as the test set,
@@ -56,12 +56,12 @@ def generate_splits_DS_DM(all_subjects, test_subject_id, test_trial_id, eval_nam
 
 
 def generate_splits_DS_SM(all_subjects, test_subject_id, test_trial_id, eval_name, dtype=torch.float32,
+                          lite=True, allow_partial_cache=True,
                           
                           # Dataset parameters
                           output_indices=False, 
                           start_neural_data_before_word_onset=int(START_NEURAL_DATA_BEFORE_WORD_ONSET * SAMPLING_RATE), 
-                          end_neural_data_after_word_onset=END_NEURAL_DATA_AFTER_WORD_ONSET,
-                          lite=False, allow_partial_cache=True):
+                          end_neural_data_after_word_onset=END_NEURAL_DATA_AFTER_WORD_ONSET):
     """Generate train/test splits for Different Subject Same Movie (DS-SM) evaluation.
     
     This function creates train/test splits by using one subject and movie as the test set,
@@ -112,13 +112,13 @@ def generate_splits_DS_SM(all_subjects, test_subject_id, test_trial_id, eval_nam
     return train_datasets, test_dataset
     
 
-def generate_splits_SS_DM(test_subject, test_trial_id, eval_name, dtype=torch.float32, max_other_trials=3,
+def generate_splits_SS_DM(test_subject, test_trial_id, eval_name, dtype=torch.float32,
+                          lite=True, allow_partial_cache=True,
                           
                           # Dataset parameters
                           output_indices=False, 
                           start_neural_data_before_word_onset=int(START_NEURAL_DATA_BEFORE_WORD_ONSET * SAMPLING_RATE), 
-                          end_neural_data_after_word_onset=int(END_NEURAL_DATA_AFTER_WORD_ONSET * SAMPLING_RATE),
-                          lite=False, allow_partial_cache=True):
+                          end_neural_data_after_word_onset=int(END_NEURAL_DATA_AFTER_WORD_ONSET * SAMPLING_RATE)):
     """Generate train/test splits for Single Subject Different Movies (SS-DM) evaluation.
     
     This function creates train/test splits by using one movie as the test set and all other
@@ -132,7 +132,6 @@ def generate_splits_SS_DM(test_subject, test_trial_id, eval_name, dtype=torch.fl
         test_trial_id (int): ID of the trial/movie to use as test set
         eval_name (str): Name of the evaluation metric to use (e.g. "rms")
         dtype (torch.dtype, optional): Data type for tensors. Defaults to torch.float32.
-        max_other_trials (int, optional): Maximum number of other trials to include in the training set. Defaults to 2.
         lite (bool): if True, the eval is Neuroprobe-Lite (the default), otherwise it is Neuroprobe-Full.
         allow_partial_cache (bool): if True, the dataset will allow partial caching of the neural data. Defaults to True.
 
@@ -166,13 +165,13 @@ def generate_splits_SS_DM(test_subject, test_trial_id, eval_name, dtype=torch.fl
     return train_dataset, test_dataset
 
 
-def generate_splits_SS_SM(test_subject, test_trial_id, eval_name, k_folds=5, dtype=torch.float32,
+def generate_splits_SS_SM(test_subject, test_trial_id, eval_name, dtype=torch.float32,
+                          lite=True, nano=False, allow_partial_cache=True,
                           
                           # Dataset parameters
                           output_indices=False, 
                           start_neural_data_before_word_onset=int(START_NEURAL_DATA_BEFORE_WORD_ONSET * SAMPLING_RATE), 
-                          end_neural_data_after_word_onset=int(END_NEURAL_DATA_AFTER_WORD_ONSET * SAMPLING_RATE),
-                          lite=False, nano=False, allow_partial_cache=True):
+                          end_neural_data_after_word_onset=int(END_NEURAL_DATA_AFTER_WORD_ONSET * SAMPLING_RATE)):
     """Generate train/test splits for Single Subject Single Movie (SS-SM) evaluation.
     
     This function performs k-fold cross validation on data from a single subject and movie.
@@ -185,7 +184,6 @@ def generate_splits_SS_SM(test_subject, test_trial_id, eval_name, k_folds=5, dty
         test_subject (Subject): Subject object containing brain recording data
         test_trial_id (int): ID of the trial/movie to use
         eval_name (str): Name of the evaluation metric to use (e.g. "rms", "word_gap", "pitch", "delta_volume")
-        k_folds (int, optional): Number of folds for cross validation. Defaults to 5.
         dtype (torch.dtype, optional): Data type for tensors. Defaults to torch.float32.
         lite (bool): if True, the eval is Neuroprobe-Lite (the default), otherwise it is Neuroprobe-Full.
         nano (bool): if True, the eval is Neuroprobe-Nano (the default), otherwise it is Neuroprobe-Lite (if lite is True)
@@ -208,6 +206,8 @@ def generate_splits_SS_SM(test_subject, test_trial_id, eval_name, k_folds=5, dty
     dataset = BrainTreebankSubjectTrialBenchmarkDataset(test_subject, test_trial_id, dtype=dtype, eval_name=eval_name, 
                                                         output_indices=output_indices, start_neural_data_before_word_onset=start_neural_data_before_word_onset, end_neural_data_after_word_onset=end_neural_data_after_word_onset,
                                                         lite=lite, nano=nano, allow_partial_cache=allow_partial_cache)
+    
+    k_folds = NEUROPROBE_LITE_N_FOLDS if not nano else NEUROPROBE_NANO_N_FOLDS
     kf = KFold(n_splits=k_folds, shuffle=False)  # shuffle=False is important to avoid correlated train/test splits!
     
     for fold, (train_idx, test_idx) in enumerate(kf.split(dataset)):
