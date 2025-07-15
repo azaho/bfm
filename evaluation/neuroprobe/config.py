@@ -4,10 +4,10 @@
 
 # It is recommended that all the paths are absolute!
 # Feel free to change this setting to your own directory.
-ROOT_DIR = "/om2/user/zaho/braintreebank/braintreebank" # Root directory for the braintreebank data. Recommended to use the absolute path.
-SAVE_SUBJECT_TRIAL_DF_DIR = "/om2/user/zaho/bfm/evaluation/neuroprobe/braintreebank_features_time_alignment"
+ROOT_DIR = "/cluster/scratch/bradya/braintreebank" # Root directory for the braintreebank data. Recommended to use the absolute path.
+SAVE_SUBJECT_TRIAL_DF_DIR = "/cluster/home/bradya/bfm/evaluation/neuroprobe/braintreebank_features_time_alignment"
 #SAVE_SUBJECT_TRIAL_DF_DIR = "/om2/user/zaho/neuroprobe/btbench_subject_metadata"
-PITCH_VOLUME_FEATURES_DIR = "/om2/user/zaho/bfm/evaluation/neuroprobe/pitch_volume_features" # This comes together with the neuroprobe package
+PITCH_VOLUME_FEATURES_DIR = "/cluster/home/bradya/bfm/evaluation/neuroprobe/pitch_volume_features" # This comes together with the neuroprobe package
 
 
 # Disable file locking for HDF5 files. This is helpful for parallel processing.
