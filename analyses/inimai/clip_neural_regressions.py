@@ -297,6 +297,6 @@ def process_movie(movie):
             run_regression(X, y_spectrogram, freq_bins, time_bins, subject_id, trial_id, electrode_label)
 
 
-movies_list = [f for f in os.listdir(MOVIES_DIR) if os.path.isfile(os.path.join(MOVIES_DIR, f))]
+movies_list = [f for f in os.listdir(MOVIES_DIR) if os.path.isfile(os.path.join(MOVIES_DIR, f)) and f >= 'coraline.mp4']
 for movie in tqdm(movies_list, desc='Processing movies'):
     process_movie(movie)
