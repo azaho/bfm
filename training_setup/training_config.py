@@ -67,7 +67,7 @@ CONFIG_SCHEMA = {
         'num_workers_eval': ParamConfig(4, int, 'Number of processes for evaluation'),        
         'prefetch_factor': ParamConfig(2, int, 'Prefetch factor'), # for the dataloader workers
 
-        'quick_eval': ParamConfig(True, bool, 'Whether to do quick evaluation'), # Whether to do quick evaluation on a subset of the data
+        'quick_eval': ParamConfig(False, bool, 'Whether to do quicker evaluation by only evaluating on one fold of the data'), # Whether to do quick evaluation on a subset of the data
         'eval_aggregation_method': ParamConfig('concat', str, 'Evaluation aggregation method'),
     },
 
