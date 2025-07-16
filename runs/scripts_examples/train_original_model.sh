@@ -13,6 +13,9 @@
 source .venv/bin/activate
 export TMPDIR=/om2/scratch/tmp
 
+echo "Running on: $(hostname)"
+
+
 n_in_parallel=1 # How many jobs to run in parallel on the same job (on the same GPU!)
 
 # these parameters are dixed
