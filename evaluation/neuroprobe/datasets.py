@@ -10,12 +10,12 @@ from .braintreebank_subject import BrainTreebankSubject
 # Defining the names of evaluations and preparing them for downstream processing
 single_float_variables_name_remapping = {
     "pitch": "enhanced_pitch", #"pitch",
-    "volume": "enhanced_volume", #"rms",
+    "volume": "rms", #"rms",
     "frame_brightness": "mean_pixel_brightness",
     "global_flow": "max_global_magnitude",
     "local_flow": "max_vector_magnitude",
     "delta_volume": "delta_rms",
-    "delta_pitch": "delta_pitch",
+    "delta_pitch": "delta_enhanced_pitch",
     "gpt2_surprisal": "gpt2_surprisal",
     "word_length": "word_length"
 }

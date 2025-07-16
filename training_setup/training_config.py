@@ -34,7 +34,12 @@ CONFIG_SCHEMA = {
             'normalize_voltage': ParamConfig(True, bool, 'Whether to normalize the voltage of the signal (batch norm) before feeding it to the model'),
 
             'spectrogram': ParamConfig(True, bool, 'Whether to use spectrogram'), # Whether to use spectrogram of the signal or take raw voltage as input
-            'spectrogram_max_frequency': ParamConfig(200, int, 'Maximum frequency for spectrogram'),
+            'spectrogram_parameters': {
+                'max_frequency': ParamConfig(150, int, 'Maximum frequency for spectrogram'),
+                'tperseg': ParamConfig(0.25, float, 'Time of each spectrogram segment in seconds'),
+                'poverlap': ParamConfig(0.75, float, 'Proportion of overlap between segments for spectrogram'),
+                'window': ParamConfig('hann', str, 'Window function for spectrogram'), # Allowed values: 'hann', 'boxcar'
+            },
 
             'time_bin_size': ParamConfig(0.125, float, 'Time bin size in seconds'), # Only relevant for spectrogram = 0, when we are binning raw voltage
         },
@@ -62,7 +67,7 @@ CONFIG_SCHEMA = {
         'num_workers_eval': ParamConfig(4, int, 'Number of processes for evaluation'),        
         'prefetch_factor': ParamConfig(2, int, 'Prefetch factor'), # for the dataloader workers
 
-        'quick_eval': ParamConfig(True, bool, 'Whether to do quick evaluation'), # Whether to do quick evaluation on a subset of the data
+        'quick_eval': ParamConfig(False, bool, 'Whether to do quicker evaluation by only evaluating on one fold of the data'), # Whether to do quick evaluation on a subset of the data
         'eval_aggregation_method': ParamConfig('concat', str, 'Evaluation aggregation method'),
     },
 
@@ -235,6 +240,8 @@ def convert_dtypes(config):
     if isinstance(config, dict):
         return {k: convert_dtypes(v) for k, v in config.items()}
     elif isinstance(config, torch.dtype):
+        return str(config)
+    elif isinstance(config, torch.device):
         return str(config)
     return config
 

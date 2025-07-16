@@ -23,6 +23,7 @@ class FrozenModelEvaluation_SS_SM():
                  device=torch.device('cuda'),
                  dtype=torch.float32, batch_size=100,
                  num_workers_eval=4, prefetch_factor=2,
+                 output_indices=False,
                  # regression parameters
                  regression_random_state=42,  regression_solver='lbfgs', 
                  regression_tol=1e-3,
@@ -47,7 +48,8 @@ class FrozenModelEvaluation_SS_SM():
         self.batch_size = batch_size
         self.lite = lite
         self.max_float_precision = max_float_precision
-
+        self.output_indices = output_indices
+        
         self.regression_max_iter = regression_max_iter
         self.regression_random_state = regression_random_state
         self.regression_solver = regression_solver
@@ -58,7 +60,7 @@ class FrozenModelEvaluation_SS_SM():
         self.evaluation_datasets = {}
         for eval_name in self.eval_names:
             for subject, trial_id in self.subject_trials:
-                splits = generate_splits_SS_SM(subject, trial_id, eval_name, dtype=self.dtype, lite=self.lite, start_neural_data_before_word_onset=0, end_neural_data_after_word_onset=2048)
+                splits = generate_splits_SS_SM(subject, trial_id, eval_name, dtype=self.dtype, lite=self.lite, start_neural_data_before_word_onset=0, end_neural_data_after_word_onset=2048, output_indices=self.output_indices)
                 self.evaluation_datasets[(eval_name, subject.subject_identifier, trial_id)] = splits
                 
         self.all_subject_electrode_labels = {
