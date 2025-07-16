@@ -39,3 +39,7 @@ As per the instructions, I utilized the `L2Loss` for the pretraining task. This 
 **Evaluation**
 
 I used a very simple evaluation setup for the `generate_frozen_features` method. I simply took the model's predictions and averaged them across the first dimension (the bins).
+
+**Results**
+
+The model began with an initial L2 loss of around 1200 to a final batch loss of 6.7 after 100 epochs. By 20 epochs, the loss had already dropped to around 20, and it took 70 epochs to reach a loss of under 7. 
