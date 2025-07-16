@@ -90,30 +90,67 @@ if not OVERWRITE and os.path.exists(save_path):
 train_data = np.load(train_path, allow_pickle=True).item()
 test_data = np.load(test_path, allow_pickle=True).item()
 
+scaler = StandardScaler()
+
 X_train = train_data['X']
 y_train = train_data['y']
-X_test = test_data['X']
-y_test = test_data['y']
-
-# normalize
-scaler = StandardScaler()
 X_train = scaler.fit_transform(X_train)
-X_test = scaler.transform(X_test)
 
-# cross-validation auroc vals
+if args.split_type != "SS_SM":
+    X_test = test_data['X']
+    y_test = test_data['y']
+    X_test = scaler.transform(X_test)
 
-# shuffle must be set to False !!
-kf = KFold(n_splits=N_SPLITS, shuffle=False)
-fold_aurocs = []
+fold_data = []
 
-# train and test on each fold
-for train_idx, _ in kf.split(X_train):
-    X_train_cv = X_train[train_idx]
-    y_train_cv = y_train[train_idx]
+if args.split_type == "SS_SM":
+    # === Cross-validation (for same subject/trial) ===
+    kf = KFold(n_splits=N_SPLITS, shuffle=False)
+    fold_aurocs = []
 
+    for train_idx, test_idx in kf.split(X_train):
+        X_train_cv, X_test_cv = X_train[train_idx], X_train[test_idx]
+        y_train_cv, y_test_cv = y_train[train_idx], y_train[test_idx]
+
+        # normalization must be done inside each fold!
+        scaler = StandardScaler()
+        X_train_cv = scaler.fit_transform(X_train_cv)
+        X_test_cv = scaler.transform(X_test_cv)
+
+        clf = LogisticRegression(max_iter=10000, tol=1e-3)
+        clf.fit(X_train_cv, y_train_cv)
+
+        probs = clf.predict_proba(X_test_cv)
+        valid_mask = np.isin(y_test_cv, clf.classes_)
+        y_test_valid = y_test_cv[valid_mask]
+
+        probs = probs[valid_mask]
+
+        y_onehot = np.zeros((len(y_test_valid), len(clf.classes_)))
+        for i, label in enumerate(y_test_valid):
+            class_idx = np.where(clf.classes_ == label)[0][0]
+            y_onehot[i, class_idx] = 1
+
+        if len(clf.classes_) == 2:
+            auroc = roc_auc_score(y_onehot, probs)
+        else:
+            auroc = roc_auc_score(y_onehot, probs, multi_class="ovr", average="macro")
+
+        fold_aurocs.append(auroc)
+
+        fold_data.append({
+            "test_roc_auc": float(auroc),
+            "train_subject_id": TRAIN_SUBJECT_ID,
+            "train_trial_id": TRAIN_TRIAL_ID
+        })
+
+    mean_auroc = float(np.mean(fold_aurocs))
+    std_auroc = float(np.std(fold_aurocs))
+
+else:
+    # === Direct train/test for different subject/trial ===
     clf = LogisticRegression(max_iter=10000, tol=1e-3)
-    clf.fit(X_train_cv, y_train_cv)
-
+    clf.fit(X_train, y_train)
     probs = clf.predict_proba(X_test)
 
     valid_mask = np.isin(y_test, clf.classes_)
@@ -130,16 +167,15 @@ for train_idx, _ in kf.split(X_train):
     else:
         auroc = roc_auc_score(y_onehot, probs, multi_class="ovr", average="macro")
 
-    fold_aurocs.append(auroc)
+    mean_auroc = auroc
+    std_auroc = 0.0
 
-mean_auroc = float(np.mean(fold_aurocs))
-std_auroc = float(np.std(fold_aurocs))
+    fold_data.append({
+        "test_roc_auc": float(auroc),
+        "train_subject_id": TRAIN_SUBJECT_ID,
+        "train_trial_id": TRAIN_TRIAL_ID
+    })
 
-fold_data = [{
-    "test_roc_auc": float(auroc),
-    "train_subject_id": TRAIN_SUBJECT_ID,
-    "train_trial_id": TRAIN_TRIAL_ID
-} for auroc in fold_aurocs]
 
 
 # correct format?

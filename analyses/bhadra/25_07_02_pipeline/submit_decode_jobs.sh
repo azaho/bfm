@@ -17,7 +17,7 @@ source /om2/user/zaho/bfm/.venv/bin/activate
 
 CONFIG_PATH=$1
 if [ -z "$CONFIG_PATH" ]; then
-    echo "Usage: sbatch submit_decode_jobs.sh path/to/model_config.json"
+    echo "Usage: sbatch analyses/bhadra/25_07_02_pipeline/submit_decode_job.sh path/to/model_config.json"
     exit 1
 fi
 

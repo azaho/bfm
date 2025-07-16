@@ -6,6 +6,8 @@ import seaborn as sns
 import pandas as pd
 import argparse
 import matplotlib as mpl
+from evaluation.neuroprobe import config as neuroprobe_config
+
 
 mpl.rcParams.update({
     'font.size': 14,         
@@ -29,14 +31,8 @@ epoch = args.epoch
 base_dir = args.base_dir
 output_dir = args.output_dir
 
-subject_trials = [
-    (1, 1), (1, 2),
-    (2, 0), (2, 4),
-    (3, 0), (3, 1),
-    (4, 0), (4, 1),
-    (7, 0), (7, 1),
-    (10, 0), (10, 1),
-]
+subject_trials = neuroprobe_config.NEUROPROBE_LITE_SUBJECT_TRIALS
+
 
 subject_boundaries = []
 current_subject = subject_trials[0][0]

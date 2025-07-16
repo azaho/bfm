@@ -30,13 +30,13 @@ for SPLIT_TYPE in SS_SM SS_DM DS_DM; do
 done
 
 # Now generate AUROC matrices per epoch and task
-# for epoch in "${PRIMARY_EPOCHS[@]}"; do
-#     for task in "${TASKS[@]}"; do
-#         echo "Generating AUROC matrix for task: $task (epoch $epoch)"
-#         python analyses/bhadra/25_07_02_pipeline/cross_subj_matrices.py \
-#             --task "$task" \
-#             --epoch "$epoch" \
-#             --base_dir "$EVAL_RESULTS_ROOT/$PRIMARY_TITLE/eval_results_frozen_features_" \
-#             --output_dir "$FIGURE_OUTPUT_DIR/$PRIMARY_TITLE/matrices/epoch$epoch/"
-#     done
-# done
+for epoch in "${PRIMARY_EPOCHS[@]}"; do
+    for task in "${TASKS[@]}"; do
+        echo "Generating AUROC matrix for task: $task (epoch $epoch)"
+        python analyses/bhadra/25_07_02_pipeline/cross_subj_matrices.py \
+            --task "$task" \
+            --epoch "$epoch" \
+            --base_dir "$EVAL_RESULTS_ROOT/$PRIMARY_TITLE/eval_results_frozen_features_" \
+            --output_dir "$FIGURE_OUTPUT_DIR/$PRIMARY_TITLE/matrices/epoch$epoch/"
+    done
+done

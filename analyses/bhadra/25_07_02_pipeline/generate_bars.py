@@ -7,6 +7,8 @@ import seaborn as sns
 import pandas as pd
 import math
 from collections import defaultdict
+from evaluation.neuroprobe import config as neuroprobe_config
+
 
 # Argument parsing
 parser = argparse.ArgumentParser()
@@ -15,7 +17,6 @@ parser.add_argument('--primary_epochs', nargs='+', type=int, required=True)
 parser.add_argument('--primary_eval_results_path', type=str, required=True)
 parser.add_argument('--comparison_models_json', type=str, required=True)
 parser.add_argument('--save_dir', type=str, required=True)
-parser.add_argument('--subject_trials_json', type=str, required=True)
 parser.add_argument('--split_type', type=str, default='SS_DM', 
                     help='Split type to use (SS_SM or SS_DM or DS_DM)')
 args = parser.parse_args()
@@ -25,7 +26,7 @@ primary_title = args.primary_title
 primary_epochs = args.primary_epochs
 comparison_models = json.loads(args.comparison_models_json)
 save_dir = args.save_dir
-subject_trials = json.loads(args.subject_trials_json)
+subject_trials = neuroprobe_config.NEUROPROBE_LITE_SUBJECT_TRIALS
 split_type = args.split_type
 
 metric = 'AUROC' # 'AUROC'
