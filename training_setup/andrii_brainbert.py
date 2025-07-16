@@ -92,15 +92,21 @@ class Mask(BFModule):
 
         return x, masked_indices_time, masked_indices_freq
 
-class SpectrogramPreprocessor(BFModule):
-    def __init__(self, output_dim=-1, max_frequency=200):
-        super(SpectrogramPreprocessor, self).__init__()
-        self.max_frequency = max_frequency
-        self.output_dim = output_dim
 
-        assert self.max_frequency == 200, "Max frequency must be 200"
-        self.max_frequency_bin = 40 # XXX hardcoded max frequency bin
+class SpectrogramPreprocessor(BFModule):
+    def __init__(self, spectrogram_parameters, output_dim=-1):
+        super(SpectrogramPreprocessor, self).__init__()
+        self.output_dim = output_dim
+        self.spectrogram_parameters = spectrogram_parameters
         
+        # from https://docs.pytorch.org/docs/stable/generated/torch.fft.rfftfreq.html
+        # if n is nperseg, and d is 1/sampling_rate, then f = torch.arange((n + 1) // 2) / (d * n)
+        # note: nperseg is always going to be even, so it simplifies to torch.arange(n/2) / n * sampling_rate
+        # note: n = sampling_rate * tperseg, so it simplifies to torch.arange(sampling_rate * tperseg / 2) / tperseg
+        #    which is a list that goes from 0 to sampling_rate / 2 in increments of sampling_rate / nperseg = 1 / tperseg
+        # so max frequency bin is max_frequency * tperseg + 1 (adding one to make the endpoint inclusive)
+        self.max_frequency_bin = round(self.spectrogram_parameters['max_frequency'] * self.spectrogram_parameters['tperseg'] + 1)
+
         # Transform FFT output to match expected output dimension
         self.output_transform = nn.Identity() if self.output_dim == -1 else nn.Linear(self.max_frequency_bin, self.output_dim)
 
@@ -115,11 +121,17 @@ class SpectrogramPreprocessor(BFModule):
         x = batch['data'].reshape(batch_size * n_electrodes, -1)
         x = x.to(dtype=torch.float32)  # Convert to float32 for STFT
         
+        
         # STFT parameters
-        nperseg = 400
-        noverlap = 350
-        window = torch.hann_window(nperseg, device=x.device)
+        sampling_rate = batch['metadata']['sampling_rate']
+        nperseg = round(self.spectrogram_parameters['tperseg'] * sampling_rate)
+        noverlap = round(self.spectrogram_parameters['poverlap'] * nperseg)
         hop_length = nperseg - noverlap
+        
+        window = {
+            'hann': torch.hann_window,
+            'boxcar': torch.ones,
+        }[self.spectrogram_parameters['window']](nperseg, device=x.device)
         
         # Compute STFT
         x = torch.stft(x,
@@ -133,12 +145,9 @@ class SpectrogramPreprocessor(BFModule):
         
         # Take magnitude
         x = torch.abs(x)
-        
-        # Pad or trim to max_frequency dimension
-        if x.shape[1] < self.max_frequency_bin:
-            x = torch.nn.functional.pad(x, (0, 0, 0, self.max_frequency_bin - x.shape[1]))
-        else:
-            x = x[:, :self.max_frequency_bin]
+
+        # Trim to max frequency (using a pre-calculated max frequency bin)
+        x = x[:, :self.max_frequency_bin, :]
             
         # Reshape back
         _, n_freqs, n_times = x.shape
@@ -165,12 +174,12 @@ class SpectrogramPreprocessor(BFModule):
         return output
 
 class BrainBERT(BFModule):
-    def __init__(self, d_model=192, n_layers=4, n_heads=8, dropout=0.1, causal=False):
+    def __init__(self, spectrogram_parameters, d_model=192, n_layers=4, n_heads=8, dropout=0.1, causal=False):
         super().__init__()
         self.d_model = d_model
         self.n_layers = n_layers
 
-        self.spectrogram_preprocessor = SpectrogramPreprocessor(output_dim=-1)
+        self.spectrogram_preprocessor = SpectrogramPreprocessor(spectrogram_parameters, output_dim=-1)
 
         self.d_input = self.spectrogram_preprocessor.max_frequency_bin
         self.d_output = self.spectrogram_preprocessor.max_frequency_bin
@@ -217,6 +226,7 @@ class andrii_brainbert(TrainingSetup):
         ### LOAD MODEL ###
 
         self.model = BrainBERT(
+            spectrogram_parameters=config['model']['signal_preprocessing']['spectrogram_parameters'],
             d_model=config['model']['transformer']['d_model'],
             n_layers=config['model']['transformer']['n_layers'],
             n_heads=config['model']['transformer']['n_heads'],
