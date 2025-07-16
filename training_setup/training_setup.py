@@ -52,12 +52,13 @@ class TrainingSetup:
 
         Args:
             batch (dict): Dictionary containing:
-                data (torch.Tensor): Shape (batch_size, n_electrodes, n_timebins)
-                electrode_labels (list): List of length 1 (same across batch), each element is a list of electrode labels
+                data (torch.Tensor): Shape (batch_size, n_electrodes, n_timesamples)
+                electrode_labels (list): List of length 1 (since it's the same across the batch), each element is a list of electrode labels
                 metadata (dict): Contains subject identifier, trial id, sampling rate, etc.
 
         Returns:
-            torch.Tensor: Features with shape (batch_size, feature_vector_length) where feature_vector_length can be arbitrary
+            features (torch.Tensor): Shape (batch_size, n_electrodes or n_electrodes+1, n_timebins, *) where * can be arbitrary
+                                   if n_electrodes+1, then the first dimension is the cls token
         """
         raise NotImplementedError("This function is not (yet) implemented for this training setup.")
 

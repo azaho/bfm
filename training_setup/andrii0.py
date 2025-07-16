@@ -311,16 +311,11 @@ class andrii0(TrainingSetup):
         #   batch['electrode_labels'] shape: list of length 1 (since it's the same across the batch), each element is a list of electrode labels
         #   batch['metadata']: dictionary containing metadata like the subject identifier and trial id, sampling rate, etc.
         # OUTPUT:
-        #   features shape: (batch_size, *) where * can be arbitrary (and will be concatenated for regression)
+        #   features shape: (batch_size, n_electrodes or n_electrodes+1, n_timebins, *) where * can be arbitrary
+        #   if n_electrodes+1, then the first dimension is the cls token
         batch['data'] = batch['data'].to(self.model.device, dtype=self.model.dtype, non_blocking=True)
         batch['electrode_index'] = batch['electrode_index'].to(self.model.device, non_blocking=True)
 
         embeddings = self.electrode_embeddings(batch)
         features = self.model(batch, embeddings, electrode_transformer_only=True) # shape: (batch_size, n_electrodes + 1, n_timebins, d_model)
-        features = features[:, 0:1, :, :] # shape: (batch_size, 1, n_timebins, d_model) -- take just the cls token
-
-        if self.config['cluster']['eval_aggregation_method'] == 'mean':
-            features = features.mean(dim=[1, 2])
-        elif self.config['cluster']['eval_aggregation_method'] == 'concat':
-            features = features.reshape(batch['data'].shape[0], -1)
         return features

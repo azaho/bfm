@@ -68,7 +68,7 @@ CONFIG_SCHEMA = {
         'prefetch_factor': ParamConfig(2, int, 'Prefetch factor'), # for the dataloader workers
 
         'quick_eval': ParamConfig(False, bool, 'Whether to do quicker evaluation by only evaluating on one fold of the data'), # Whether to do quick evaluation on a subset of the data
-        'eval_aggregation_method': ParamConfig('concat', str, 'Evaluation aggregation method'),
+        'eval_aggregation_method': ParamConfig('keepall', str, 'Evaluation aggregation method'), # options: 'meanE' (mean across electrodes), 'meanT' (mean across timebins), 'cls' (only take the first token of the electrode dimension), any combinations of these (you can use _ to concatenate them) or 'keepall' (keep all tokens)
     },
 
     'training': {

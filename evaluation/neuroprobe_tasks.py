@@ -89,7 +89,16 @@ class FrozenModelEvaluation_SS_SM():
             else:
                 for preprocess_function in self.model_preprocess_functions:
                     batch = preprocess_function(batch)
-                features = self.model_evaluation_function(batch).reshape(batch_input.shape[0], -1)
+                features = self.model_evaluation_function(batch) # shape: (batch_size, n_electrodes or n_electrodes+1, n_timebins, *) where * can be arbitrary
+
+                if 'meanT' in self.config['cluster']['eval_aggregation_method']:
+                    features = features.mean(dim=2, keepdim=True) # shape: (batch_size, n_electrodes + 1, 1, d_model)
+                if 'meanE' in self.config['cluster']['eval_aggregation_method']:
+                    features = features.mean(dim=1, keepdim=True) # shape: (batch_size, 1, n_timebins, d_model)
+                if 'cls' in self.config['cluster']['eval_aggregation_method']:
+                    features = features[:, 0:1, :, :] # shape: (batch_size, 1, n_timebins, d_model) -- take just the cls token
+
+                features = features.reshape(batch_input.shape[0], -1)
 
             log(f'done generating frozen features for batch {i} of {len(dataloader)}', priority=log_priority, indent=3)
             X.append(features.detach().cpu().float().numpy())
