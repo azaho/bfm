@@ -12,6 +12,7 @@ nav:
       - Installation: getting-started/installation.md
       - Preliminary Background: getting-started/preliminary-background.md
       - Onboarding Task: getting-started/onboarding-task.md
+      - Onboarding Reflections: getting-started/onboarding-reflections.md
 theme:
   name: material
   icon:

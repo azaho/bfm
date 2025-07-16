@@ -106,7 +106,7 @@ CONFIG_SCHEMA = {
     },
 
     # This is a dictionary that can be used to store any additional parameters that are not part of the schema. 
-    # For example, if you want to store a param like congig['other']['X'] and it have a value '12345' (only strings are supported)
+    # For example, if you want to store a param like config['other']['X'] and it have a value '12345' (only strings are supported)
     # You can pass it as an argument to the script like this: --other.X 12345
     'other': {} 
 }

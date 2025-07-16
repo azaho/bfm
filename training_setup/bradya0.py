@@ -148,7 +148,6 @@ class bradya0(TrainingSetup):
                 Accuracies are exempt and are just used for logging.
         '''      
         batch['data'] = batch['data'].to(self.model.device, dtype=self.model.dtype, non_blocking=True)
-        batch['electrode_index'] = batch['electrode_index'].to(self.model.device, non_blocking=True)
   
         x_pred, x_next = self.model(batch)  # shape: (batch_size, n_bins - 1, bin_size), (batch_size, n_bins - 1, bin_size)
         
@@ -165,7 +164,6 @@ class bradya0(TrainingSetup):
         # OUTPUT:
         #   features shape: (batch_size, *) where * can be arbitrary (and will be concatenated for regression)
         batch['data'] = batch['data'].to(self.model.device, dtype=self.model.dtype, non_blocking=True)
-        batch['electrode_index'] = batch['electrode_index'].to(self.model.device, non_blocking=True)
 
         features, _ = self.model(batch)  # shape: (batch_size, n_bins - 1, bin_size)
         features = features.mean(dim=1)  # shape: (batch_size, bin_size)
