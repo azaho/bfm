@@ -241,6 +241,8 @@ def convert_dtypes(config):
         return {k: convert_dtypes(v) for k, v in config.items()}
     elif isinstance(config, torch.dtype):
         return str(config)
+    elif isinstance(config, torch.device):
+        return str(config)
     return config
 
 # Convert string dtypes back to torch dtypes
