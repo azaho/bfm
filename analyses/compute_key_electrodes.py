@@ -15,20 +15,24 @@ from torch.optim.lr_scheduler import ChainedScheduler
 from training_setup.training_config import convert_dtypes, unconvert_dtypes, parse_subject_trials_from_config
 from torch.utils.data import DataLoader
 from training_setup.training_setup import TrainingSetup
+from model.custom_attention_modules import (
+    CausalSelfAttentionWithReturn,
+    BlockWithReturn,
+    TransformerWithReturn,
+)
 
 from evaluation.neuroprobe.datasets import BrainTreebankSubjectTrialBenchmarkDataset
 import evaluation.neuroprobe.config as neuroprobe_config
 
 ### PARSE MODEL DIR ###
 
-# python -m analyses.compute_key_electrodes --model_dir andrii0_wd0.0001_dr0.1_rTEMP --subject_id 3 --trial_id 1 --eval_tasks "onset,gpt2_surprisal" --model_epoch 100
+# python -m analyses.compute_key_electrodes --model_dir andrii0_wd0.0001_dr0.1_rTEMP --subject_id 3 --trial_id 1 --model_epoch 100 --overwrite
 
 import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('--model_dir', type=str, required=True, help='Directory containing the saved model')
 parser.add_argument('--subject_id', type=str, required=True, help='Subject identifier')
 parser.add_argument('--trial_id', type=int, required=True, help='Trial identifier')
-parser.add_argument('--eval_tasks', type=str, required=True, help='Tasks to evaluate on, comma-separated')
 parser.add_argument('--model_epoch', type=int, default=-1, help='Epoch of the model to load')
 parser.add_argument('--overwrite', action='store_true', help='Overwrite existing key electrode analyses')
 parser.add_argument('--batch_size', type=int, default=100, help='Batch size for analysis')
@@ -41,7 +45,7 @@ model_dir = args.model_dir
 model_epoch = args.model_epoch
 subject_id = args.subject_id
 trial_id = args.trial_id
-eval_tasks = args.eval_tasks.split(",")
+eval_name = "onset" # just need something to pass in
 overwrite = args.overwrite
 batch_size = args.batch_size
 analysis_type = args.analysis_type # making it modular for now
@@ -97,9 +101,6 @@ try:
         
         def __init__(self, all_subjects, config, verbose=True):
             super().__init__(all_subjects, config, verbose)
-            self.analysis_type = analysis_type
-            self.attention_scores = []
-            self.activation_scores = []
             
         def compute_key_electrodes_attention(self, batch):
             """
@@ -107,74 +108,6 @@ try:
             This version preprocesses the batch using the model's fft_preprocessor and reshapes as in ElectrodeTransformer.
             """
             if hasattr(self.model, 'electrode_transformer'):
-                import types
-                from model.transformer_implementation import apply_rotary_emb
-                # Custom CausalSelfAttention that returns attention weights
-                class CausalSelfAttentionWithReturn(self.model.electrode_transformer.transformer.blocks[0].attn.__class__):
-                    def forward(self, x, attention_mask=None, positions=None):
-                        B, T, C = x.size()
-                        q = self.c_q(x).view(B, T, self.n_head, self.head_dim)
-                        k = self.c_k(x).view(B, T, self.n_head, self.head_dim)
-                        v = self.c_v(x).view(B, T, self.n_head, self.head_dim)
-                        if self.rope:
-                            cos, sin = self.rotary(q, positions)
-                            q, k = apply_rotary_emb(q, cos, sin), apply_rotary_emb(k, cos, sin)
-                        q = q.transpose(1, 2)
-                        k = k.transpose(1, 2)
-                        v = v.transpose(1, 2)
-                        scores = torch.matmul(q, k.transpose(-2, -1)) / (q.shape[-1] ** 0.5)
-                        if attention_mask is not None:
-                            scores = scores.masked_fill(attention_mask.unsqueeze(1) == 0, float('-inf'))
-                        if self.causal and attention_mask is None:
-                            causal_mask = torch.triu(torch.ones(T, T, device=x.device), diagonal=1).bool()
-                            scores = scores.masked_fill(causal_mask.unsqueeze(0).unsqueeze(0), float('-inf'))
-                        attention_weights = torch.softmax(scores, dim=-1)
-                        attention_weights = self.dropout(attention_weights)
-                        y = torch.matmul(attention_weights, v)
-                        y = y.transpose(1, 2).contiguous().view(B, T, C)
-                        y = self.c_proj(y)
-                        return y, attention_weights
-                # Custom Block that returns attention weights
-                class BlockWithReturn(self.model.electrode_transformer.transformer.blocks[0].__class__):
-                    def __init__(self, *args, **kwargs):
-                        super().__init__(*args, **kwargs)
-                        self.attn = CausalSelfAttentionWithReturn(self.attn.n_embd, self.attn.n_head, self.attn.causal, self.attn.rope, self.attn.rope_base, self.attn.dropout.p)
-                        self.attn.load_state_dict(self.attn.state_dict())
-                    def forward(self, x, attention_mask=None, positions=None):
-                        L = self.n_layer
-                        x_norm = torch.nn.functional.rms_norm(x, (x.size(-1),))
-                        attn_out, attn_weights = self.attn(x_norm, attention_mask=attention_mask, positions=positions)
-                        x = (2*L-1)/(2*L) * x + (1/(2*L)) * attn_out
-                        x_norm2 = torch.nn.functional.rms_norm(x, (x.size(-1),))
-                        x = (2*L-1)/(2*L) * x + (1/(2*L)) * self.mlp(x_norm2)
-                        return x, attn_weights
-                # Custom Transformer that returns all attention weights
-                class TransformerWithReturn(self.model.electrode_transformer.transformer.__class__):
-                    def __init__(self, *args, **kwargs):
-                        super().__init__(*args, **kwargs)
-                        self.blocks = torch.nn.ModuleList([BlockWithReturn(self.n_layer, self.d_model, self.n_head, self.causal, self.rope, self.rope_base, self.dropout.p) for _ in range(self.n_layer)])
-                        self.embed = self.embed
-                        self.output_proj = self.output_proj
-                        self.dropout = self.dropout
-                    def forward(self, x, attention_mask=None, positions=None, embeddings=None, strict_positions=False, stop_at_block=None):
-                        batch_size, seq_len, d_input = x.shape
-                        x = self.embed(x)
-                        x = self.dropout(x)
-                        if embeddings is not None:
-                            x = x + embeddings
-                        if attention_mask is None and positions is not None:
-                            if strict_positions:
-                                attention_mask = positions.unsqueeze(2) == positions.unsqueeze(1)
-                            else:
-                                attention_mask = positions.unsqueeze(2) >= positions.unsqueeze(1)
-                        all_attn_weights = []
-                        for block_i, block in enumerate(self.blocks):
-                            x, attn_weights = block(x, attention_mask=attention_mask, positions=positions)
-                            all_attn_weights.append(attn_weights)
-                            if stop_at_block is not None and block_i+1 == stop_at_block:
-                                return x, all_attn_weights
-                        x = self.output_proj(x)
-                        return x, all_attn_weights
                 # Instantiate custom transformer and load weights
                 transformer = TransformerWithReturn(self.model.electrode_transformer.transformer.d_input, self.model.electrode_transformer.transformer.d_model, self.model.electrode_transformer.transformer.d_output, self.model.electrode_transformer.transformer.n_layer, self.model.electrode_transformer.transformer.n_head, self.model.electrode_transformer.transformer.causal, self.model.electrode_transformer.transformer.rope, self.model.electrode_transformer.transformer.rope_base, self.model.electrode_transformer.transformer.dropout.p)
                 transformer.load_state_dict(self.model.electrode_transformer.transformer.state_dict())
@@ -192,12 +125,6 @@ try:
                 x = x.to(device)
                 # === Forward pass ===
                 x, all_attn_weights = transformer(x)
-                # Print attention info
-                for i, attn in enumerate(all_attn_weights):
-                    # print(f"Block {i} attention shape: {attn.shape}")
-                    if attn.shape[0] > 0 and attn.shape[1] > 0:
-                        first_head_attn = attn[0, 0].cpu().numpy()
-                        # print(f"First head attention matrix (first 5x5):\n{first_head_attn[:5, :5]}")
                 return all_attn_weights
             else:
                 log("Model does not have electrode_transformer attribute", priority=1)
@@ -217,108 +144,140 @@ log(f"Loading model weights...", priority=0)
 training_setup.load_model(model_epoch)
 
 log(f"Computing key electrode analysis...", priority=0)
-for eval_name in eval_tasks:
-    save_file_path = os.path.join("runs/data", model_dir, "key_electrodes", f"model_epoch{model_epoch}", 
-                                 f"key_electrodes_btbank{subject_id}_{trial_id}_{eval_name}_{analysis_type}.npy")
-    os.makedirs(os.path.dirname(save_file_path), exist_ok=True)
 
-    if not overwrite and os.path.exists(save_file_path):
-        log(f"Skipping {save_file_path} because it already exists", priority=0)
-        continue
-    
-    dataset = BrainTreebankSubjectTrialBenchmarkDataset(subject, trial_id, dtype=torch.float32, eval_name=eval_name,
-                                                        output_indices=False, lite=True,
-                                                        start_neural_data_before_word_onset=int(bins_start_before_word_onset_seconds*neuroprobe_config.SAMPLING_RATE),
-                                                        end_neural_data_after_word_onset=int(bins_end_after_word_onset_seconds*neuroprobe_config.SAMPLING_RATE))
+save_file_path = os.path.join("runs/data", model_dir, "key_electrodes", f"model_epoch{model_epoch}", 
+                                f"key_electrodes_btbank{subject_id}_{trial_id}_{eval_name}_{analysis_type}.npy")
+os.makedirs(os.path.dirname(save_file_path), exist_ok=True)
 
-    # Create a temporary directory for streaming results
-    temp_dir = os.path.join(os.path.dirname(save_file_path), "temp_attention")
-    os.makedirs(temp_dir, exist_ok=True)
-    
-    batch_files = []  # Keep track of saved batch files
+if not overwrite and os.path.exists(save_file_path):
+    log(f"Skipping {save_file_path} because it already exists", priority=0)
 
-    # Pass through model to get analysis results
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
-    with torch.no_grad():
-        for batch_idx, (batch_input, batch_label) in enumerate(dataloader):
-            batch = {
-                'data': batch_input.to(device, dtype=config['training']['data_dtype']),
-                'electrode_labels': [electrode_subset],
-                'metadata': {
-                    'subject_identifier': subject.subject_identifier,
-                    'trial_id': trial_id,
-                    'eval_name': eval_name,
-                }
-            }
-            
-            # Apply preprocessing
-            for preprocess_function in training_setup.get_preprocess_functions(pretraining=False):
-                batch = preprocess_function(batch)
-            
-            # Perform analysis
-            analysis_output = training_setup.compute_key_electrodes_attention(batch)
-            log(f"Computed {analysis_type} analysis for batch {batch_idx+1} of {len(dataloader)}", priority=0, indent=1)
+dataset = BrainTreebankSubjectTrialBenchmarkDataset(subject, trial_id, dtype=torch.float32, eval_name=eval_name,
+                                                    output_indices=False, lite=True,
+                                                    start_neural_data_before_word_onset=int(bins_start_before_word_onset_seconds*neuroprobe_config.SAMPLING_RATE),
+                                                    end_neural_data_after_word_onset=int(bins_end_after_word_onset_seconds*neuroprobe_config.SAMPLING_RATE))
 
-            if analysis_output is not None:
-                # Save attention matrices to disk immediately and delete from memory
-                batch_file = os.path.join(temp_dir, f"batch_{batch_idx:04d}.npy")
-                
-                if isinstance(analysis_output, torch.Tensor):
-                    # Convert to numpy and save immediately
-                    numpy_result = analysis_output.float().cpu().numpy()
-                    np.save(batch_file, numpy_result)
-                    del analysis_output, numpy_result
-                elif isinstance(analysis_output, list):
-                    # Handle list of tensors (e.g., attention scores from multiple layers)
-                    numpy_results = []
-                    for t in analysis_output:
-                        if isinstance(t, torch.Tensor):
-                            # Average across first two dimensions (sequences and heads)
-                            # Shape: (n_seq, n_heads, seq_len, seq_len) -> (seq_len, seq_len)
-                            averaged_t = t.float().cpu().numpy().mean(axis=(0, 1))
-                            numpy_results.append(averaged_t)
-                            del t  # Delete tensor immediately
-                        else:
-                            numpy_results.append(t)
-                    np.save(batch_file, numpy_results)
-                    del analysis_output, numpy_results
-                else:
-                    np.save(batch_file, analysis_output)
-                    del analysis_output
-                
-                batch_files.append(batch_file)
-                log(f"Saved batch {batch_idx+1} attention to {batch_file}", priority=0)
-            
-            # Clean up all batch-related memory
-            del batch_input, batch_label, batch
-            gc.collect()
-            torch.cuda.empty_cache()
-   
-    # Combine all batch files into final result
-    if batch_files:
-        log(f"Combining {len(batch_files)} batch files into final result...", priority=0)
-        combined_results = []
-        
-        for batch_file in batch_files:
-            batch_data = np.load(batch_file, allow_pickle=True)
-            combined_results.append(batch_data)
-            # Clean up individual batch file
-            os.remove(batch_file)
-        
-        # Save combined results
-        np.save(save_file_path, {
-            'analysis_results': combined_results,
-            'analysis_type': analysis_type,
+# Create a temporary directory for streaming results
+temp_dir = os.path.join(os.path.dirname(save_file_path), "temp_attention")
+os.makedirs(temp_dir, exist_ok=True)
+
+batch_files = []  # Keep track of saved batch files
+
+# Pass through model to get analysis results
+dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+with torch.no_grad():
+    for batch_idx, (batch_input, batch_label) in enumerate(dataloader):
+        batch = {
+            'data': batch_input.to(device, dtype=config['training']['data_dtype']),
+            'electrode_labels': [electrode_subset],
             'metadata': {
-                'subject_id': subject.subject_identifier,
+                'subject_identifier': subject.subject_identifier,
                 'trial_id': trial_id,
                 'eval_name': eval_name,
-                'config': convert_dtypes(config),
             }
-        })
-        log(f"Saved {analysis_type} analysis results to {save_file_path}")
+        }
         
-        # Clean up temp directory
-        os.rmdir(temp_dir)
-    else:
-        log(f"No analysis results to save for {eval_name}", priority=1)
+        # Apply preprocessing
+        for preprocess_function in training_setup.get_preprocess_functions(pretraining=False):
+            batch = preprocess_function(batch)
+        
+        # Perform analysis
+        analysis_output = training_setup.compute_key_electrodes_attention(batch)
+        log(f"Computed {analysis_type} analysis for batch {batch_idx+1} of {len(dataloader)}", priority=0, indent=1)
+
+        if analysis_output is not None:
+            # Save attention matrices to disk immediately and delete from memory
+            batch_file = os.path.join(temp_dir, f"batch_{batch_idx:04d}.npy")
+            
+            if isinstance(analysis_output, torch.Tensor):
+                # Convert to numpy and save immediately
+                numpy_result = analysis_output.float().cpu().numpy()
+                np.save(batch_file, numpy_result)
+
+                # preserve ram by deleting tensors if no other layers
+                del analysis_output, numpy_result
+            elif isinstance(analysis_output, list):
+                # Handle list of tensors (e.g., attention scores from multiple layers)
+                numpy_results = []
+                for layer_idx, t in enumerate(analysis_output):
+                    if isinstance(t, torch.Tensor):
+                        # Average across first two dimensions (sequences and heads)
+                        # Shape: (n_seq, n_heads, n_electrodes+1, n_electrodes+1) -> (n_electrodes+1, n_electrodes+1)
+                        averaged_t = t.float().cpu().numpy().mean(axis=(0, 1))
+                        numpy_results.append(averaged_t)
+                        
+                        # Create and save electrode attention heatmap for this layer
+                        electrode_matrix = averaged_t # Not removing CLS token for now
+                        plt.figure(figsize=(12, 10))
+                        seq_len = electrode_matrix.shape[0]
+                        print(f"electrode_subset ({len(electrode_subset)}): {electrode_subset}")
+                        labels = ["CLS"] + list(electrode_subset)
+                        print(labels)
+                        
+                        sns.heatmap(electrode_matrix,
+                                    xticklabels=labels,
+                                    yticklabels=labels,
+                                    cmap='viridis',
+                                    annot=False,
+                                    fmt='.3f',
+                                    cbar_kws={'label': 'Attention Score'},
+                                    square=True)
+                        
+                        plt.title(f'Electrode Attention - Layer {layer_idx}, Batch {batch_idx+1}')
+                        plt.xlabel('Key Electrode')
+                        plt.ylabel('Query Electrode')
+                        
+                        # Save the plot
+                        plot_dir = os.path.join(os.path.dirname(save_file_path), "electrode_plots")
+                        os.makedirs(plot_dir, exist_ok=True)
+                        plot_path = os.path.join(plot_dir, f"electrode_attention_layer{layer_idx}_batch{batch_idx+1}.png")
+                        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+                        plt.close()  # Close to free memory
+                        log(f"Saved electrode attention plot to {plot_path}", priority=0)
+                        
+                        del t  # Delete tensor immediately
+                    else:
+                        numpy_results.append(t)
+                np.save(batch_file, numpy_results)
+                del analysis_output, numpy_results
+            else:
+                np.save(batch_file, analysis_output)
+                del analysis_output
+            
+            batch_files.append(batch_file)
+            log(f"Saved batch {batch_idx+1} attention to {batch_file}", priority=0)
+        
+        # Clean up all batch-related memory
+        del batch_input, batch_label, batch
+        gc.collect()
+        torch.cuda.empty_cache()
+
+# Combine all batch files into final result
+if batch_files:
+    log(f"Combining {len(batch_files)} batch files into final result...", priority=0)
+    combined_results = []
+    
+    for batch_file in batch_files:
+        batch_data = np.load(batch_file, allow_pickle=True)
+        combined_results.append(batch_data)
+        # Clean up individual batch file
+        os.remove(batch_file)
+    
+    # Save combined results
+    np.save(save_file_path, {
+        'analysis_results': combined_results,
+        'analysis_type': analysis_type,
+        'electrode_labels': ["CLS"] + list(electrode_subset),
+        'metadata': {
+            'subject_id': subject.subject_identifier,
+            'trial_id': trial_id,
+            'eval_name': eval_name,
+            'config': convert_dtypes(config),
+        }
+    })
+    log(f"Saved {analysis_type} analysis results to {save_file_path}")
+    
+    # Clean up temp directory
+    os.rmdir(temp_dir)
+else:
+    log(f"No analysis results to save for {eval_name}", priority=1)

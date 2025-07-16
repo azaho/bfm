@@ -72,6 +72,8 @@ class CausalSelfAttention(nn.Module):
         self.c_v.weight.data.zero_()
         self.c_proj.weight.data.zero_()
 
+    # forward pass gives us the attention scores for each head
+    # there are n_head heads, each with a different attention score
     def forward(self, x, attention_mask=None, positions=None):
         B, T, C = x.size()
         q = self.c_q(x).view(B, T, self.n_head, self.head_dim)
