@@ -1,19 +1,32 @@
-import matplotlib.pyplot as plt
-import numpy as np
-import seaborn as sns
-import json
-import os
-import glob, math
-import pandas as pd
-import evaluation.neuroprobe.config as neuroprobe_config
-
-### PARSE ARGUMENTS ###
-
 import argparse
-parser = argparse.ArgumentParser(description='Create performance figure for BTBench evaluation')
+import os
+import json
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
+import math
+from collections import defaultdict
+from evaluation.neuroprobe import config as neuroprobe_config
+
+
+# Argument parsing
+parser = argparse.ArgumentParser()
+parser.add_argument('--primary_title', type=str, required=True)
+parser.add_argument('--primary_epochs', nargs='+', type=int, required=True)
+parser.add_argument('--primary_eval_results_path', type=str, required=True)
+parser.add_argument('--comparison_models_json', type=str, required=True)
+parser.add_argument('--save_dir', type=str, required=True)
 parser.add_argument('--split_type', type=str, default='SS_DM', 
                     help='Split type to use (SS_SM or SS_DM or DS_DM)')
 args = parser.parse_args()
+
+# Load config values
+primary_title = args.primary_title
+primary_epochs = args.primary_epochs
+comparison_models = json.loads(args.comparison_models_json)
+save_dir = args.save_dir
+subject_trials = neuroprobe_config.NEUROPROBE_LITE_SUBJECT_TRIALS
 split_type = args.split_type
 
 metric = 'AUROC' # 'AUROC'
@@ -22,45 +35,28 @@ assert metric == 'AUROC', 'Metric must be AUROC; no other metric is supported'
 separate_overall_yscale = True # Whether to have the "Task Mean" figure panel have a 0.5-0.6 ylim instead of 0.5-0.9 (used to better see the difference between models)
 n_fig_legend_cols = 3
 
-### DEFINE MODELS ###
+### Define primary model
+primary_model = {
+    'name': primary_title,
+    'color_palette': 'viridis',
+    'eval_results_path': args.primary_eval_results_path,
+}
 
-models = [
-    {
-        'name': 'Linear',
-        'color_palette': 'viridis',
-        'eval_results_path': f'/om2/user/zaho/btbench/eval_results_lite_{split_type}/linear_remove_line_noise/'
-    },
-    {
-        'name': 'Linear (STFT)',
-        'color_palette': 'viridis', 
-        'eval_results_path': f'/om2/user/zaho/btbench/eval_results_lite_{split_type}/linear_fft_realimag/'
-    },
-    {
-        'name': 'Linear (spectrogram)',
-        'color_palette': 'viridis',
-        'eval_results_path': f'/om2/user/zaho/btbench/eval_results_lite_{split_type}/linear_fft_abs/'
-    },
-    {
-        'name': 'BrainBERT',
-        'color_palette': 'plasma',
-        'eval_results_path': f'/om2/user/zaho/BrainBERT/eval_results_lite_{split_type}/brainbert_frozen_mean_granularity_{-1}/'
-    },
-    # {
-    #     'name': 'PopT (frozen)',
-    #     'color_palette': 'magma',
-    #     'eval_results_path': f'/om2/user/zaho/btbench/eval_results_popt/population_frozen_{split_type}_results.csv'
-    # },
-    {
-        'name': 'PopT',
-        'color_palette': 'magma',
-        'eval_results_path': f'/om2/user/zaho/btbench/eval_results_popt/popt_{split_type}_results.csv'
-    },
-    {
-        'name': 'Logistic Regression',
-        'color_palette': 'magma',
-        'eval_results_path': f'/om2/user/brupesh/bfm/runs/data/eval_results_frozen_features_{split_type}/model_epoch40/'
-    }
-]
+models = comparison_models.copy()
+
+if split_type == "DS_SM":
+    print("No support for PopT DS_SM split")
+    models = [m for m in models if "PopT" not in m["name"]]
+
+if split_type == "DS_DM":
+    print("No support for PopT frozen DS_DM split")
+    models = [m for m in models if "PopT (frozen)" not in m["name"]]
+
+for epoch in primary_epochs:
+    new_model = primary_model.copy()
+    new_model['name'] = f"{primary_title} (epoch {epoch})"
+    new_model["eval_results_path"] = primary_model["eval_results_path"].replace("{epoch}", str(epoch))
+    models.append(new_model)
 
 ### DEFINE TASK NAME MAPPING ###
 
@@ -86,17 +82,16 @@ task_name_mapping = {
     'face_num': 'Number of Faces',
 }
 
-subject_trials = neuroprobe_config.NEUROPROBE_LITE_SUBJECT_TRIALS
-if split_type == 'DS_DM':
-    subject_trials = [(s, t) for s, t in subject_trials if s != neuroprobe_config.DS_DM_TRAIN_SUBJECT_ID]
-
 ### DEFINE RESULT PARSING FUNCTIONS ###
 
 performance_data = {}
 for task in task_name_mapping.keys():
     performance_data[task] = {}
     for model in models:
+        model["eval_results_path"] = model["eval_results_path"].replace("{split_type}", split_type)
         performance_data[task][model['name']] = {}
+
+    performance_data[task][primary_title] = {}
 
 def parse_results_default(model):
     for task in task_name_mapping.keys():
@@ -104,7 +99,7 @@ def parse_results_default(model):
         for subject_id, trial_id in subject_trials:
             filename = model['eval_results_path'] + f'population_btbank{subject_id}_{trial_id}_{task}.json'
             if not os.path.exists(filename):
-                print(f"Warning: File {filename} not found, skipping...")
+                print(f"Warning: File {filename} not found for split type {split_type} (may not be needed), skipping...")
                 continue
 
             with open(filename, 'r') as json_file:
@@ -121,33 +116,12 @@ def parse_results_default(model):
             'mean': np.mean(subject_trial_means),
             'sem': np.std(subject_trial_means) / np.sqrt(len(subject_trial_means))
         }
-for model in models:
-    model['parse_results_function'] = parse_results_default
-
-def parse_results_hara(model):
-    for task in task_name_mapping.keys():
-        subject_trial_means = []
-        for subject_id, trial_id in subject_trials:
-            pattern = f'/om2/user/hmor/btbench/eval_results_ds_dt_lite_desikan_killiany/DS-DT-FixedTrain-Lite_{task}_test_S{subject_id}T{trial_id}_*.json'
-            matching_files = glob.glob(pattern)
-            if matching_files:
-                filename = matching_files[0]  # Take the first matching file
-            else:
-                print(f"Warning: No matching file found for pattern {pattern}, skipping...")
-            
-            with open(filename, 'r') as json_file:
-                data = json.load(json_file)
-            data = data['final_auroc']
-            subject_trial_means.append(data)
-        performance_data[task][model['name']] = {
-            'mean': np.mean(subject_trial_means),
-            'sem': np.std(subject_trial_means) / np.sqrt(len(subject_trial_means))
-        }
-if split_type == 'DS_DM': # XXX remove this later, have a unified interface for all models
-    models[0]['parse_results_function'] = parse_results_hara
 
 def parse_results_popt(model):
     # Read the CSV file
+    if not os.path.exists(model['eval_results_path']):
+        print(f"Warning: File {model['eval_results_path']} not found, skipping...")
+        return
     popt_data = pd.read_csv(model['eval_results_path'])
     # Group by subject_id, trial_id, and task_name to calculate mean across folds
     for task in task_name_mapping.keys():
@@ -176,13 +150,15 @@ def parse_results_popt(model):
                 'mean': np.nan,
                 'sem': np.nan
             }
-for model in models:
-    if 'PopT' in model['name']:
-        model['parse_results_function'] = parse_results_popt
 
 for model in models:
-    model['parse_results_function'](model)
-    
+    if 'PopT' in model['name']:
+        parse_results_popt(model)
+    else:
+        parse_results_default(model)
+
+print("Done parsing all model results. Ready for plotting.")
+
 ### CALCULATE OVERALL PERFORMANCE ###
 
 overall_performance = {}
@@ -307,7 +283,8 @@ fig.legend(handles, [model['name'] for model in models] + ["Chance"],
 plt.tight_layout(rect=[0, 0.2 if len(task_name_mapping)<10 or len(models)>3 else 0.1, 1, 1], w_pad=0.4)
 
 # Save figure
-save_path = f'analyses/figures/neuroprobe_eval_lite_{split_type}.pdf'
+os.makedirs(save_dir, exist_ok=True)
+save_path = os.path.join(save_dir, f"{primary_title}_{split_type}.png")
 os.makedirs(os.path.dirname(save_path), exist_ok=True)
 plt.savefig(save_path, dpi=300, bbox_inches='tight')
 print(f'Saved figure to {save_path}')
