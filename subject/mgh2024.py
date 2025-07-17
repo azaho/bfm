@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import torch
 
-from src.subject.subject import Subject
+from subject.subject import Subject
 
 
 MGH_ROOT_DIR = os.environ["MGH_ROOT_DIR"]  # Root directory for the MGH data

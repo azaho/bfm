@@ -6,7 +6,7 @@ import pandas as pd
 import numpy as np
 import torch
 
-from src.subject.subject import Subject
+from subject.subject import Subject
 
 
 BRAINTREEBANK_ROOT_DIR = os.environ["BRAIN_TREEBANK_ROOT_DIR"]

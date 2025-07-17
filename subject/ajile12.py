@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from pynwb import NWBHDF5IO
 
-from src.subject.subject import Subject
+from subject.subject import Subject
 
 
 # Suppress specific HDMF namespace warnings

@@ -7,8 +7,8 @@ from typing import Dict, Any
 import torch
 import torch.nn as nn
 
-from src.model.BFModule import BFModule
-from src.training_setup.training_setup import TrainingSetup
+from model.BFModule import BFModule
+from training_setup.training_setup import TrainingSetup
 
 """
 Flow of data in this model:

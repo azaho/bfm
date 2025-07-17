@@ -10,9 +10,9 @@ import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
 import seaborn as sns
 
-import src.evaluation.neuroprobe.config as neuroprobe_config
+import evaluation.neuroprobe.config as neuroprobe_config
 
-save_path = 'src/analyses/figures/'
+save_path = 'analyses/figures/'
 font_path = 'assets/font_arial.ttf'
 
 

@@ -10,8 +10,8 @@ For evaluation (generate_frozen_features), feel free to come up with your own sc
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from src.training_setup.training_setup import TrainingSetup
-from src.model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
+from training_setup.training_setup import TrainingSetup
+from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
 
 class LinearModel(nn.Module):
     def __init__(self, bin_size, d_bin):

@@ -13,10 +13,10 @@ import wandb
 from dotenv import load_dotenv
 load_dotenv() # Load environment variables from .env file
 
-from src.utils.muon_optimizer import Muon
-from src.subject.dataset import load_subjects
-from src.evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
-from src.training_setup.training_config import (
+from utils.muon_optimizer import Muon
+from subject.dataset import load_subjects
+from evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
+from training_setup.training_config import (
     log,
     update_dir_name,
     update_random_seed,
@@ -28,8 +28,8 @@ from src.training_setup.training_config import (
 ### LOADING CONFIGS ###
 
 RUNS_DIR='runs'
-TRAINING_SETUP_DIR='src/training_setup'
-TRAINING_SETUP_IMPORT='src.training_setup'
+TRAINING_SETUP_DIR='training_setup'
+TRAINING_SETUP_IMPORT='training_setup'
 
 config = get_default_config(random_string="TEMP", wandb_project="") # Outputs a dictionary, see utils/training_config.py for how it looks like
 parse_config_from_args(config) # Parses the command line arguments and updates the config dictionary

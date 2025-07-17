@@ -9,7 +9,7 @@ import torch
 import torch.cuda
 from torch.utils.data import DataLoader
 
-from src.training_setup.training_config import log
+from training_setup.training_config import log
 from .neuroprobe.train_test_splits import generate_splits_SS_SM
 from .neuroprobe.config import NEUROPROBE_LITE_ELECTRODES
 
