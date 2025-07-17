@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from model.BFModule import BFModule
+from src.model.BFModule import BFModule
 
 class ElectrodeEmbedding(BFModule):
     def __init__(self, d_model, embedding_dim=None, embedding_fanout_requires_grad=True, embedding_requires_grad=True, initial_capacity=16, **kwargs):

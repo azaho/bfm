@@ -32,9 +32,11 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-2. If you're not on Openmind, follow the [Neuroprobe repository's](https://github.com/azaho/neuroprobe) instructions for how to download the BrainTreebank dataset and correct the path to the dataset in `evaluation/neuroprobe/config.py` and in `subject/braintreebank.py`. If you're on Openmind, you are all set!
+2. Copy over the contents of `.env.example` to `.env`. 
 
-3. Now you can try pretraining a model! Will require an A100 GPU (see the [openmind.mit.edu](https://openmind.mit.edu) instructions and FAQ for how to request a node with one)
+3. If you're not on Openmind, follow the [Neuroprobe repository's](https://github.com/azaho/neuroprobe) instructions for how to download the BrainTreebank dataset and correct the `.env` variable `BRAIN_TREEBANK_ROOT_DIR` to point to the root directory of the BrainTreebank dataset on your machine. If you're on Openmind, you are all set!
+
+4. Now you can try pretraining a model! Will require an A100 GPU (see the [openmind.mit.edu](https://openmind.mit.edu) instructions and FAQ for how to request a node with one).
 ```sh
 python pretrain.py --training.setup_name andrii0 --cluster.cache_subjects 0 --cluster.eval_at_beginning 0
 ```

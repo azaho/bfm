@@ -2,8 +2,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from utils.muon_optimizer import orthogonalize
-from model.BFModule import BFModule
+
+from src.utils.muon_optimizer import orthogonalize
+from src.model.BFModule import BFModule
 
 # XXX remove hard coded data type
 

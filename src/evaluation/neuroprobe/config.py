@@ -6,10 +6,7 @@ import os
 
 # It is recommended that all the paths are absolute!
 # Feel free to change this setting to your own directory.
-ROOT_DIR = "/cluster/scratch/bradya/braintreebank" # Root directory for the braintreebank data. Recommended to use the absolute path.
-SAVE_SUBJECT_TRIAL_DF_DIR = "/cluster/home/bradya/bfm/evaluation/neuroprobe/braintreebank_features_time_alignment"
-#SAVE_SUBJECT_TRIAL_DF_DIR = "/om2/user/zaho/neuroprobe/btbench_subject_metadata"
-PITCH_VOLUME_FEATURES_DIR = "/cluster/home/bradya/bfm/evaluation/neuroprobe/pitch_volume_features" # This comes together with the neuroprobe package
+ROOT_DIR = os.environ["BRAIN_TREEBANK_ROOT_DIR"] # Root directory for the braintreebank data.
 
 # This comes together with the neuroprobe package
 SAVE_SUBJECT_TRIAL_DF_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "braintreebank_features_time_alignment")

@@ -29,7 +29,8 @@ source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
-3. If you're not on Openmind, you'll need to download the [BrainTreebank](https://braintreebank.dev/) dataset (~130 GB). If you're on Openmind, you are all set! The dataset is already available in the `/om2/user/<your_username>/braintreebank` directory.
+3. Copy over the contents of `.env.example` to `.env`.
+4. If you're not on Openmind, you'll need to download the [BrainTreebank](https://braintreebank.dev/) dataset (~130 GB). If you're on Openmind, you are all set! The dataset is already available in the `/om2/user/<your_username>/braintreebank` directory.
     - Download this script: [braintreebank_download_extract.py](https://github.com/azaho/neuroprobe/blob/main/braintreebank_download_extract.py) from the [Neuroprobe](https://github.com/azaho/neuroprobe) repository.
     - Install necessary packages:
     ```sh
@@ -39,7 +40,7 @@ pip install -r requirements.txt
     ```sh
     python braintreebank_download_extract.py
     ```
-    - Update the new path to the dataset in `evaluation/neuroprobe/config.py` and in `subject/braintreebank.py`.
+    - Update the `.env` variable `BRAIN_TREEBANK_ROOT_DIR` to point to the root directory of the BrainTreebank dataset on your machine. 
 
 ## Weights and Biases
 

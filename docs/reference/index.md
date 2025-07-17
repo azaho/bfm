@@ -5,7 +5,7 @@ authors:
     - Alexander Brady
 date: 2025-07-15
 ---
-# Welcome to the Code Reference
+# Brain Foundation Models Code Reference
 
 This section provides detailed documentation of the codebase. Use the navigation on the left to explore different components of the project.
 

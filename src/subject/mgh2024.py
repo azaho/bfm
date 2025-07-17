@@ -1,13 +1,16 @@
-import os
 import json
-import numpy as np
-import torch
-import h5py
+import os
 import re
-import pandas as pd
-from subject.subject import Subject
 
-MGH_ROOT_DIR = "/om2/data/public/Infolab/mgh2024_data" # Root directory for the data
+import h5py
+import numpy as np
+import pandas as pd
+import torch
+
+from src.subject.subject import Subject
+
+
+MGH_ROOT_DIR = os.environ["MGH_ROOT_DIR"]  # Root directory for the MGH data
 
 class MGH2024Subject(Subject):
     """ 

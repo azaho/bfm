@@ -1,15 +1,18 @@
 import os
+import warnings
+
 import numpy as np
 import torch
 from pynwb import NWBHDF5IO
-import warnings
-from subject.subject import Subject
+
+from src.subject.subject import Subject
+
 
 # Suppress specific HDMF namespace warnings
 warnings.filterwarnings("ignore", message="Ignoring cached namespace .* because version .* is already loaded")
 
-AJILE_ROOT_DIR = "/om2/user/hmor/ajile12/000055"
-import os; os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE" # Disable file locking for HDF5 files. This is helpful for parallel processing.
+AJILE_ROOT_DIR = os.environ["AJILE_ROOT_DIR"]
+os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE" # Disable file locking for HDF5 files. This is helpful for parallel processing.
 
 class AjileSubject(Subject):
     """ 

@@ -28,9 +28,9 @@ The `__init__` method initializes the model with a linear layer, and the `forwar
 
 **Training Setup:**
 
-I kept my training setup quite simple. The `model_components['model']` was set to an instance of `LinearModel`, and I kept the `model_components['electrode_embeddings']` the same as in the original `andrii0.py` filee, as I didn't use any embeddings in my linear model. 
+I kept my training setup quite simple. The `model_components['model']` was set to an instance of `LinearModel`, and I kept the `model_components['electrode_embeddings']` to `None`, as I didn't use any embeddings in my linear model. 
 
-I also removed the additional `preprocess` steps that were not necessary for my linear model. 
+I also removed the additional `preprocess` steps that were not necessary for this model.
 
 **Pretraining Loss**
 

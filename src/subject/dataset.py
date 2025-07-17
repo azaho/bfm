@@ -1,11 +1,14 @@
-import torch
-from torch.utils.data import Dataset, ConcatDataset, DataLoader
-from subject.braintreebank import BrainTreebankSubject
-from subject.mgh2024 import MGH2024Subject
-from training_setup.training_config import log
+import random
 from multiprocessing import Pool
 import torch.multiprocessing as mp
-import random
+
+import torch
+from torch.utils.data import Dataset, ConcatDataset, DataLoader
+
+from src.subject.braintreebank import BrainTreebankSubject
+from src.subject.mgh2024 import MGH2024Subject
+from src.training_setup.training_config import log
+
 
 class SubjectTrialDataset(Dataset):
     def __init__(self, subject, trial_id, window_size, dtype=torch.float32, output_metadata=False, output_electrode_labels=False):

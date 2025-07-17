@@ -7,15 +7,8 @@ from typing import Dict, Any
 import torch
 import torch.nn as nn
 
-from model.BFModule import BFModule
-from model.electrode_embedding import (
-    ElectrodeEmbedding_Learned,
-    ElectrodeEmbedding_Learned_CoordinateInit,
-    ElectrodeEmbedding_NoisyCoordinate,
-    ElectrodeEmbedding_Zero,
-)
-from training_setup.training_config import log
-from training_setup.training_setup import TrainingSetup
+from src.model.BFModule import BFModule
+from src.training_setup.training_setup import TrainingSetup
 
 """
 Flow of data in this model:
@@ -99,38 +92,12 @@ class bradya0(TrainingSetup):
         if not model_config['signal_preprocessing']['spectrogram']:
             raise ValueError("For the moment, we only support spectrogram preprocessing. Please set 'spectrogram' to True in the config.")
 
-        ### LOAD MODEL ###
-
-        self.model = LinearModel()
+        # Initialize the linear model
+        self.model = LinearModel().to(device, dtype=model_config['dtype'])
         model_config['name'] = "LinearModel"
 
-        ### LOAD ELECTRODE EMBEDDINGS ###
-        
-        # Select the right electrode embedding class based on the config
-        electrode_embeddings_class = {
-            'learned': ElectrodeEmbedding_Learned,
-            'zero': ElectrodeEmbedding_Zero,
-            'coordinate_init': ElectrodeEmbedding_Learned_CoordinateInit,
-            'noisy_coordinate': ElectrodeEmbedding_NoisyCoordinate,
-        }[model_config['electrode_embedding']['type']]
-
-        # Initialize the electrode embeddings
-        self.electrode_embeddings = electrode_embeddings_class( 
-            model_config['transformer']['d_model'], 
-            embedding_dim=model_config['electrode_embedding']['dim'],
-            coordinate_noise_std=model_config['electrode_embedding']['coordinate_noise_std'],
-        ).to(device, dtype=model_config['dtype'])
-
-        # Create embeddings map mapping (subject_identifier, electrode_label) to embedding index
-        for subject in self.all_subjects.values(): 
-            if self.verbose:
-                log(f"Adding subject {subject.subject_identifier} to electrode embeddings...", priority=0)
-            self.electrode_embeddings.add_subject(subject)
-        # Ensure the new parameters are on the correct device
-        self.electrode_embeddings = self.electrode_embeddings.to(device, dtype=model_config['dtype']) 
-
         self.model_components['model'] = self.model
-        self.model_components['electrode_embeddings'] = self.electrode_embeddings
+
 
     def calculate_pretrain_loss(self, batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
         '''
