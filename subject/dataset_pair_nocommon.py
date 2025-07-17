@@ -62,7 +62,6 @@ class SubjectTrialPairDataset(Dataset):
         self.electrode_labels_b = list(self.subject_b.electrode_labels)
 
     def obtain_neural_data_index(self, sub_id, trial_id, movie_times):
-        # Path to trigger times csv file
         trigger_times_file = os.path.join(self.trigger_times_dir, f'sub_{sub_id}_trial{int(trial_id):03}_timings.csv')
         trigs_df = pd.read_csv(trigger_times_file)
         trig_time_col, trig_idx_col = 'movie_time', 'index'
