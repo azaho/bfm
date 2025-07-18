@@ -1,14 +1,14 @@
 #!/bin/bash
 #SBATCH --job-name=bfm_xx          
 #SBATCH --ntasks=1            
-#SBATCH --cpus-per-task=16 
-#SBATCH --gres=gpu:a100:1
-####SBATCH --constraint=ampere
-#SBATCH --mem=384G
-#SBATCH -t 16:00:00      
+#SBATCH --cpus-per-task=8 
+#SBATCH --gres=gpu:1
+#SBATCH --constraint=ampere
+#SBATCH --mem=128G
+#SBATCH -t 6:00:00      
 #SBATCH --output runs/logs/%A_%a.out
 #SBATCH --error runs/logs/%A_%a.err
-#SBATCH --array=1-12
+#SBATCH --array=1-3
 #SBATCH -p normal
 source .venv/bin/activate
 export TMPDIR=/om2/scratch/tmp
@@ -19,14 +19,14 @@ echo "Running on: $(hostname)"
 n_in_parallel=1 # How many jobs to run in parallel on the same job (on the same GPU!)
 
 # these parameters are dixed
-train_subject_trials="btbank1_0,btbank2_1,btbank2_2,btbank2_3,btbank2_5,btbank2_6,btbank3_2,btbank4_2,btbank5_0,btbank6_0,btbank6_1,btbank6_4,btbank8_0,btbank9_0,btbank7_100,btbank7_101,btbank7_102,btbank10_100,btbank10_101"
-eval_subject_trials="btbank1_1,btbank1_2,btbank2_0,btbank2_4,btbank3_0,btbank3_1,btbank4_0,btbank4_1,btbank7_0,btbank7_1,btbank10_0,btbank10_1"
-wandb_project="WANDB_PROJECT_NAME"
+train_subject_trials="mgh1_2"
+eval_subject_trials=""
+wandb_project="BB_MGH"
 
 # these parameters are swept over
-random_string_options=("R1" "R2")
+random_string_options=("R1")
 dropout_options=(0.0 0.1 0.2)
-weight_decay_options=(0.0 0.001)
+weight_decay_options=(0.0)
 n_layers_options=(5 8 10)
 
 # Calculate indices for parallel jobs
@@ -53,7 +53,7 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
         --training.batch_size 100 \
         --training.random_string $random_string \
         --training.train_subject_trials $train_subject_trials \
-        --training.eval_subject_trials $eval_subject_trials \
+        --training.eval_subject_trials "$eval_subject_trials" \
         --training.dropout $dropout \
         --training.weight_decay $weight_decay \
         --model.transformer.n_layers $n_layers \
