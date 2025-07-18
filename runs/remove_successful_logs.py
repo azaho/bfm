@@ -18,7 +18,7 @@ for err_file in err_files:
             skip_next = False
             continue
             
-        if any(x in line.upper() for x in ['CANCELLED', 'PREEMPTION', 'WARNING']):
+        if any(x in line.upper() for x in ['CANCELLED', 'PREEMPTION', 'WARNING', 'WANDB']):
             skip_next = True
             continue
             
