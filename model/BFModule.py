@@ -10,6 +10,7 @@ class BFModule(nn.Module):
         super().__init__()
         self._device = None
         self._dtype = None
+        
     def to(self, *args, **kwargs):
         output = super().to(*args, **kwargs)
         # Extract device and dtype from args/kwargs
@@ -20,11 +21,13 @@ class BFModule(nn.Module):
         if device is not None: self._device = device 
         if dtype is not None: self._dtype = dtype
         return output
+    
     @property
     def device(self):
         if self._device is None:
             self._device = next(self.parameters()).device
         return self._device
+    
     @property 
     def dtype(self):
         if self._dtype is None:

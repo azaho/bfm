@@ -1,14 +1,18 @@
-from torch.utils.data import DataLoader
+import gc
+
+import numpy as np
 import sklearn.metrics
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
-import numpy as np
+
+import torch
+import torch.cuda
+from torch.utils.data import DataLoader
+
+from training_setup.training_config import log
 from .neuroprobe.train_test_splits import generate_splits_SS_SM
 from .neuroprobe.config import NEUROPROBE_LITE_ELECTRODES
-from training_setup.training_config import log
-import torch
-import gc
-import torch.cuda
+
 
 # Evaluation class for Same Subject Same Movie (SS-SM), on neuroprobe evals
 class FrozenModelEvaluation_SS_SM():

@@ -1,18 +1,41 @@
-from model.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
-from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
-from training_setup.training_config import log
-import torch
-from subject.dataset import SubjectTrialDataset, PreprocessCollator, SubjectBatchSampler
-from torch.utils.data import DataLoader, ConcatDataset
+'''
+Defines the TrainingSetup class, which is an interface for training setups.
+
+Functions that raise NotImplementedError are meant to be overridden.
+To create a custom training setup, define a new class in a separate file that 
+inherits from `TrainingSetup` and implements the required methods.
+'''
 import os
 import json
-from training_setup.training_config import convert_dtypes
 
-# Note: the functions in this file that have a "NotImplementedError" indicate that
-#   this file is just an interface for a training setup. You will create a new file 
-#   for your training setup, make a class inherit from TrainingSetup and implement the functions in that file.
+import torch
+from torch.utils.data import DataLoader, ConcatDataset
 
+from model.electrode_embedding import (
+    ElectrodeEmbedding_Learned,
+    ElectrodeEmbedding_NoisyCoordinate,
+    ElectrodeEmbedding_Learned_CoordinateInit,
+    ElectrodeEmbedding_Zero,
+)
+from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
+
+from subject.dataset import SubjectTrialDataset, PreprocessCollator, SubjectBatchSampler
+
+from training_setup.training_config import (
+    log,
+    convert_dtypes,
+)
+
+RUN_DIR = 'runs/data'
 class TrainingSetup:
+    '''
+    Interface for training setups.
+    
+    Must implement the following methods:
+        - initialize_model: Initializes the model components and sets self.model_components.
+        - calculate_pretrain_loss: Calculates the pretraining loss for a batch of data.
+        - generate_frozen_features: Generates frozen features for a batch of data.
+    '''
     def __init__(self, all_subjects, config, verbose=True):
         self.config = config
         self.all_subjects = all_subjects
@@ -106,10 +129,11 @@ class TrainingSetup:
                 for model_component_name, model_component in self.model_components.items()
             }
         }
-    
-    def save_model(self, epoch, eval_results={}, save_in_dir="runs/data/", training_statistics_store=None):
-        model_path = f"{save_in_dir}{self.config['cluster']['dir_name']}/model_epoch_{epoch}.pth"
-        os.makedirs(f"{save_in_dir}{self.config['cluster']['dir_name']}", exist_ok=True)
+
+    def save_model(self, epoch, eval_results={}, save_in_dir=RUN_DIR, training_statistics_store=None):
+        path = f"{save_in_dir}/{self.config['cluster']['dir_name']}"
+        model_path = f"{path}/model_epoch_{epoch}.pth"
+        os.makedirs(path, exist_ok=True)
         torch.save({
             'eval_results': eval_results,
             'epoch': epoch,
@@ -117,11 +141,11 @@ class TrainingSetup:
             'config': convert_dtypes(self.config),
         }, model_path)
         if training_statistics_store is not None:
-            with open(f"{save_in_dir}{self.config['cluster']['dir_name']}/training_statistics.json", 'w') as f:
+            with open(f"{path}/training_statistics.json", 'w') as f:
                 json.dump(training_statistics_store, f)
-    
-    def load_model(self, epoch, load_from_dir="runs/data/"):
-        model_path = f"{load_from_dir}{self.config['cluster']['dir_name']}/model_epoch_{epoch}.pth"
+
+    def load_model(self, epoch, load_from_dir=RUN_DIR):
+        model_path = f"{load_from_dir}/{self.config['cluster']['dir_name']}/model_epoch_{epoch}.pth"
         state_dicts = torch.load(model_path, map_location=self.config['device'])
         for model_component_name, model_component in self.model_components.items():
             if "state_dicts" in state_dicts:
