@@ -7,6 +7,8 @@ from pynwb import NWBHDF5IO
 
 from subject.subject import Subject
 
+from dotenv import load_dotenv
+load_dotenv()  # Load environment variables from .env file
 
 # Suppress specific HDMF namespace warnings
 warnings.filterwarnings("ignore", message="Ignoring cached namespace .* because version .* is already loaded")

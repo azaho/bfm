@@ -4,6 +4,9 @@
 
 import os
 
+from dotenv import load_dotenv
+load_dotenv()  # Load environment variables from .env file
+
 # It is recommended that all the paths are absolute!
 # Feel free to change this setting to your own directory.
 ROOT_DIR = os.environ["BRAIN_TREEBANK_ROOT_DIR"] # Root directory for the braintreebank data.

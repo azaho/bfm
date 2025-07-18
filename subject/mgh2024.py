@@ -9,6 +9,8 @@ import torch
 
 from subject.subject import Subject
 
+from dotenv import load_dotenv
+load_dotenv()  # Load environment variables from .env file
 
 MGH_ROOT_DIR = os.environ["MGH_ROOT_DIR"]  # Root directory for the MGH data
 
