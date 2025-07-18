@@ -7,7 +7,7 @@
 #SBATCH -t 3:00:00         # total run time limit (HH:MM:SS) (increased to 24 hours)
 #SBATCH --constraint=10GB
 #SBATCH --exclude=dgx001,dgx002
-#SBATCH --array=1-288  # 285 if doing mini btbench
+#SBATCH --array=1-192  # 285 if doing mini btbench
 #SBATCH --output runs/logs/%A_%a.out # STDOUT
 #SBATCH --error runs/logs/%A_%a.err # STDERR
 #SBATCH -p use-everything
@@ -23,11 +23,12 @@ declare -a trials=(1 2 0 4 0 1 0 1 0 1 0 1)
 
 declare -a model_dirs=(
     # "andrii0_lr0.003_wd0.001_dr0.0_rR1_t20250714_121055"
-    "andrii0_lr0.003_wd0.0_dr0.2_rR1_t20250714_121055"
+    # "andrii0_lr0.003_wd0.0_dr0.2_rR1_t20250714_121055"
+    "andrii_brainbert_lr0.003_wd0.0_dr0.2_rR2_t20250716_001553"
 )
 BATCH_SIZE=300 # takes ~<10G of RAM
 
-declare -a model_epochs=(0 1 10 20)
+declare -a model_epochs=(0 1 10 20) #10 40)
 
 declare -a eval_names=(
     "frame_brightness"
@@ -66,10 +67,10 @@ declare -a classifier_type=(
 declare -a feature_type=(
     "keepall"
     "meanE"
-    "cls"
+    # "cls"
     "meanT"
     "meanT_meanE"
-    "meanT_cls"
+    # "meanT_cls"
 )
 
 EVAL_STR=$(IFS=,; echo "${eval_names[*]}")

@@ -13,7 +13,7 @@ import seaborn as sns
 import evaluation.neuroprobe.config as neuroprobe_config
 
 save_path = 'analyses/figures/'
-font_path = 'assets/font_arial.ttf'
+font_path = 'analyses/font_arial.ttf'
 
 
 ### PARSE ARGUMENTS ###

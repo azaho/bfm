@@ -20,9 +20,11 @@ metric = 'AUROC' # 'AUROC'
 assert metric == 'AUROC', 'Metric must be AUROC; no other metric is supported'
 
 separate_overall_yscale = True # Whether to have the "Task Mean" figure panel have a 0.5-0.6 ylim instead of 0.5-0.9 (used to better see the difference between models)
+overall_axis_ylim = (0.4925, 0.75) if separate_overall_yscale else (0.48, 0.95)
+other_axis_ylim = (0.48, 0.95)
 
-figure_size_multiplier = 2
-n_fig_legend_cols = 3 if figure_size_multiplier<2 else 4
+figure_size_multiplier = 1.8
+n_fig_legend_cols = 3 if figure_size_multiplier<1.8 else 4
 
 ### DEFINE MODELS ###
 
@@ -38,12 +40,26 @@ models = [
         'eval_results_path': f'/om2/user/zaho/neuroprobe/data/eval_results_lite_{split_type}/linear_stft_abs_nperseg512_poverlap0.75_maxfreq150/'
     },
 ] + [
+#     {
+#         'name': f'Andrii0 epoch {model_epoch} ({feature_type})',
+#         'color_palette': 'rainbow',
+#         'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_andrii0_lr0.003_wd0.001_dr0.0_rR1_t20250714_121055_epoch{model_epoch}_{feature_type}/',
+#         'pad_x': 1 if model_epoch==0 else 0,
+#     } for feature_type in ['keepall', 'meanE', 'cls', 'meanT', 'meanT_meanE', 'meanT_cls'] for model_epoch in [0, 1, 10, 40]
+# ] + [
     {
         'name': f'Andrii0 epoch {model_epoch} ({feature_type})',
         'color_palette': 'rainbow',
-        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_andrii0_lr0.003_wd0.001_dr0.0_rR1_t20250714_121055_epoch{model_epoch}_{feature_type}/',
+        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_andrii0_lr0.003_wd0.0_dr0.2_rR1_t20250714_121055_epoch{model_epoch}_{feature_type}/',
         'pad_x': 1 if model_epoch==0 else 0,
-    } for feature_type in ['keepall', 'meanE', 'cls', 'meanT', 'meanT_meanE', 'meanT_cls'] for model_epoch in [0, 1, 10, 40]
+    } for feature_type in ['keepall', 'meanE', 'cls', 'meanT', 'meanT_meanE', 'meanT_cls'] for model_epoch in [0, 1, 10, 20]
+] + [
+    {
+        'name': f'BB epoch {model_epoch} ({feature_type})',
+        'color_palette': 'rainbow',
+        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_{"andrii_brainbert_lr0.003_wd0.0_dr0.2_rR2_t20250716_001553"}_epoch{model_epoch}_{feature_type}/',
+        'pad_x': 1 if model_epoch==0 else 0,
+    } for feature_type in ['keepall', 'meanE', 'meanT', 'meanT_meanE'] for model_epoch in [0, 1, 10, 20]
 ]
 
 ### DEFINE TASK NAME MAPPING ###
@@ -53,21 +69,25 @@ task_name_mapping = {
     'speech': 'Speech',
     'volume': 'Volume', 
     'pitch': 'Voice Pitch',
-    'speaker': 'Speaker Identity',
+
     'delta_volume': 'Delta Volume',
-    'delta_pitch': 'Delta Pitch',
-    'gpt2_surprisal': 'GPT-2 Surprisal',
-    'word_length': 'Word Length',
-    'word_gap': 'Inter-word Gap',
     'word_index': 'Word Position',
+    'word_gap': 'Inter-word Gap',
+    'word_length': 'Word Length',
+
+    'gpt2_surprisal': 'GPT-2 Surprisal',
     'word_head_pos': 'Head Word Position',
     'word_part_speech': 'Part of Speech',
-    'frame_brightness': 'Frame Brightness',
+    'speaker': 'Speaker Identity',
+
     'global_flow': 'Global Optical Flow',
     'local_flow': 'Local Optical Flow',
-    'global_flow_angle': 'Global Flow Angle',
-    'local_flow_angle': 'Local Flow Angle',
+    'frame_brightness': 'Frame Brightness',
     'face_num': 'Number of Faces',
+    
+    # 'delta_pitch': 'Delta Pitch',
+    # 'global_flow_angle': 'Global Flow Angle',
+    # 'local_flow_angle': 'Local Flow Angle',
 }
 
 subject_trials = neuroprobe_config.NEUROPROBE_LITE_SUBJECT_TRIALS
@@ -205,19 +225,26 @@ for i, model in enumerate(models):
 
 ### PLOT STUFF ###
 
-# Create figure with 4x5 grid - reduced size
-n_cols = 5
-n_rows = math.ceil((len(task_name_mapping)+1)/n_cols)
-fig, axs = plt.subplots(n_rows, n_cols, figsize=(figure_size_multiplier*8/5*n_cols, figure_size_multiplier*6/4*n_rows+.6 * len(models) / n_fig_legend_cols/3/2))
+# Create figure with modified grid layout using GridSpec
+import matplotlib.gridspec as gridspec
 
-# Flatten axs for easier iteration
-axs_flat = axs.flatten()
+n_cols = 4
+overall_height = 1.2  # Height of overall axis
+margin_height = -0.05   # Margin between overall and task plots
+task_rows = math.ceil(len(task_name_mapping)/n_cols)
+
+# Create height ratios: [overall_height, margin_height, task_row_1, task_row_2, ...]
+height_ratios = [overall_height, margin_height] + [1.0] * task_rows
+n_rows = len(height_ratios)
+
+fig = plt.figure(figsize=(figure_size_multiplier*8/5*n_cols, figure_size_multiplier*6/4*n_rows+.6 * len(models) / n_fig_legend_cols/3/2))
+gs = gridspec.GridSpec(n_rows, n_cols, height_ratios=height_ratios, hspace=0.3, wspace=0.2)
 
 # Bar width
 bar_width = 0.2
 
-# Plot overall performance in first axis
-first_ax = axs_flat[0]
+# Plot overall performance spanning entire first row
+first_ax = fig.add_subplot(gs[0, :])
 for i, model in enumerate(models):
     perf = overall_performance[model['name']]
     first_ax.bar(model['x_pos']*bar_width, perf['mean'], bar_width,
@@ -226,15 +253,8 @@ for i, model in enumerate(models):
                 capsize=6)
 
 first_ax.set_title('Task Mean', fontsize=12, pad=10, bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.5'))
-if metric == 'accuracy':
-    first_ax.set_ylim(0.2, 1.0)
-else:
-    if separate_overall_yscale:
-        first_ax.set_ylim(0.4925, 0.75)
-        first_ax.set_yticks([0.5, 0.6, 0.7])
-    else:
-        first_ax.set_ylim(0.48, 0.95)
-        first_ax.set_yticks([0.5, 0.6, 0.7, 0.8, 0.9])
+first_ax.set_ylim(overall_axis_ylim)
+first_ax.set_yticks(np.arange(0.5, overall_axis_ylim[1], 0.1))
 first_ax.set_xticks([])
 first_ax.set_ylabel(metric)
 first_ax.axhline(y=0.5, color='black', linestyle='--', alpha=0.5)
@@ -242,11 +262,14 @@ first_ax.spines['top'].set_visible(False)
 first_ax.spines['right'].set_visible(False)
 first_ax.tick_params(axis='y')
 
-# Plot counter - start from 1 for remaining plots
-plot_idx = 1
+# Plot counter - start from 0 for task plots in remaining rows
+plot_idx = 0
 
 for task, chance_level in task_name_mapping.items():
-    ax = axs_flat[plot_idx]
+    # Calculate row and column for current task (starting after overall axis and margin)
+    row = plot_idx // n_cols + 2  # Start from row 2 (0=overall, 1=margin, 2+=tasks)
+    col = plot_idx % n_cols
+    ax = fig.add_subplot(gs[row, col])
     
     # Plot bars for each model
     x = np.arange(len(models))
@@ -255,23 +278,18 @@ for task, chance_level in task_name_mapping.items():
         ax.bar(model['x_pos']*bar_width, perf['mean'], bar_width,
                 yerr=perf['sem'], 
                 color=model['color'],
-                capsize=6)
+                capsize=6/(models[-1]['x_pos']+1) * 10)
     
     # Customize plot
     ax.set_title(task_name_mapping[task], fontsize=12, pad=10)
-    if metric == 'accuracy':
-        ax.set_ylim(0.2, 1.0)
-    else:
-        ax.set_ylim(0.48, 0.95)
-        ax.set_yticks([0.5, 0.6, 0.7, 0.8, 0.9])
+    ax.set_ylim(other_axis_ylim)
+    ax.set_yticks(np.arange(0.5, other_axis_ylim[1], 0.1))
     ax.set_xticks([])
-    if (plot_idx % 5 == 0):  # Left-most plots
-        ax.set_ylabel(metric)
+    if col == 0:  # Left-most plots
+        ax.set_ylabel("AUROC")
 
     # Add horizontal line at chance level
-    if metric == 'AUROC':
-        chance_level = 0.5
-    ax.axhline(y=chance_level, color='black', linestyle='--', alpha=0.5)
+    ax.axhline(y=0.5, color='black', linestyle='--', alpha=0.5)
     
     # Remove top and right spines
     ax.spines['top'].set_visible(False)
@@ -295,11 +313,11 @@ fig.legend(handles, [model['name'] for model in models] + ["Chance"],
             frameon=False)
 
 # Adjust layout with space at the bottom for legend
-rect_y = 0.1 + 0.05 * (math.ceil((len(models)+1)/n_fig_legend_cols)-1) / figure_size_multiplier
-plt.tight_layout(rect=[0, rect_y, 1, 1], w_pad=0.4)
+rect_y = (0.11 + 0.05 * (math.ceil((len(models)+1)/n_fig_legend_cols)-1)) / figure_size_multiplier
+plt.subplots_adjust(bottom=rect_y)
 
 # Save figure
-save_path = f'analyses/andrii/25_07_14_andrii0_evals/figures/neuroprobe_eval_lite_{split_type}.pdf'
+save_path = f'analyses/andrii/25_07_14_andrii0_evals/figures/neuroprobe_eval_lite_{split_type}_test.pdf'
 os.makedirs(os.path.dirname(save_path), exist_ok=True)
 plt.savefig(save_path, dpi=300, bbox_inches='tight')
 print(f'Saved figure to {save_path}')
