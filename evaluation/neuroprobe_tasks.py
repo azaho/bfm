@@ -20,6 +20,7 @@ class FrozenModelEvaluation_SS_SM():
                  # model preprocess and evaluation function
                  model_preprocess_functions,
                  model_evaluation_function,
+                 eval_aggregation_method,
                  # benchmark parameters
                  eval_names, subject_trials, 
                  lite=True, 
@@ -42,6 +43,7 @@ class FrozenModelEvaluation_SS_SM():
         """
         self.model_preprocess_functions = model_preprocess_functions
         self.model_evaluation_function = model_evaluation_function
+        self.eval_aggregation_method = eval_aggregation_method
         self.eval_names = eval_names
         self.subject_trials = subject_trials
         all_subject_values = set([subject for subject, trial_id in self.subject_trials])
@@ -95,11 +97,11 @@ class FrozenModelEvaluation_SS_SM():
                     batch = preprocess_function(batch)
                 features = self.model_evaluation_function(batch) # shape: (batch_size, n_electrodes or n_electrodes+1, n_timebins, *) where * can be arbitrary
 
-                if 'meanT' in self.config['cluster']['eval_aggregation_method']:
+                if 'meanT' in self.eval_aggregation_method:
                     features = features.mean(dim=2, keepdim=True) # shape: (batch_size, n_electrodes + 1, 1, d_model)
-                if 'meanE' in self.config['cluster']['eval_aggregation_method']:
+                if 'meanE' in self.eval_aggregation_method:
                     features = features.mean(dim=1, keepdim=True) # shape: (batch_size, 1, n_timebins, d_model)
-                if 'cls' in self.config['cluster']['eval_aggregation_method']:
+                if 'cls' in self.eval_aggregation_method:
                     features = features[:, 0:1, :, :] # shape: (batch_size, 1, n_timebins, d_model) -- take just the cls token
 
                 features = features.reshape(batch_input.shape[0], -1)
