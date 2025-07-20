@@ -17,3 +17,4 @@ torch
 torchvision
 torchaudio
 wandb
+ipykernel
