@@ -336,6 +336,8 @@ class roshnipm_pair_nocommon(TrainingSetup):
         config = self.config
         def _add_to_loss_contrastive(losses, output, target, loss_suffix):
             # output and target shape: (batch_size, n_electrodes, n_timebins-future_bin_idx, d_model)
+            # output is the output of the model for the first subject
+            # target is the output of the model for the second subject
             if config['training']['normalize_features']:
                 output_ = output / (torch.norm(output, dim=-1, keepdim=True) + 0.001)
                 target_ = target / (torch.norm(target, dim=-1, keepdim=True) + 0.001)
@@ -367,10 +369,10 @@ class roshnipm_pair_nocommon(TrainingSetup):
             'metadata': batch['metadata_b'],
         }
 
-        embeddings_a = self.electrode_embeddings(batch_a)
-        embeddings_b = self.electrode_embeddings(batch_b)
-        electrode_transformed_data_a, time_transformed_data_a = self.model(batch_a, embeddings_a) # shape: (batch_size, n_electrodes + 1, n_timebins, d_model), (batch_size, 1, n_timebins, d_model)
-        electrode_transformed_data_b, time_transformed_data_b = self.model(batch_b, embeddings_b) # shape: (batch_size, n_electrodes + 1, n_timebins, d_model), (batch_size, 1, n_timebins, d_model)
+        embeddings_a = self.electrode_embeddings(batch_a) # shape of embeddings_a: (batch_size, n_electrodes, d_model)
+        embeddings_b = self.electrode_embeddings(batch_b) # shape of embeddings_b: (batch_size, n_electrodes, d_model)
+        electrode_transformed_data_a, time_transformed_data_a = self.model(batch_a, embeddings_a) # shape of electrode_transformed_data_a: (batch_size, n_electrodes + 1, n_timebins, d_model), shape of time_transformed_data_a: (batch_size, 1, n_timebins, d_model)
+        electrode_transformed_data_b, time_transformed_data_b = self.model(batch_b, embeddings_b) # shape of electrode_transformed_data_b: (batch_size, n_electrodes + 1, n_timebins, d_model), shape of time_transformed_data_b: (batch_size, 1, n_timebins, d_model)
 
         # add two symmetric loss components (for the electrode)
         losses = _add_to_loss_contrastive(losses, time_transformed_data_a[:, :, :-future_bin_idx], electrode_transformed_data_b[:, :1, future_bin_idx:], 'a')
