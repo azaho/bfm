@@ -73,6 +73,8 @@ CONFIG_SCHEMA = {
 
     'training': {
         'setup_name': ParamConfig("andrii0", str, 'Setup name', required=True),
+        # added paired mode for testing paired subject contrastive learning learning dataloader
+        'paired_mode': ParamConfig(False, bool, 'Whether to use paired mode'),
 
         'train_subject_trials': ParamConfig("btbank3_1", str, 'Train subject trials'), # a string like btbank3_1,btbank3_2,...
         'eval_subject_trials': ParamConfig("", str, 'Eval subject trials'), # a string like btbank3_0,btbank3_1,...

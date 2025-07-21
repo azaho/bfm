@@ -54,27 +54,19 @@ class roshnipm(TrainingSetup):
         self.model = self.model.to(self.config['device'], dtype=self.config['model']['dtype'])
         self.model_components = {"model": self.model}
 
-    def get_preprocess_functions(self, pretraining=False):
-        """
-        Get the preprocess functions for the training setup.
-        Default: only subset electrodes to the maximum number during pretraining (during eval, pass all electrodes).
-
-        This must be an array of functions, each takes just batch as input and returns the (modified) batch. Modifying it in place is fine (but still return the batch).
-        """
-        preprocess_functions = []
-        if self.config['model']['signal_preprocessing']['laplacian_rereference']:
-            preprocess_functions.append(self._preprocess_laplacian_rereference)
-        if self.config['model']['signal_preprocessing']['normalize_voltage']:
-            preprocess_functions.append(self._preprocess_normalize_voltage)
-        if pretraining:
-            preprocess_functions.append(self._preprocess_subset_electrodes)
-        return preprocess_functions
-
     def calculate_pretrain_loss(self, batch, output_accuracy=True):
         # batch['data']: (batch, n_electrodes, n_timesamples)
         # batch['electrode_index']: (batch, n_electrodes) 
         # batch['metadata']: dictionary containing metadata
-        batch['data'] = batch['data'].to(self.config['device'], dtype=self.config['model']['dtype'], non_blocking=True)
+        batch['data'] = batch['data'].to(self.model.device, dtype=self.model.dtype, non_blocking=True)
+        
+        # Apply preprocessing like andrii0
+        if self.config['model']['signal_preprocessing']['laplacian_rereference']:
+            laplacian_rereference_batch(batch, remove_non_laplacian=False, inplace=True)
+            
+        if self.config['model']['signal_preprocessing']['normalize_voltage']:
+            batch['data'] = batch['data'] - torch.mean(batch['data'], dim=[0, 2], keepdim=True)
+            batch['data'] = batch['data'] / (torch.std(batch['data'], dim=[0, 2], keepdim=True) + 1)
         
         # Pass through model
         pred, target = self.model(batch['data'])
@@ -84,12 +76,22 @@ class roshnipm(TrainingSetup):
         return {"mse_loss": loss}
 
     def generate_frozen_features(self, batch):
+        
         # Convert data to model's expected dtype and device
         batch['data'] = batch['data'].to(self.config['device'], dtype=self.config['model']['dtype'], non_blocking=True)
+        
+        # Apply same preprocessing as in andrii0
+        if self.config['model']['signal_preprocessing']['laplacian_rereference']:
+            laplacian_rereference_batch(batch, remove_non_laplacian=False, inplace=True)
+        
+        if self.config['model']['signal_preprocessing']['normalize_voltage']:
+            batch['data'] = batch['data'] - torch.mean(batch['data'], dim=[0, 2], keepdim=True)
+            batch['data'] = batch['data'] / (torch.std(batch['data'], dim=[0, 2], keepdim=True) + 1)
         
         # Get model predictions as features (the learned representations)
         # difference between this and calculate_pretrain_loss is that this doesn't 
         # use the target for loss calculation
+        # only uses data, no electrode_index, no metadata
         pred, _ = self.model(batch['data'])  # (batch, n_bins-1, bin_size)
         
         # Flatten to 2D for downstream evaluation: (batch, (n_bins-1) * bin_size)

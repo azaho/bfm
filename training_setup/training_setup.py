@@ -213,6 +213,7 @@ class TrainingSetup:
         train_dataloader = DataLoader(
             train_dataset,
             batch_sampler=SubjectBatchSampler(
+                # length of each dataset = number of windows in the subject
                 [len(ds) for ds in train_datasets],
                 batch_size=config['training']['batch_size'],
                 shuffle=True
@@ -226,6 +227,7 @@ class TrainingSetup:
         test_dataloader = DataLoader(
             test_dataset,
             batch_sampler=SubjectBatchSampler(
+                # length of each dataset = number of windows in the subject
                 [len(ds) for ds in test_datasets],
                 batch_size=config['training']['batch_size'],
                 shuffle=False
