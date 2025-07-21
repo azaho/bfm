@@ -2,6 +2,7 @@
 
 # Activate environment
 nvidia-smi
+export PYTHONPATH=/om2/user/brupesh/bfm:$PYTHONPATH
 source /om2/user/zaho/bfm/.venv/bin/activate
 
 CONFIG_PATH=$1
@@ -25,7 +26,6 @@ for SPLIT_TYPE in SS_SM SS_DM DS_DM; do
         --primary_eval_results_path "$PRIMARY_EVAL_RESULTS_PATH" \
         --comparison_models_json "$COMPARISON_MODELS" \
         --save_dir "$FIGURE_OUTPUT_DIR/$PRIMARY_TITLE/bar_plots/" \
-        --subject_trials_json "$SUBJECT_TRIALS" \
         --split_type "$SPLIT_TYPE"
 done
 
@@ -39,4 +39,9 @@ for epoch in "${PRIMARY_EPOCHS[@]}"; do
             --base_dir "$EVAL_RESULTS_ROOT/$PRIMARY_TITLE/eval_results_frozen_features_" \
             --output_dir "$FIGURE_OUTPUT_DIR/$PRIMARY_TITLE/matrices/epoch$epoch/"
     done
+    python analyses/bhadra/25_07_02_pipeline/cross_subj_matrices.py \
+        --task all_tasks_avg \
+        --epoch "$epoch" \
+        --base_dir "$EVAL_RESULTS_ROOT/$PRIMARY_TITLE/eval_results_frozen_features_" \
+        --output_dir "$FIGURE_OUTPUT_DIR/$PRIMARY_TITLE/matrices/epoch$epoch/"
 done
