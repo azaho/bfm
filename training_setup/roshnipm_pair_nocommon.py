@@ -64,8 +64,9 @@ class SpectrogramPreprocessor(BFModule):
         x = x.to(dtype=torch.float32)  # Convert to float32 for STFT
         
         # STFT parameters
-        nperseg = 400
-        noverlap = 350
+        # new parameters based on andrii's sweeps
+        nperseg = 512
+        noverlap = 384
         window = torch.hann_window(nperseg, device=x.device)
         hop_length = nperseg - noverlap
         

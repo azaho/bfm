@@ -2,15 +2,28 @@
 #SBATCH --job-name=bfm_xx          
 #SBATCH --ntasks=1            
 #SBATCH --cpus-per-task=4
-#SBATCH --gres=gpu:a100:2
+#SBATCH --gres=gpu:a100:1
 ####SBATCH --constraint=ampere
 #SBATCH --mem=384G
-#SBATCH -t 16:00:00      
+#SBATCH -t 19:00:00      
 #SBATCH --array=1-16
 #SBATCH -p normal
+#SBATCH --requeue
+#SBATCH --exclude=node100
 source .venv/bin/activate
 export TMPDIR=/om2/scratch/tmp
-export CUDA_VISIBLE_DEVICES=0,1
+export CUDA_VISIBLE_DEVICES=0
+export WANDB_MODE=offline
+
+# Check for at least 30 GiB free on the assigned GPU
+REQUIRED_MEM=30720  # 30 GiB in MiB
+GPU_ID=${CUDA_VISIBLE_DEVICES:-0}
+FREE_MEM=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits | sed -n "$((GPU_ID+1))p")
+
+if [ "$FREE_MEM" -lt "$REQUIRED_MEM" ]; then
+    echo "Not enough free GPU memory on GPU $GPU_ID: ${FREE_MEM} MiB available, ${REQUIRED_MEM} MiB required. Exiting."
+    exit 1
+fi
 
 n_in_parallel=1 # How many jobs to run in parallel on the same job (on the same GPU!)
 
@@ -44,12 +57,18 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
         --cluster.cache_subjects 1 \
         --cluster.num_workers_dataloaders 4 \
         --training.max_n_electrodes 64 \
+        --training.n_epochs 200 \
+        --cluster.eval_model_every_n_epochs 5 \
         --training.random_string $random_string \
         --training.train_subject_trials $train_subject_trials \
         --training.eval_subject_trials $eval_subject_trials \
         --training.dropout $dropout \
         --training.weight_decay $weight_decay \
+        --cluster.wandb_project roshnipm \
+        --cluster.wandb_entity andrii-mit \
         > "$log_out" 2> "$log_err" &
 done
 
 wait
+
+wandb sync runs/wandb/wandb/

@@ -52,6 +52,7 @@ CONFIG_SCHEMA = {
 
     'cluster': {
         'wandb_project': ParamConfig("", str, 'wandb.com project name'), # If empty, no wandb is used
+        'wandb_entity': ParamConfig("", str, 'wandb.com entity name'), # If empty, no wandb is used
         'save_model_every_n_epochs': ParamConfig(1, int, 'Save the model weights and training statistics every n epochs'),
         'eval_model_every_n_epochs': ParamConfig(1, int, 'Evaluate the model every n epochs'),
         'eval_at_beginning': ParamConfig(True, bool, 'Whether to evaluate the model at the beginning of the training'),
