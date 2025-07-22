@@ -20,14 +20,14 @@ print(f'{sh_array("PRIMARY_EPOCHS", config["primary_model"]["epochs"])}')
 # Tasks
 if "tasks" in config:
     tasks = config["tasks"]
-elif hasattr(neuroprobe_config, "ALL_TASKS"):
-    tasks = neuroprobe_config.ALL_TASKS
+elif hasattr(neuroprobe_config, "NEUROPROBE_TASKS"):
+    tasks = neuroprobe_config.NEUROPROBE_TASKS
 else:
     raise ValueError("Tasks not found in config and not available in neuroprobe_config.")
 print(f'{sh_array("TASKS", tasks)}')
 
 # Use BTBENCH_LITE_SUBJECT_TRIALS from neuroprobe_config
-subject_trials = neuroprobe_config.BTBENCH_LITE_SUBJECT_TRIALS
+subject_trials = neuroprobe_config.NEUROPROBE_LITE_SUBJECT_TRIALS
 subjects, trials = zip(*subject_trials)
 print(f'{sh_array("subjects", subjects)}')
 print(f'{sh_array("trials", trials)}')
