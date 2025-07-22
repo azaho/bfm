@@ -7,15 +7,22 @@
 #SBATCH -t 3:00:00         # total run time limit (HH:MM:SS) (increased to 24 hours)
 #SBATCH --constraint=10GB
 #SBATCH --exclude=dgx001,dgx002
-#SBATCH --array=1-192  # 285 if doing mini btbench
+#SBATCH --array=1-144  # 285 if doing mini btbench
 #SBATCH --output runs/logs/%A_%a.out # STDOUT
 #SBATCH --error runs/logs/%A_%a.err # STDERR
 #SBATCH -p use-everything
+
+
+echo "PATH: $PATH"
+echo "Running on node: ${hostname}"
 
 nvidia-smi
 
 export PYTHONUNBUFFERED=1
 source .venv/bin/activate
+
+# Add the current directory to PYTHONPATH so Python can find the evaluation package
+export PYTHONPATH="${PWD}:${PYTHONPATH}"
 
 # Use the BTBENCH_LITE_SUBJECT_TRIALS from btbench_config.py
 declare -a subjects=(1 1 2 2 3 3 4 4 7 7 10 10)
@@ -24,11 +31,14 @@ declare -a trials=(1 2 0 4 0 1 0 1 0 1 0 1)
 declare -a model_dirs=(
     # "andrii0_lr0.003_wd0.001_dr0.0_rR1_t20250714_121055"
     # "andrii0_lr0.003_wd0.0_dr0.2_rR1_t20250714_121055"
-    "andrii_brainbert_lr0.003_wd0.0_dr0.2_rR2_t20250716_001553"
+    # "andrii_brainbert_lr0.003_wd0.0_dr0.2_rR2_t20250716_001553"
+    "andrii_brainbert_lr0.0003_wd0.0_dr0.2_rR_SLR_t20250719_173751"
+    "andrii_brainbert_lr0.003_wd0.0_dr0.2_rR_CZWPARAMS3_t20250719_173741"
+    "andrii_brainbert_lr0.0003_wd0.0_dr0.2_rR_CZWPARAMS3SLR_t20250719_173743"
 )
-BATCH_SIZE=300 # takes ~<10G of RAM
+BATCH_SIZE=100 # 300GB takes ~<10G of RAM for andrii0 default params
 
-declare -a model_epochs=(0 1 10 20) #10 40)
+declare -a model_epochs=(0 10 15 30) #10 40)
 
 declare -a eval_names=(
     "frame_brightness"
@@ -66,10 +76,10 @@ declare -a classifier_type=(
 
 declare -a feature_type=(
     "keepall"
-    "meanE"
+    # "meanE"
     # "cls"
-    "meanT"
-    "meanT_meanE"
+    # "meanT"
+    # "meanT_meanE"
     # "meanT_cls"
 )
 

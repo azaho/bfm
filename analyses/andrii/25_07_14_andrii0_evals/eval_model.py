@@ -39,7 +39,7 @@ parser.add_argument('--model_dir', type=str, required=True, help='Directory cont
 parser.add_argument('--model_epoch', type=int, default=-1, help='Epoch of the model to load')
 parser.add_argument('--batch_size', type=int, default=50, help='Batch size for feature computation')
 
-parser.add_argument('--feature_type', type=str, default='default', help='Name of the feature extraction function to use for evaluation')
+parser.add_argument('--feature_type', type=str, default='keepall', help='How to extract features from the model. Options: \'meanE\' (mean across electrodes), \'meanT\' (mean across timebins), \'cls\' (only take the first token of the electrode dimension), any combinations of these (you can use _ to concatenate them) or \'keepall\' (keep all tokens)')
 
 parser.add_argument('--classifier_type', type=str, choices=['linear', 'cnn', 'transformer'], default='linear', help='Type of classifier to use for evaluation')
 args = parser.parse_args()
@@ -122,7 +122,8 @@ training_setup.initialize_model()
 
 if verbose:
     log(f"Loading model weights...", priority=0)
-training_setup.load_model(model_epoch)
+if model_epoch != 0:
+    training_setup.load_model(model_epoch)
 
 ### SETUP FEATURE GENERATION FUNCTION ###
 
