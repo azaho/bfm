@@ -68,7 +68,9 @@ try:
     setup_class = getattr(setup_module, training_setup_name)
     training_setup = setup_class(all_subjects, config, verbose=True)
 except (ImportError, AttributeError) as e:
-    print(f"Could not load training setup '{config['training']['setup_name']}'. Are you sure the filename and the class name are the same and correspond to the parameter? Error: {str(e)}")
+    print(f"ERROR: Could not load training setup '{config['training']['setup_name']}'. Are you sure the filename and the class name are the same and correspond to the parameter?")
+    print(f"Alternatively, the error could be because of a syntax error in the training setup file.")
+    print(f"Thrown error when trying to import the training setup: {str(e)}")
     exit()
 
 # Save a copy of the training setup file for reproducibility
