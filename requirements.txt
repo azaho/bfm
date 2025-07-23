@@ -4,6 +4,7 @@ joblib
 librosa
 matplotlib
 mkdocs
+mkdocs-material
 networkx
 numpy
 pandas
