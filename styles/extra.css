@@ -1,0 +1,14 @@
+[data-md-color-scheme="default"] {
+  --md-footer-fg-color: hsla(0, 0%, 0%, 0.8);        /* black text */
+  --md-footer-fg-color--light: hsla(0, 0%, 0%, 0.7);
+  --md-footer-fg-color--lighter: hsla(0, 0%, 0%, 0.3);
+  --md-footer-bg-color: hsla(0, 0%, 100%, 1);        /* white background */
+  --md-footer-bg-color--dark: hsla(0, 0%, 100%, 0.7);
+}
+
+
+img {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
