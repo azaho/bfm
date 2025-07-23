@@ -19,3 +19,7 @@ _*/
 
 # MkDocs build output
 site/
+
+# Not committing any figures
+# **/*.pdf
+# **/*.png
