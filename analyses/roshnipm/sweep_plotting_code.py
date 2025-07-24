@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # Plot train vs test loss curves for all sweep combinations
-def plot_sweep_loss_curves(results, model_name, weight_decay_options, dropout_options):
+def plot_sweep_loss_curves(results, model_name, weight_decay_options, dropout_options, y1=0.0, y2=5.0):
     """
     Create a subplot grid showing train vs test loss curves for all (wd, dr) combinations.
     
@@ -49,6 +49,7 @@ def plot_sweep_loss_curves(results, model_name, weight_decay_options, dropout_op
                     ax.plot(epochs, train_losses, label='Train Loss', color='blue', alpha=0.7)
                     ax.plot(epochs, test_losses, label='Test Loss', color='red', alpha=0.7)
                     
+                    ax.set_ylim(y1, y2)
                     ax.set_title(f'wd={wd}, dr={dr}')
                     ax.set_xlabel('Epoch')
                     ax.set_ylabel('Loss')

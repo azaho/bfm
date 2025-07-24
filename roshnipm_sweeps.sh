@@ -5,18 +5,18 @@
 #SBATCH --gres=gpu:a100:1
 ####SBATCH --constraint=ampere
 #SBATCH --mem=384G
-#SBATCH -t 19:00:00      
+#SBATCH -t 48:00:00      
 #SBATCH --array=1-16
 #SBATCH -p normal
 #SBATCH --requeue
-#SBATCH --exclude=node100
+#SBATCH --exclude=node100,node102
 source .venv/bin/activate
 export TMPDIR=/om2/scratch/tmp
 export CUDA_VISIBLE_DEVICES=0
 export WANDB_MODE=offline
 
-# Check for at least 30 GiB free on the assigned GPU
-REQUIRED_MEM=30720  # 30 GiB in MiB
+# Check for at least 40 GiB free on the assigned GPU
+REQUIRED_MEM=40960  # 40 GiB in MiB
 GPU_ID=${CUDA_VISIBLE_DEVICES:-0}
 FREE_MEM=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits | sed -n "$((GPU_ID+1))p")
 
@@ -28,7 +28,9 @@ fi
 n_in_parallel=1 # How many jobs to run in parallel on the same job (on the same GPU!)
 
 # these parameters are dixed
-train_subject_trials="btbank3_0,btbank7_0,btbank10_0,btbank4_1,btbank7_1"
+# train on Mr. Fox, Cars 2, and Megamind
+train_subject_trials="btbank3_0,btbank7_0,btbank10_0,btbank4_1,btbank7_1,btbank6_0,btbank1_1,btbank5_0"
+# eval on Cars 2 and one Megamind pair (Neuroprobe lite limitations)
 eval_subject_trials="btbank3_1,btbank3_2,btbank4_0,btbank4_2,btbank10_1"
 
 # these parameters are swept over
