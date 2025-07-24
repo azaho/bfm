@@ -1,17 +1,35 @@
-import torch
-import wandb, os, json
+import os
+import json
 import time
-import numpy as np
-from torch.amp import autocast
 import gc
+import shutil
+
+import numpy as np
+import torch
+from torch.amp import autocast
+from torch.optim.lr_scheduler import ChainedScheduler
+
+import wandb
+from dotenv import load_dotenv
+load_dotenv() # Load environment variables from .env file
 
 from utils.muon_optimizer import Muon
 from subject.dataset import load_subjects
 from evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
-from training_setup.training_config import log, update_dir_name, update_random_seed, parse_config_from_args, get_default_config, parse_subject_trials_from_config
-from torch.optim.lr_scheduler import ChainedScheduler
+from training_setup.training_config import (
+    log,
+    update_dir_name,
+    update_random_seed,
+    parse_config_from_args,
+    get_default_config,
+    parse_subject_trials_from_config,
+)
 
 ### LOADING CONFIGS ###
+
+RUNS_DIR='runs'
+TRAINING_SETUP_DIR='training_setup'
+TRAINING_SETUP_IMPORT='training_setup'
 
 config = get_default_config(random_string="TEMP", wandb_project="") # Outputs a dictionary, see utils/training_config.py for how it looks like
 parse_config_from_args(config) # Parses the command line arguments and updates the config dictionary
@@ -33,28 +51,34 @@ log(f"Using device: {device}", priority=0)
 
 log(f"Loading subjects...", priority=0)
 # all_subjects is a dictionary of subjects, with the subject identifier as the key and the subject object as the value
-all_subjects = load_subjects(config['training']['train_subject_trials'], 
-                             config['training']['eval_subject_trials'], config['training']['data_dtype'], 
-                             cache=config['cluster']['cache_subjects'], allow_corrupted=False)
+all_subjects = load_subjects(
+    config['training']['train_subject_trials'], 
+    config['training']['eval_subject_trials'], 
+    config['training']['data_dtype'], 
+    cache=config['cluster']['cache_subjects'], 
+    allow_corrupted=False
+)
 
 ### LOADING TRAINING SETUP ###
 
 # Import the training setup class dynamically based on config
-training_setup_name = config["training"]["setup_name"].lower() # if this is X, the filename should be trianing_setup/X.py and the class name should be XTrainingSetup
+training_setup_name = config["training"]["setup_name"].lower() # if this is X, the filename should be training_setup/X.py and the class name should be XTrainingSetup
 try:
-    setup_module = __import__(f'training_setup.{training_setup_name}', fromlist=[training_setup_name])
+    setup_module = __import__(f'{TRAINING_SETUP_IMPORT}.{training_setup_name}', fromlist=[training_setup_name])
     setup_class = getattr(setup_module, training_setup_name)
     training_setup = setup_class(all_subjects, config, verbose=True)
 except (ImportError, AttributeError) as e:
-    print(f"Could not load training setup '{config['training']['setup_name']}'. Are you sure the filename and the class name are the same and correspond to the parameter? Error: {str(e)}")
+    print(f"ERROR: Could not load training setup '{config['training']['setup_name']}'. Are you sure the filename and the class name are the same and correspond to the parameter?")
+    print(f"Alternatively, the error could be because of a syntax error in the training setup file.")
+    print(f"Thrown error when trying to import the training setup: {str(e)}")
     exit()
 
 # Save a copy of the training setup file for reproducibility
-import shutil
-setup_file = f'training_setup/{training_setup_name}.py'
-training_setup_dir = os.path.join('runs/data', dir_name, 'training_setup')
-os.makedirs(training_setup_dir, exist_ok=True)
-shutil.copy2(setup_file, training_setup_dir)    
+
+setup_file = f'{TRAINING_SETUP_DIR}/{training_setup_name}.py'
+training_setup_copy_dir = os.path.join(RUNS_DIR, 'data', dir_name, 'training_setup')
+os.makedirs(training_setup_copy_dir, exist_ok=True)
+shutil.copy2(setup_file, training_setup_copy_dir)
 
 ### LOAD MODEL ###
 
@@ -99,6 +123,7 @@ evaluation = FrozenModelEvaluation_SS_SM(
     # model evaluation function
     model_preprocess_functions=training_setup.get_preprocess_functions(pretraining=False),
     model_evaluation_function=training_setup.generate_frozen_features,
+    eval_aggregation_method=config['cluster']['eval_aggregation_method'],
     # benchmark parameters 
     eval_names=eval_tasks, lite=True,
     subject_trials=[(all_subjects[subject_identifier], trial_id) for subject_identifier, trial_id in config['training']['eval_subject_trials']],
@@ -113,9 +138,10 @@ evaluation = FrozenModelEvaluation_SS_SM(
 ### WANDB SETUP ###
 
 if wandb: 
-    os.makedirs("runs/wandb", exist_ok=True)
+    wandb_dir = os.path.join(RUNS_DIR, 'wandb')
+    os.makedirs(wandb_dir, exist_ok=True)
     wandb.init(project=config['cluster']['wandb_project'], name=config['cluster']['wandb_name'], id=config['cluster']['wandb_name'],
-               config=config, settings=wandb.Settings(init_timeout=480), dir="runs/wandb")
+               config=config, settings=wandb.Settings(init_timeout=480), dir=wandb_dir)
 
 ### EVALUATION OF THE MODEL BEFORE TRAINING ###
 

@@ -1,20 +1,33 @@
-import torch
-import wandb, os, json
-import time
-import numpy as np
-from torch.amp import autocast
 import gc
+import json
+import os
+import time
 
-from utils.muon_optimizer import Muon
-from subject.dataset import load_subjects
-from evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
-from training_setup.training_config import log, update_dir_name, update_random_seed, parse_config_from_args, get_default_config, parse_subject_trials_from_config, convert_dtypes
-from torch.optim.lr_scheduler import ChainedScheduler
-from training_setup.training_config import convert_dtypes, unconvert_dtypes, parse_subject_trials_from_config
-from torch.utils.data import DataLoader
+import numpy as np
+import torch
+import wandb
+from torch.amp import autocast
 
+from evaluation.neuroprobe import config as neuroprobe_config
 from evaluation.neuroprobe.datasets import BrainTreebankSubjectTrialBenchmarkDataset
-import evaluation.neuroprobe.config as neuroprobe_config
+from evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
+from subject.dataset import load_subjects
+from torch.optim.lr_scheduler import ChainedScheduler
+from torch.utils.data import DataLoader
+from training_setup.training_config import (
+    convert_dtypes,
+    get_default_config,
+    log,
+    parse_config_from_args,
+    parse_subject_trials_from_config,
+    unconvert_dtypes,
+    update_dir_name,
+    update_random_seed,
+)
+from utils.muon_optimizer import Muon
+
+
+RUNS_DIR='runs/data'
 
 ### PARSE MODEL DIR ###
 
@@ -44,7 +57,7 @@ bins_end_after_word_onset_seconds = 1.0
 
 # Load the checkpoint
 if model_epoch < 0: model_epoch = "final"
-checkpoint_path = os.path.join("runs/data", model_dir, f"model_epoch_{model_epoch}.pth")
+checkpoint_path = os.path.join(RUNS_DIR, model_dir, f"model_epoch_{model_epoch}.pth")
 checkpoint = torch.load(checkpoint_path)
 config = unconvert_dtypes(checkpoint['config'])
 log(f"Directory name: {model_dir}", priority=0)
@@ -90,7 +103,7 @@ training_setup.load_model(model_epoch)
 
 log(f"Computing frozen features...", priority=0)
 for eval_name in eval_tasks:
-    save_file_path = os.path.join("runs/data", model_dir, "frozen_features_neuroprobe", f"model_epoch{model_epoch}", f"frozen_population_btbank{subject_id}_{trial_id}_{eval_name}.npy")
+    save_file_path = os.path.join(RUNS_DIR, model_dir, "frozen_features_neuroprobe", f"model_epoch{model_epoch}", f"frozen_population_btbank{subject_id}_{trial_id}_{eval_name}.npy")
     os.makedirs(os.path.dirname(save_file_path), exist_ok=True)
 
     if not overwrite and os.path.exists(save_file_path):

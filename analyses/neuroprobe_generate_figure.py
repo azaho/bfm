@@ -1,15 +1,23 @@
-import matplotlib.pyplot as plt
-import numpy as np
-import seaborn as sns
+import argparse
+import glob
 import json
+import math
 import os
-import glob, math
+
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
+import seaborn as sns
+
 import evaluation.neuroprobe.config as neuroprobe_config
+
+save_path = 'analyses/figures/'
+font_path = 'analyses/font_arial.ttf'
+
 
 ### PARSE ARGUMENTS ###
 
-import argparse
 parser = argparse.ArgumentParser(description='Create performance figure for BTBench evaluation')
 parser.add_argument('--split_type', type=str, default='SS_DM', 
                     help='Split type to use (SS_SM or SS_DM or DS_DM)')
@@ -197,8 +205,6 @@ for model in models:
 ### PREPARING FOR PLOTTING ###
 
 # Add Arial font
-import matplotlib.font_manager as fm
-font_path = 'assets/font_arial.ttf'
 fm.fontManager.addfont(font_path)
 plt.rcParams['font.family'] = 'Arial'
 plt.rcParams.update({'font.size': 12})
@@ -307,7 +313,8 @@ fig.legend(handles, [model['name'] for model in models] + ["Chance"],
 plt.tight_layout(rect=[0, 0.2 if len(task_name_mapping)<10 or len(models)>3 else 0.1, 1, 1], w_pad=0.4)
 
 # Save figure
-save_path = f'analyses/figures/neuroprobe_eval_lite_{split_type}.pdf'
+file_name = f'neuroprobe_eval_lite_{split_type}.pdf'
+save_path = os.path.join(save_path, file_name)
 os.makedirs(os.path.dirname(save_path), exist_ok=True)
 plt.savefig(save_path, dpi=300, bbox_inches='tight')
 print(f'Saved figure to {save_path}')

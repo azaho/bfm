@@ -68,7 +68,7 @@ CONFIG_SCHEMA = {
         'prefetch_factor': ParamConfig(2, int, 'Prefetch factor'), # for the dataloader workers
 
         'quick_eval': ParamConfig(False, bool, 'Whether to do quicker evaluation by only evaluating on one fold of the data'), # Whether to do quick evaluation on a subset of the data
-        'eval_aggregation_method': ParamConfig('concat', str, 'Evaluation aggregation method'),
+        'eval_aggregation_method': ParamConfig('keepall', str, 'Evaluation aggregation method'), # options: 'meanE' (mean across electrodes), 'meanT' (mean across timebins), 'cls' (only take the first token of the electrode dimension), any combinations of these (you can use _ to concatenate them) or 'keepall' (keep all tokens)
     },
 
     'training': {
@@ -90,7 +90,7 @@ CONFIG_SCHEMA = {
         
         'learning_rate': ParamConfig(0.003, float, 'Learning rate', include_in_dirname=True, dirname_format=lambda x: f'lr{x}'),
         'lr_schedule': ParamConfig('linear', str, 'Learning rate schedule (none, linear, cosine)'),
-        'weight_decay': ParamConfig(0.0001, float, 'Weight decay for optimizer', include_in_dirname=True, dirname_format=lambda x: f'wd{x}'),
+        'weight_decay': ParamConfig(0.0, float, 'Weight decay for optimizer', include_in_dirname=True, dirname_format=lambda x: f'wd{x}'),
         'dropout': ParamConfig(0.1, float, 'Dropout rate', include_in_dirname=True, dirname_format=lambda x: f'dr{x}'),
         
         'max_n_electrodes': ParamConfig(128, int, 'Maximum number of electrodes to use during pretraining'),
@@ -108,7 +108,7 @@ CONFIG_SCHEMA = {
     },
 
     # This is a dictionary that can be used to store any additional parameters that are not part of the schema. 
-    # For example, if you want to store a param like congig['other']['X'] and it have a value '12345' (only strings are supported)
+    # For example, if you want to store a param like config['other']['X'] and it have a value '12345' (only strings are supported)
     # You can pass it as an argument to the script like this: --other.X 12345
     'other': {} 
 }

@@ -4,9 +4,12 @@
 
 import os
 
+from dotenv import load_dotenv
+load_dotenv()  # Load environment variables from .env file
+
 # It is recommended that all the paths are absolute!
 # Feel free to change this setting to your own directory.
-ROOT_DIR = "/om2/user/zaho/braintreebank/braintreebank/" # Root directory for the braintreebank data. Recommended to use the absolute path.
+ROOT_DIR = os.environ["BRAIN_TREEBANK_ROOT_DIR"] # Root directory for the braintreebank data.
 
 # This comes together with the neuroprobe package
 SAVE_SUBJECT_TRIAL_DF_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "braintreebank_features_time_alignment")

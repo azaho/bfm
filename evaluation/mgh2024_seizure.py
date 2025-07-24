@@ -1,6 +1,6 @@
-from subject.mgh2024 import MGH2024Subject
 import numpy as np
 import torch
+from subject.mgh2024 import MGH2024Subject
 
 
 class MGHSeizureDataset(torch.utils.data.Dataset):

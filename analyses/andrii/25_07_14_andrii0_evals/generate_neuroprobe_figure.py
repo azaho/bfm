@@ -20,7 +20,9 @@ metric = 'AUROC' # 'AUROC'
 assert metric == 'AUROC', 'Metric must be AUROC; no other metric is supported'
 
 separate_overall_yscale = True # Whether to have the "Task Mean" figure panel have a 0.5-0.6 ylim instead of 0.5-0.9 (used to better see the difference between models)
-n_fig_legend_cols = 3
+
+figure_size_multiplier = 2
+n_fig_legend_cols = 3 if figure_size_multiplier<2 else 4
 
 ### DEFINE MODELS ###
 
@@ -39,8 +41,9 @@ models = [
     {
         'name': f'Andrii0 epoch {model_epoch} ({feature_type})',
         'color_palette': 'rainbow',
-        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_andrii0_lr0.003_wd0.001_dr0.0_rR1_t20250714_121055_epoch{model_epoch}_{feature_type}/'
-    } for feature_type in ['keepall', 'meanE', 'cls', 'meanT', 'meanT_meanE', 'meanT_cls'] for model_epoch in [0, 40]
+        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_andrii0_lr0.003_wd0.001_dr0.0_rR1_t20250714_121055_epoch{model_epoch}_{feature_type}/',
+        'pad_x': 1 if model_epoch==0 else 0,
+    } for feature_type in ['keepall', 'meanE', 'cls', 'meanT', 'meanT_meanE', 'meanT_cls'] for model_epoch in [0, 1, 10, 40]
 ]
 
 ### DEFINE TASK NAME MAPPING ###
@@ -179,7 +182,7 @@ for model in models:
 
 # Add Arial font
 import matplotlib.font_manager as fm
-font_path = 'assets/font_arial.ttf'
+font_path = 'analyses/font_arial.ttf'
 fm.fontManager.addfont(font_path)
 plt.rcParams['font.family'] = 'Arial'
 plt.rcParams.update({'font.size': 12})
@@ -193,12 +196,19 @@ for model in models:
 for model in models:
     model['color'] = sns.color_palette(model['color_palette'], color_palette_ids[model['color_palette']])[model['color_palette_id']]
 
+# Assign model x-positions
+current_x_pos = 0
+for i, model in enumerate(models):
+    if model.get('pad_x', 0): current_x_pos += model['pad_x']
+    model['x_pos'] = current_x_pos
+    current_x_pos += 1
+
 ### PLOT STUFF ###
 
 # Create figure with 4x5 grid - reduced size
 n_cols = 5
 n_rows = math.ceil((len(task_name_mapping)+1)/n_cols)
-fig, axs = plt.subplots(n_rows, n_cols, figsize=(2*8/5*n_cols, 2*6/4*n_rows+.6 * len(models) / n_fig_legend_cols/3/2))
+fig, axs = plt.subplots(n_rows, n_cols, figsize=(figure_size_multiplier*8/5*n_cols, figure_size_multiplier*6/4*n_rows+.6 * len(models) / n_fig_legend_cols/3/2))
 
 # Flatten axs for easier iteration
 axs_flat = axs.flatten()
@@ -210,7 +220,7 @@ bar_width = 0.2
 first_ax = axs_flat[0]
 for i, model in enumerate(models):
     perf = overall_performance[model['name']]
-    first_ax.bar(i * bar_width, perf['mean'], bar_width,
+    first_ax.bar(model['x_pos']*bar_width, perf['mean'], bar_width,
                 yerr=perf['sem'],
                 color=model['color'],
                 capsize=6)
@@ -242,7 +252,7 @@ for task, chance_level in task_name_mapping.items():
     x = np.arange(len(models))
     for i, model in enumerate(models):
         perf = performance_data[task][model['name']]
-        ax.bar(i * bar_width, perf['mean'], bar_width,
+        ax.bar(model['x_pos']*bar_width, perf['mean'], bar_width,
                 yerr=perf['sem'], 
                 color=model['color'],
                 capsize=6)
@@ -285,11 +295,7 @@ fig.legend(handles, [model['name'] for model in models] + ["Chance"],
             frameon=False)
 
 # Adjust layout with space at the bottom for legend
-# if (len(models)//3 == 2): rect_y = 0.2
-# elif (len(models)//3 == 3): rect_y = 0.25
-# elif (len(models)//3 == 4): rect_y = 0.3
-# else: rect_y = 0.15
-rect_y = 0.1 + 0.05 * (len(models)//3)
+rect_y = 0.1 + 0.05 * (math.ceil((len(models)+1)/n_fig_legend_cols)-1) / figure_size_multiplier
 plt.tight_layout(rect=[0, rect_y, 1, 1], w_pad=0.4)
 
 # Save figure

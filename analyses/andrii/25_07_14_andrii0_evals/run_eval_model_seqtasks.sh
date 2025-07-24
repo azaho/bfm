@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=2    # Request 8 CPU cores per GPU
 #SBATCH --mem=64G
 #SBATCH --gres=gpu:1
-#SBATCH -t 1:20:00         # total run time limit (HH:MM:SS) (increased to 24 hours)
-#######SBATCH --constraint=24GB
+#SBATCH -t 3:00:00         # total run time limit (HH:MM:SS) (increased to 24 hours)
+#SBATCH --constraint=10GB
 #SBATCH --exclude=dgx001,dgx002
 #SBATCH --array=1-288  # 285 if doing mini btbench
 #SBATCH --output runs/logs/%A_%a.out # STDOUT
@@ -22,11 +22,12 @@ declare -a subjects=(1 1 2 2 3 3 4 4 7 7 10 10)
 declare -a trials=(1 2 0 4 0 1 0 1 0 1 0 1)
 
 declare -a model_dirs=(
-    "andrii0_lr0.003_wd0.001_dr0.0_rR1_t20250714_121055"
+    # "andrii0_lr0.003_wd0.001_dr0.0_rR1_t20250714_121055"
+    "andrii0_lr0.003_wd0.0_dr0.2_rR1_t20250714_121055"
 )
-BATCH_SIZE=300 # takes <10G of RAM
+BATCH_SIZE=300 # takes ~<10G of RAM
 
-declare -a model_epochs=(1 10 0 40)
+declare -a model_epochs=(0 1 10 20)
 
 declare -a eval_names=(
     "frame_brightness"
@@ -51,8 +52,8 @@ declare -a eval_names=(
 )
 
 declare -a splits_type=(
-    "SS_SM"
-    # "SS_DM"
+    # "SS_SM"
+    "SS_DM"
     # "DS_DM"
 )
 

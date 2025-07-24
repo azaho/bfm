@@ -1,14 +1,18 @@
-from torch.utils.data import DataLoader
+import gc
+
+import numpy as np
 import sklearn.metrics
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
-import numpy as np
-from .neuroprobe.train_test_splits import generate_splits_SS_SM
-from .neuroprobe.config import NEUROPROBE_LITE_ELECTRODES
-from training_setup.training_config import log
+
 import torch
-import gc
 import torch.cuda
+from torch.utils.data import DataLoader
+
+from training_setup.training_config import log
+from evaluation.neuroprobe.train_test_splits import generate_splits_SS_SM
+from evaluation.neuroprobe.config import NEUROPROBE_LITE_ELECTRODES
+
 
 # Evaluation class for Same Subject Same Movie (SS-SM), on neuroprobe evals
 class FrozenModelEvaluation_SS_SM():
@@ -16,6 +20,7 @@ class FrozenModelEvaluation_SS_SM():
                  # model preprocess and evaluation function
                  model_preprocess_functions,
                  model_evaluation_function,
+                 eval_aggregation_method,
                  # benchmark parameters
                  eval_names, subject_trials, 
                  lite=True, 
@@ -38,6 +43,7 @@ class FrozenModelEvaluation_SS_SM():
         """
         self.model_preprocess_functions = model_preprocess_functions
         self.model_evaluation_function = model_evaluation_function
+        self.eval_aggregation_method = eval_aggregation_method
         self.eval_names = eval_names
         self.subject_trials = subject_trials
         all_subject_values = set([subject for subject, trial_id in self.subject_trials])
@@ -89,7 +95,16 @@ class FrozenModelEvaluation_SS_SM():
             else:
                 for preprocess_function in self.model_preprocess_functions:
                     batch = preprocess_function(batch)
-                features = self.model_evaluation_function(batch).reshape(batch_input.shape[0], -1)
+                features = self.model_evaluation_function(batch) # shape: (batch_size, n_electrodes or n_electrodes+1, n_timebins, *) where * can be arbitrary
+
+                if 'meanT' in self.eval_aggregation_method:
+                    features = features.mean(dim=2, keepdim=True) # shape: (batch_size, n_electrodes + 1, 1, d_model)
+                if 'meanE' in self.eval_aggregation_method:
+                    features = features.mean(dim=1, keepdim=True) # shape: (batch_size, 1, n_timebins, d_model)
+                if 'cls' in self.eval_aggregation_method:
+                    features = features[:, 0:1, :, :] # shape: (batch_size, 1, n_timebins, d_model) -- take just the cls token
+
+                features = features.reshape(batch_input.shape[0], -1)
 
             log(f'done generating frozen features for batch {i} of {len(dataloader)}', priority=log_priority, indent=3)
             X.append(features.detach().cpu().float().numpy())
