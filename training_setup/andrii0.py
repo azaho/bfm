@@ -6,6 +6,7 @@ from training_setup.training_setup import TrainingSetup
 from model.BFModule import BFModule
 from model.transformer_implementation import Transformer
 import torch.nn as nn
+import time
 
 # This file first defines the model components, then the training setup.
 
@@ -130,6 +131,10 @@ class andrii0(TrainingSetup):
         ).to(device, dtype=config['model']['dtype'])
         config['model']['name'] = "AndriiOriginalModel"
 
+        self.model = torch.compile(self.model) # <- Kerrnel fusion
+
+        self.model.to(device, dtype=config['model']['dtype'])
+
         ### LOAD ELECTRODE EMBEDDINGS ###
 
         electrode_embeddings_class = { # Select the right class based on the config
@@ -189,6 +194,15 @@ class andrii0(TrainingSetup):
         # OUTPUT:
         #   This function will output a dictionary of losses, with the keys being the loss names and the values being the loss values.
         #   The final loss is the mean of all the losses. Accuracies are exempt and are just used for logging.
+        timings = {}
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        t0 = time.time()
+
+        # --- Spectogram/FFT ---
+        # This is inside the model forward so we will time the model forwards for each half
+        # Spectogram can also be timed if needed
+
         batch['data'] = batch['data'].to(self.model.device, dtype=self.model.dtype, non_blocking=True)
         batch['electrode_index'] = batch['electrode_index'].to(self.model.device, non_blocking=True)
         
@@ -227,14 +241,44 @@ class andrii0(TrainingSetup):
             'metadata': batch['metadata'],
         }
 
+        # --- Electrode Embeddings ---
+        t1 = time.time()
         embeddings_a = self.electrode_embeddings(batch_a)
         embeddings_b = self.electrode_embeddings(batch_b)
-        electrode_transformed_data_a, time_transformed_data_a = self.model(batch_a, embeddings_a) # shape: (batch_size, n_electrodes + 1, n_timebins, d_model), (batch_size, 1, n_timebins, d_model)
-        electrode_transformed_data_b, time_transformed_data_b = self.model(batch_b, embeddings_b) # shape: (batch_size, n_electrodes + 1, n_timebins, d_model), (batch_size, 1, n_timebins, d_model)
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        t2 = time.time()
+        timings['electrode_embeddings'] = t2 - t1
 
-        # add two symmetric loss components (for the electrode)
-        losses = _add_to_loss_contrastive(losses, time_transformed_data_a[:, :, :-future_bin_idx], electrode_transformed_data_b[:, :1, future_bin_idx:], 'a')
-        losses = _add_to_loss_contrastive(losses, time_transformed_data_b[:, :, :-future_bin_idx], electrode_transformed_data_a[:, :1, future_bin_idx:], 'b')
+        # --- Model Forward (Spectrogram, ElectrodeTransformer, TimeTransformer) ---
+        t3 = time.time()
+        electrode_transformed_data_a, time_transformed_data_a = self.model(batch_a, embeddings_a)
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        t4 = time.time()
+        timings['model_forward_a'] = t4 - t3
+
+        t5 = time.time()
+        electrode_transformed_data_b, time_transformed_data_b = self.model(batch_b, embeddings_b)
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        t6 = time.time()
+        timings['model_forward_b'] = t6 - t5
+
+        # --- Loss Calculation ---
+        t7 = time.time()
+        losses = _add_to_loss_contrastive(losses, time_transformed_data_a[:, :, :-future_bin_idx],
+                                          electrode_transformed_data_b[:, :1, future_bin_idx:], 'a')
+        losses = _add_to_loss_contrastive(losses, time_transformed_data_b[:, :, :-future_bin_idx],
+                                          electrode_transformed_data_a[:, :1, future_bin_idx:], 'b')
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        t8 = time.time()
+        timings['loss_calc'] = t8 - t7
+
+        timings['total'] = t8 - t0
+        print(
+            f"[Bottleneck timings] ElectrodeEmbeddings: {timings['electrode_embeddings']:.4f}s, ModelA: {timings['model_forward_a']:.4f}s, ModelB: {timings['model_forward_b']:.4f}s, Loss: {timings['loss_calc']:.4f}s, Total: {timings['total']:.4f}s")
 
         return losses
 
