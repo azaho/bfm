@@ -47,7 +47,7 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
     
     # Convert index to parameter selections
     max_n_electrodes=${max_n_electrodes_options[$((idx % n_el))]}
-    random_string="roshnipm_pair_nocommon_max_n_electrodes${max_n_electrodes}"
+    random_string="max_n_electrodes${max_n_electrodes}_context_length3_batch64"
 
     log_out="runs/logs/${random_string}.out"
     log_err="runs/logs/${random_string}.err"
@@ -57,7 +57,7 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
         --cluster.cache_subjects 1 \
         --cluster.num_workers_dataloaders 4 \
         --training.batch_size 64 \
-        --model.context_length 1 \
+        --model.context_length 3 \
         --cluster.eval_model_every_n_epochs 5 \
         --training.weight_decay 0.001 \
         --training.dropout 0.0 \

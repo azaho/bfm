@@ -59,7 +59,7 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
         --cluster.cache_subjects 1 \
         --cluster.num_workers_dataloaders 4 \
         --training.max_n_electrodes 128 \
-        --training.n_epochs 200 \
+        --training.n_epochs 100 \
         --cluster.eval_model_every_n_epochs 5 \
         --training.random_string $random_string \
         --training.train_subject_trials $train_subject_trials \
