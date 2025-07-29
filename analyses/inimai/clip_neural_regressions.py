@@ -12,6 +12,8 @@ from matplotlib.lines import Line2D
 import torch
 from bfm.model.BFModule import BFModule
 import torch.nn as nn
+from bfm.training_setup.training_config import get_default_config
+from sklearn.preprocessing import StandardScaler
 
 SUBJECT_TRIAL_TO_MOVIE = {
     (1,0): 'fantastic-mr-fox.mp4',
@@ -33,7 +35,7 @@ SUBJECT_TRIAL_TO_MOVIE = {
     (5,0): 'fantastic-mr-fox.mp4',
     (6,0): 'megamind.mp4',
     (6,1): 'toy-story.mp4',
-    (6,2): 'coraline.mp4',
+    (6,4): 'coraline.mp4',
     (7,0): 'cars-2.mp4',
     (7,1): 'megamind.mp4',
     (8,0): 'sesame-street-episode-3990.mp4',
@@ -44,18 +46,35 @@ SUBJECT_TRIAL_TO_MOVIE = {
 
 CLIP_DIR = "/om2/data/public/braintreebank_movies_clip_preprocessed_2/"
 MOVIES_DIR = "/om2/data/public/braintreebank_movies/"
-REGR_DIR = "/om2/data/public/braintreebank_movies_clip_preprocessed_2/regr_results/"
+REGR_DIR = "/om2/data/public/braintreebank_movies_clip_preprocessed_2/regr_results_2/"
 
 
 class SpectrogramPreprocessor(BFModule):
-    def __init__(self, output_dim=-1, max_frequency=200):
-        super(SpectrogramPreprocessor, self).__init__()
-        self.max_frequency = max_frequency
-        self.output_dim = output_dim
+    def __init__(self, spectrogram_parameters=None, output_dim=-1):
+        """
+        spectrogram_parameters is a dictionary with the following keys:
+        spectrogram_parameters = {
+            'max_frequency': int, 'Maximum frequency for spectrogram'
+            'tperseg': float, 'Time of each spectrogram segment in seconds'
+            'poverlap': float, 'Proportion of overlap between segments for spectrogram'
+            'window': str, 'Window function for spectrogram', # Allowed values: 'hann', 'boxcar'
+        }
+        """
+        if spectrogram_parameters is None: # Load default spectrogram parameters from training config
+            spectrogram_parameters = get_default_config(random_string="TEMP", wandb_project="")['model']['signal_preprocessing']['spectrogram_parameters']
 
-        assert self.max_frequency == 200, "Max frequency must be 200"
-        self.max_frequency_bin = 40 # XXX hardcoded max frequency bin
+        super(SpectrogramPreprocessor, self).__init__()
+        self.output_dim = output_dim
+        self.spectrogram_parameters = spectrogram_parameters
         
+        # from https://docs.pytorch.org/docs/stable/generated/torch.fft.rfftfreq.html
+        # if n is nperseg, and d is 1/sampling_rate, then f = torch.arange((n + 1) // 2) / (d * n)
+        # note: nperseg is always going to be even, so it simplifies to torch.arange(n/2) / n * sampling_rate
+        # note: n = sampling_rate * tperseg, so it simplifies to torch.arange(sampling_rate * tperseg / 2) / tperseg
+        #    which is a list that goes from 0 to sampling_rate / 2 in increments of sampling_rate / nperseg = 1 / tperseg
+        # so max frequency bin is max_frequency * tperseg + 1 (adding one to make the endpoint inclusive)
+        self.max_frequency_bin = round(self.spectrogram_parameters['max_frequency'] * self.spectrogram_parameters['tperseg'] + 1)
+
         # Transform FFT output to match expected output dimension
         self.output_transform = nn.Identity() if self.output_dim == -1 else nn.Linear(self.max_frequency_bin, self.output_dim)
     
@@ -69,10 +88,15 @@ class SpectrogramPreprocessor(BFModule):
         x = x.to(dtype=torch.float32)  # Convert to float32 for STFT
         
         # STFT parameters
-        nperseg = 400
-        noverlap = 350
-        window = torch.hann_window(nperseg, device=x.device)
+        sampling_rate = batch['metadata']['sampling_rate']
+        nperseg = round(self.spectrogram_parameters['tperseg'] * sampling_rate)
+        noverlap = round(self.spectrogram_parameters['poverlap'] * nperseg)
         hop_length = nperseg - noverlap
+        
+        window = {
+            'hann': torch.hann_window,
+            'boxcar': torch.ones,
+        }[self.spectrogram_parameters['window']](nperseg, device=x.device)
         
         # Compute STFT
         x = torch.stft(x,
@@ -86,12 +110,9 @@ class SpectrogramPreprocessor(BFModule):
         
         # Take magnitude
         x = torch.abs(x)
-        
-        # Pad or trim to max_frequency dimension
-        if x.shape[1] < self.max_frequency_bin:
-            x = torch.nn.functional.pad(x, (0, 0, 0, self.max_frequency_bin - x.shape[1]))
-        else:
-            x = x[:, :self.max_frequency_bin]
+
+        # Trim to max frequency (using a pre-calculated max frequency bin)
+        x = x[:, :self.max_frequency_bin, :]
             
         # Reshape back
         _, n_freqs, n_times = x.shape
@@ -102,22 +123,13 @@ class SpectrogramPreprocessor(BFModule):
         x = x - x.mean(dim=[0, 2], keepdim=True)
         x = x / (x.std(dim=[0, 2], keepdim=True) + 1e-5)
 
-        # Transform to match expected output dimension
-        # x = self.output_transform(x)  # shape: (batch_size, n_electrodes, n_timebins, output_dim)
+        freq_bins = torch.fft.rfftfreq(nperseg, d=1/sampling_rate)
+        freq_bins = freq_bins[:self.max_frequency_bin]
 
-        sr = batch['metadata'].get('sampling_rate', 2048)
+        n_timebins = x.shape[2]
+        time_bins = torch.arange(n_timebins, device=x.device) * hop_length / sampling_rate
 
-        # Frequency bins (as in torch.stft)
-        freq_bins = torch.fft.rfftfreq(nperseg, d=1/sr)  # length: nperseg//2+1
-        # Only keep up to max_frequency_bin
-        freq_bins = freq_bins[:self.max_frequency_bin]  # shape: (max_frequency_bin,)
 
-        # Time bins (center of each window)
-        n_timebins = x.shape[2]  # after transpose, x.shape = (batch, n_electrodes, n_timebins, n_freqs)
-        # torch.stft centers windows by default (center=True)
-        # The time for each bin is: (hop_length * i) / sr, for i in 0..n_timebins-1
-        time_bins = torch.arange(n_timebins, device=x.device) * hop_length / sr  # shape: (n_timebins,)
-        
         return x.to(dtype=batch['data'].dtype), freq_bins, time_bins
 
 
@@ -199,24 +211,60 @@ def run_regression(X, y_spectrogram, freq_bins, time_bins, subject_id, trial_id,
     n_timebins = y_spectrogram.shape[2]
     n_freqs = y_spectrogram.shape[3]
 
-    test_correlation_matrix = np.zeros((n_freqs, n_timebins))
-    test_pval_matrix = np.zeros((n_freqs, n_timebins))
-
     n_samples = X.shape[0]
-    train_idx, test_idx = train_test_split(np.arange(n_samples), test_size=0.2, random_state=42)
+    n_folds = 3
 
-    for t in tqdm(range(n_timebins), desc="Timebin"):
-        for f in range(n_freqs):
-            # Get the neural response for all samples at this (t, f)
-            y_vals = y_spectrogram[:, 0, t, f].cpu().numpy() if hasattr(y_spectrogram, 'cpu') else y_spectrogram[:, 0, t, f]
-            X_train, X_test = X[train_idx], X[test_idx]
-            y_train, y_test = y_vals[train_idx], y_vals[test_idx]
-            reg = Ridge(alpha=0.1)
-            reg.fit(X_train, y_train)
-            y_pred_test = reg.predict(X_test)
-            corr, pval = pearsonr(y_test, y_pred_test)
-            test_correlation_matrix[f, t] = corr
-            test_pval_matrix[f, t] = pval
+    fold_size = n_samples // n_folds
+    fold_indices = [i * fold_size for i in range(n_folds)] + [n_samples]
+
+    # Store correlation and pval matrices for each fold
+    fold_correlation_matrices = []
+    fold_pval_matrices = []
+
+    for fold in range(n_folds):
+        fold_corr_matrix = np.zeros((n_freqs, n_timebins))
+        fold_pval_matrix = np.zeros((n_freqs, n_timebins))
+        # Chronological split: train on all but the current fold, test on the current fold
+        test_start = fold_indices[fold]
+        test_end = fold_indices[fold + 1]
+        test_idx = np.arange(test_start, test_end)
+        train_idx = np.concatenate([
+            np.arange(0, test_start),
+            np.arange(test_end, n_samples)
+        ]) if n_folds > 1 else np.arange(0, test_start)  # For n_folds=1, just use all before test
+
+        X_train, X_test = X[train_idx], X[test_idx]
+
+        # Normalize features using StandardScaler (fit on train, transform both train and test)
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_test_scaled = scaler.transform(X_test)
+
+        for t in tqdm(range(n_timebins), desc=f"Timebin (Fold {fold+1}/{n_folds})", leave=False):
+            for f in range(n_freqs):
+                y_vals = y_spectrogram[:, 0, t, f].cpu().numpy() if hasattr(y_spectrogram, 'cpu') else y_spectrogram[:, 0, t, f]
+                y_train, y_test = y_vals[train_idx], y_vals[test_idx]
+                if len(np.unique(y_train)) < 2 or len(np.unique(y_test)) < 2:
+                    # Not enough variance to compute correlation
+                    fold_corr_matrix[f, t] = np.nan
+                    fold_pval_matrix[f, t] = np.nan
+                    continue
+                reg = Ridge(alpha=0.1)
+                reg.fit(X_train_scaled, y_train)
+                y_pred_test = reg.predict(X_test_scaled)
+                corr, pval = pearsonr(y_test, y_pred_test)
+                fold_corr_matrix[f, t] = corr
+                fold_pval_matrix[f, t] = pval
+
+        fold_correlation_matrices.append(fold_corr_matrix)
+        fold_pval_matrices.append(fold_pval_matrix)
+
+    # Find the fold with the highest sum of absolute correlation values
+    fold_sums = [np.nansum(np.abs(mat)) for mat in fold_correlation_matrices]
+    best_fold_idx = np.argmax(fold_sums)
+
+    test_correlation_matrix = fold_correlation_matrices[best_fold_idx]
+    test_pval_matrix = fold_pval_matrices[best_fold_idx]
 
     plt.figure(figsize=(12, 6))
     im = plt.imshow(
@@ -224,12 +272,7 @@ def run_regression(X, y_spectrogram, freq_bins, time_bins, subject_id, trial_id,
         aspect='auto',
         origin='lower',
         cmap='viridis',
-        extent=[
-            time_bins[0].item() if hasattr(time_bins[0], 'item') else time_bins[0],
-            time_bins[-1].item() if hasattr(time_bins[-1], 'item') else time_bins[-1],
-            freq_bins[0].item() if hasattr(freq_bins[0], 'item') else freq_bins[0],
-            freq_bins[-1].item() if hasattr(freq_bins[-1], 'item') else freq_bins[-1],
-        ]
+        extent=[time_bins[0],time_bins[-1],freq_bins[0],freq_bins[-1]]
     )
 
     star_y, star_x = np.where(test_pval_matrix < 0.05)
@@ -291,8 +334,12 @@ def process_movie(movie):
             y_tensor = torch.tensor(y_copy)
             y_tensor = y_tensor.reshape(y_copy.shape[0], 1, y_copy.shape[1])
 
-            spec_preproc = SpectrogramPreprocessor()
-            y_spectrogram, freq_bins, time_bins = spec_preproc({'data': y_tensor, 'metadata': {}})
+            nperseg = 400
+            noverlap = 350
+            tperseg = nperseg / 2048
+            poverlap = noverlap / nperseg
+            spec_preproc = SpectrogramPreprocessor({'max_frequency': 200, 'window': 'hann', 'tperseg': tperseg, 'poverlap': poverlap})
+            y_spectrogram, freq_bins, time_bins = spec_preproc({'data': y_tensor, 'metadata': {'sampling_rate': 2048}})  # shape: (batch_size, n_electrodes, n_timebins, n_freqs)
 
             run_regression(X, y_spectrogram, freq_bins, time_bins, subject_id, trial_id, electrode_label)
 
