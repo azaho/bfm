@@ -19,6 +19,17 @@ export PYTHONUNBUFFERED=1
 export PYTHONPATH=/om2/user/brupesh/bfm:$PYTHONPATH
 source /om2/user/zaho/bfm/.venv/bin/activate
 
+CONFIG_PATH=$1
+if [ -z "$CONFIG_PATH" ]; then
+    echo "Usage: $0 path/to/model_config.json"
+    exit 1
+fi
+
+echo "Computing frozen features for config: $CONFIG_PATH"
+
+# Extract fields from config
+eval "$(python analyses/bhadra/25_07_02_pipeline/parse_config.py "$CONFIG_PATH")"
+
 model_dir="OM_wd0.0_dr0.0_rX1"
 
 declare -a epochs=(0 25 50)
@@ -59,5 +70,5 @@ EPOCH=${epochs[$EPOCH_IDX]}
 
 echo "Running for subject $SUBJECT_ID, trial $TRIAL_ID, eval $EVAL_NAMES_STR"
 
-python -u analyses/compute_frozen_features_neuroprobe.py --model_dir $model_dir/ \
+python -u analyses/bhadra/25_07_02_pipeline/compute_frozen_features_neuroprobe.py --model_dir "$MODEL_DIR/" \
         --subject_id $SUBJECT_ID --trial_id $TRIAL_ID --eval_tasks $EVAL_NAMES_STR --overwrite --model_epoch $EPOCH --batch_size 50

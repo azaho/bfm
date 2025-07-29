@@ -34,6 +34,7 @@ assert metric == 'AUROC', 'Metric must be AUROC; no other metric is supported'
 
 separate_overall_yscale = True # Whether to have the "Task Mean" figure panel have a 0.5-0.6 ylim instead of 0.5-0.9 (used to better see the difference between models)
 n_fig_legend_cols = 3
+figure_size_multiplier = 1.5
 
 ### Define primary model
 primary_model = {
@@ -174,7 +175,7 @@ for model in models:
 
 # Add Arial font
 import matplotlib.font_manager as fm
-font_path = 'assets/font_arial.ttf'
+font_path = 'analyses/font_arial.ttf'
 fm.fontManager.addfont(font_path)
 plt.rcParams['font.family'] = 'Arial'
 plt.rcParams.update({'font.size': 12})
@@ -193,7 +194,7 @@ for model in models:
 # Create figure with 4x5 grid - reduced size
 n_cols = 5
 n_rows = math.ceil((len(task_name_mapping)+1)/n_cols)
-fig, axs = plt.subplots(n_rows, n_cols, figsize=(8/5*n_cols, 6/4*n_rows+.6 * len(models) / n_fig_legend_cols/3/2))
+fig, axs = plt.subplots(n_rows, n_cols, figsize=(figure_size_multiplier*8/5*n_cols, figure_size_multiplier*6/4*n_rows+.6 * len(models) / n_fig_legend_cols/3/2))
 
 # Flatten axs for easier iteration
 axs_flat = axs.flatten()
@@ -279,8 +280,8 @@ fig.legend(handles, [model['name'] for model in models] + ["Chance"],
             ncol=n_fig_legend_cols,
             frameon=False)
 
-# Adjust layout with space at the bottom for legend
-plt.tight_layout(rect=[0, 0.2 if len(task_name_mapping)<10 or len(models)>3 else 0.1, 1, 1], w_pad=0.4)
+rect_y = 0.1 + 0.05 * (math.ceil((len(models)+1)/n_fig_legend_cols)-1) / figure_size_multiplier
+plt.tight_layout(rect=[0, rect_y, 1, 1], w_pad=0.4)
 
 # Save figure
 os.makedirs(save_dir, exist_ok=True)

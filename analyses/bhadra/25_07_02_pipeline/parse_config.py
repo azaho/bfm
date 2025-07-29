@@ -16,6 +16,7 @@ print(f'PRIMARY_TITLE="{config["primary_model"]["title"]}"')
 print(f'PRIMARY_PATH="{config["primary_model"]["path"]}"')
 print(f'PRIMARY_EVAL_RESULTS_PATH="{config["primary_model"]["eval_results_path"]}"')
 print(f'{sh_array("PRIMARY_EPOCHS", config["primary_model"]["epochs"])}')
+print(f'MODEL_DIR="{config["primary_model"]["model_dir"]}"')
 
 # Tasks
 if "tasks" in config:

@@ -3,6 +3,7 @@
   "primary_model": {
     "title": "andrii0",
     "color_palette": "viridis",
+    "model_dir": "OM_wd0.0_dr0.0_rX1",
     "path": "/om2/user/brupesh/bfm/runs/data/OM_wd0.0_dr0.0_rX1",
     "eval_results_path": "/om2/user/brupesh/bfm/runs/data/andrii0/eval_results_frozen_features_{split_type}/model_epoch{epoch}/",
     "epochs": [0, 25, 50]
@@ -42,6 +43,6 @@
   ],
 
   "eval_results_output_root": "runs/data",
-  "figure_output_dir": "analyses/figures"
+  "figure_output_dir": "analyses/bhadra/25_07_02_pipeline/figures"
 
 }
