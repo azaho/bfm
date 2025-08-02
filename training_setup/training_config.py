@@ -31,7 +31,7 @@ CONFIG_SCHEMA = {
 
         'signal_preprocessing': {
             'laplacian_rereference': ParamConfig(True, bool, 'Whether to Laplacian rereference the signal before feeding it to the model'),
-            'normalize_voltage': ParamConfig(True, bool, 'Whether to normalize the voltage of the signal (batch norm) before feeding it to the model'),
+            'normalize_voltage': ParamConfig(False, bool, 'Whether to normalize the voltage of the signal (batch norm) before feeding it to the model'),
 
             'spectrogram': ParamConfig(True, bool, 'Whether to use spectrogram'), # Whether to use spectrogram of the signal or take raw voltage as input
             'spectrogram_parameters': {
