@@ -45,3 +45,19 @@ for epoch in "${PRIMARY_EPOCHS[@]}"; do
         --base_dir "$EVAL_RESULTS_ROOT/$PRIMARY_TITLE/eval_results_frozen_features_" \
         --output_dir "$FIGURE_OUTPUT_DIR/$PRIMARY_TITLE/matrices/epoch$epoch/"
 done
+
+for epoch in "${PRIMARY_EPOCHS[@]}"; do
+    for task in "${TASKS[@]}"; do
+        echo "Generating AUROC matrix for task: $task (epoch $epoch)"
+        python analyses/bhadra/25_07_02_pipeline/cross_subj_normalized.py \
+            --task "$task" \
+            --epoch "$epoch" \
+            --base_dir "$EVAL_RESULTS_ROOT/$PRIMARY_TITLE/eval_results_frozen_features_" \
+            --output_dir "$FIGURE_OUTPUT_DIR/$PRIMARY_TITLE/matrices/epoch$epoch/"
+    done
+    python analyses/bhadra/25_07_02_pipeline/cross_subj_normalized.py \
+        --task all_tasks_avg \
+        --epoch "$epoch" \
+        --base_dir "$EVAL_RESULTS_ROOT/$PRIMARY_TITLE/eval_results_frozen_features_" \
+        --output_dir "$FIGURE_OUTPUT_DIR/$PRIMARY_TITLE/matrices/epoch$epoch/"
+done

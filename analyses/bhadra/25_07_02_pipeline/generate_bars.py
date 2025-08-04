@@ -34,7 +34,7 @@ assert metric == 'AUROC', 'Metric must be AUROC; no other metric is supported'
 
 separate_overall_yscale = True # Whether to have the "Task Mean" figure panel have a 0.5-0.6 ylim instead of 0.5-0.9 (used to better see the difference between models)
 n_fig_legend_cols = 3
-figure_size_multiplier = 1.5
+figure_size_multiplier = 1.2 # og 1.5
 
 ### Define primary model
 primary_model = {
@@ -280,7 +280,7 @@ fig.legend(handles, [model['name'] for model in models] + ["Chance"],
             ncol=n_fig_legend_cols,
             frameon=False)
 
-rect_y = 0.1 + 0.05 * (math.ceil((len(models)+1)/n_fig_legend_cols)-1) / figure_size_multiplier
+rect_y = 0.1 + 0.05 * (math.ceil((len(models)+1)/n_fig_legend_cols)-1) / figure_size_multiplier + 0.02
 plt.tight_layout(rect=[0, rect_y, 1, 1], w_pad=0.4)
 
 # Save figure
