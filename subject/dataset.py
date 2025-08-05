@@ -2,6 +2,7 @@ import torch
 from torch.utils.data import Dataset, ConcatDataset, DataLoader
 from subject.braintreebank import BrainTreebankSubject
 from subject.mgh2024 import MGH2024Subject
+from subject.podcast import PodcastSubject
 from training_setup.training_config import log
 from multiprocessing import Pool
 import torch.multiprocessing as mp
@@ -129,6 +130,9 @@ def load_subjects(train_subject_trials, eval_subject_trials, dtype, cache=True, 
         elif "mgh" in subject_identifier:
             subject_id = int(subject_identifier.replace("mgh", ""))
             all_subjects[subject_identifier] = MGH2024Subject(subject_id, dtype=dtype, cache=cache, allow_corrupted=allow_corrupted)
+        elif "podcast" in subject_identifier:
+            subject_id = int(subject_identifier.replace("podcast", ""))
+            all_subjects[subject_identifier] = PodcastSubject(subject_id, dtype=dtype, cache=cache, allow_corrupted=allow_corrupted)
         else:
             raise ValueError(f"Unknown subject identifier: {subject_identifier}")
 
