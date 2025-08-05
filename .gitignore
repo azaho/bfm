@@ -6,6 +6,7 @@ wandb/
 
 *.err
 *.out
+*.pdf
 
 runs/data/
 runs/logs/

@@ -170,6 +170,11 @@ class TrainingSetup:
                 if key not in losses: losses[key] = 0
                 losses[key] += value
             n_batches += 1
+        
+        # Handle case where test dataloader is empty
+        if n_batches == 0:
+            return {}
+        
         return {k: v / n_batches for k, v in losses.items()}
 
     def load_dataloaders(self):

@@ -213,7 +213,14 @@ for epoch_i in range(config['training']['n_epochs']):
     with torch.no_grad():
         test_loss_dict = training_setup.calculate_pretrain_test_loss()
         eval_results.update({f"test_{k}": v.item() for k, v in test_loss_dict.items()})
-        eval_results['test_loss'] = sum([v.item() for k, v in test_loss_dict.items() if 'accuracy' not in k]) / len([v for k, v in test_loss_dict.items() if 'accuracy' not in k])
+        # Check if there are any non-accuracy losses in the test_loss_dict
+        non_accuracy_losses = [v.item() for k, v in test_loss_dict.items() if 'accuracy' not in k]
+        if len(non_accuracy_losses) > 0:
+            eval_results['test_loss'] = sum(non_accuracy_losses) / len(non_accuracy_losses)
+        else:
+            # If no test data or only accuracy metrics, set test_loss to a default value
+            log("Warning: No test data available or test dataloader is empty. Setting test_loss to inf.", priority=1)
+            eval_results['test_loss'] = float('inf')  # or 0.0, depending on your preference
         losses_string = f" / ".join([f"{k.split('_')[1]}: {v:.4f}" for k, v in test_loss_dict.items() if 'accuracy' not in k])
         accuracy_string = f" / ".join([f"{k.split('_')[1]}: {v:.4f}" for k, v in test_loss_dict.items() if 'accuracy' in k])
         log(f"Test loss: {eval_results['test_loss']:.4f} ({losses_string}), Accuracies: {accuracy_string}", priority=0)

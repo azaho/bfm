@@ -6,6 +6,10 @@ from training_setup.training_setup import TrainingSetup
 from model.BFModule import BFModule
 from model.transformer_implementation import Transformer
 import torch.nn as nn
+from torch.utils.data import DataLoader, ConcatDataset
+from subject.dataset import SubjectTrialDataset
+from subject.batch_sampler import SubjectBatchSampler
+from subject.collator import PreprocessCollator
 
 # This file first defines the model components, then the training setup.
 
@@ -316,3 +320,88 @@ class andrii0_podcast(TrainingSetup):
         elif self.config['cluster']['eval_aggregation_method'] == 'concat':
             features = features.reshape(batch['data'].shape[0], -1)
         return features
+
+    def load_dataloaders(self):
+        """
+        Load dataloaders for single-subject podcast training.
+        Uses temporal block splitting to avoid temporal contamination.
+        """
+        config = self.config
+
+        # Step 1: Load datasets
+        datasets = []
+        for subject_identifier, trial_id in config['training']['train_subject_trials']:
+            if self.verbose: log(f"loading dataset for {subject_identifier}_{trial_id}...", indent=1, priority=1)
+            datasets.append(
+                SubjectTrialDataset(
+                    self.all_subjects[subject_identifier], 
+                    trial_id, 
+                    int(config['model']['context_length'] * self.all_subjects[subject_identifier].get_sampling_rate(trial_id)), 
+                    dtype=config['training']['data_dtype'], 
+                    output_metadata=True,
+                    output_electrode_labels=True
+                )
+            )
+            if self.verbose: log(f"finished loading dataset for {subject_identifier}_{trial_id}", indent=1, priority=1)
+
+        # Step 2: TEMPORAL BLOCK SPLITTING (not random!)
+        train_datasets = []
+        test_datasets = []
+        for dataset in datasets:
+            n_windows = len(dataset)
+            train_size = int(n_windows * (1 - config['training']['p_test']))
+            
+            # Create temporal splits (first 80% for train, last 20% for test)
+            train_indices = list(range(train_size))
+            test_indices = list(range(train_size, n_windows))
+            
+            # Create subsets using the temporal indices
+            train_dataset = torch.utils.data.Subset(dataset, train_indices)
+            test_dataset = torch.utils.data.Subset(dataset, test_indices)
+            
+            train_datasets.append(train_dataset)
+            test_datasets.append(test_dataset)
+            
+            if self.verbose:
+                log(f"Temporal split: train={len(train_indices)} windows, test={len(test_indices)} windows", indent=1, priority=1)
+        
+        train_dataset = ConcatDataset(train_datasets)
+        test_dataset = ConcatDataset(test_datasets)
+
+        # Step 3: Create dataloaders with custom sampler
+        num_workers_dataloader_test = max(int(config['cluster']['num_workers_dataloaders'] * 0.15), 1)
+        num_workers_dataloader_train = config['cluster']['num_workers_dataloaders'] - num_workers_dataloader_test
+        
+        train_dataloader = DataLoader(
+            train_dataset,
+            batch_sampler=SubjectBatchSampler(
+                [len(ds) for ds in train_datasets],
+                batch_size=config['training']['batch_size'],
+                shuffle=True
+            ),
+            num_workers=num_workers_dataloader_train,
+            pin_memory=True,  # Pin memory for faster GPU transfer
+            persistent_workers=True,  # Keep worker processes alive between iterations
+            prefetch_factor=config['cluster']['prefetch_factor'],
+            collate_fn=PreprocessCollator(preprocess_functions=self.get_preprocess_functions(pretraining=True))
+        )
+        
+        test_dataloader = DataLoader(
+            test_dataset,
+            batch_sampler=SubjectBatchSampler(
+                [len(ds) for ds in test_datasets],
+                batch_size=config['training']['batch_size'],
+                shuffle=False  # No shuffling for test set
+            ),
+            num_workers=num_workers_dataloader_test,
+            pin_memory=True,
+            persistent_workers=True,
+            prefetch_factor=config['cluster']['prefetch_factor'],
+            collate_fn=PreprocessCollator(preprocess_functions=self.get_preprocess_functions(pretraining=True))
+        )
+
+        self.train_dataloader = train_dataloader
+        self.test_dataloader = test_dataloader
+        
+        if self.verbose:
+            log(f"Created dataloaders: train={len(train_dataset)} samples, test={len(test_dataset)} samples")

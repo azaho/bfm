@@ -168,7 +168,11 @@ class PodcastSubject(Subject):
         """Load neural data (for compatibility with BrainTreebankSubject)"""
         if self.cache:
             self._cache_data()
-        # For podcast data, no file opening is needed since we load everything in __init__
+        else:
+            # When cache=False, we still need to set the data length for compatibility
+            if 'data' not in self.electrode_data_length:
+                data = self.raw.get_data()
+                self.electrode_data_length['data'] = data.shape[1]
         
         # Make sure electrode_data_length has the trial_id key for compatibility
         if trial_id is not None and trial_id not in self.electrode_data_length:

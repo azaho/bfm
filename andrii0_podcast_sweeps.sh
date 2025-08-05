@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:a100:1
 ####SBATCH --constraint=ampere
-#SBATCH --mem=384G
-#SBATCH -t 48:00:00      
+#SBATCH --mem=32G
+#SBATCH -t 12:00:00      
 #SBATCH --array=1-16
 #SBATCH -p normal
 #SBATCH --requeue
@@ -29,7 +29,7 @@ n_in_parallel=1 # How many jobs to run in parallel on the same job (on the same 
 
 # these parameters are fixed
 # train on subjects 1-6 (first 6 subjects)
-train_subject_trials="podcast01_0,podcast02_0,podcast03_0,podcast04_0,podcast05_0,podcast06_0"
+train_subject_trials="podcast01_0,podcast02_0,podcast03_0,podcast04_0,podcast05_0,podcast06_0,podcast07_0,podcast08_0,podcast09_0"
 # eval on subjects 7-9 (last 3 subjects)
 eval_subject_trials="podcast07_0,podcast08_0,podcast09_0"
 
@@ -52,14 +52,16 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
     weight_decay=${weight_decay_options[$((idx / n_dr))]}
     random_string="dropout${dropout}_wd${weight_decay}"
 
-    log_out="runs/logs/${random_string}.out"
-    log_err="runs/logs/${random_string}.err"
+    log_out="runs/logs/andrii0_podcast_modified_${random_string}.out"
+    log_err="runs/logs/andrii0_podcast_modified_${random_string}.err"
 
     python -u pretrain.py  --training.setup_name andrii0_podcast \
         --cluster.cache_subjects 1 \
         --cluster.num_workers_dataloaders 4 \
-        --training.max_n_electrodes 128 \
-        --training.batch_size 32 \
+        --training.max_n_electrodes 45 \
+        --training.batch_size 64 \
+        --training.p_test 0.2 \
+        --model.context_length 2 \
         --training.n_epochs 200 \
         --cluster.eval_model_every_n_epochs 5 \
         --training.random_string $random_string \

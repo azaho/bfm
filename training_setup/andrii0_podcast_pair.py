@@ -356,38 +356,32 @@ class andrii0_podcast_pair(TrainingSetup):
 
     def load_dataloaders(self):
         """
-            This function loads the dataloaders for the training and test sets.
-
-            It must set the self.train_dataloader and self.test_dataloader attributes to the dataloaders (they are used in the pretraining code in pretrain.py)
+        Load dataloaders for paired podcast training.
+        Uses temporal block splitting to avoid temporal contamination.
         """
         config = self.config
-
-        # Step 1: Get all subjects from train_subject_trials and eval_subject_trials
-        # Since all subjects listen to the same podcast, we can create pairs from any combination
-        all_train_subjects = [subject_id for subject_id, trial_id in config['training']['train_subject_trials']]
-        all_eval_subjects = [subject_id for subject_id, trial_id in config['training']['eval_subject_trials']]
         
-        # Step 2: Create all possible pairs for training and evaluation
+        # Step 1: Generate all possible subject pairs
+        train_subject_trials = config['training']['train_subject_trials']
+        eval_subject_trials = config['training']['eval_subject_trials']
+        
+        # Create all possible non-self pairs
         train_subject_pairs = []
+        for i, (subject_a_id, trial_a_id) in enumerate(train_subject_trials):
+            for j, (subject_b_id, trial_b_id) in enumerate(train_subject_trials):
+                if i < j:  # Avoid duplicates and self-pairs
+                    train_subject_pairs.append((subject_a_id, subject_b_id))
+        
         eval_subject_pairs = []
-        
-        # Create all possible pairs for training (excluding self-pairs)
-        for i, subject_a in enumerate(all_train_subjects):
-            for j, subject_b in enumerate(all_train_subjects):
-                if i != j:  # Don't pair subject with itself
-                    train_subject_pairs.append((subject_a, subject_b))
-        
-        # Create all possible pairs for evaluation (excluding self-pairs)
-        for i, subject_a in enumerate(all_eval_subjects):
-            for j, subject_b in enumerate(all_eval_subjects):
-                if i != j:  # Don't pair subject with itself
-                    eval_subject_pairs.append((subject_a, subject_b))
+        for i, (subject_a_id, trial_a_id) in enumerate(eval_subject_trials):
+            for j, (subject_b_id, trial_b_id) in enumerate(eval_subject_trials):
+                if i < j:  # Avoid duplicates and self-pairs
+                    eval_subject_pairs.append((subject_a_id, subject_b_id))
         
         if self.verbose:
-            log(f"Created {len(train_subject_pairs)} training pairs from {len(all_train_subjects)} subjects", priority=0)
-            log(f"Created {len(eval_subject_pairs)} evaluation pairs from {len(all_eval_subjects)} subjects", priority=0)
-
-        # Step 2: Load datasets for each pair
+            log(f"Generated {len(train_subject_pairs)} training pairs and {len(eval_subject_pairs)} evaluation pairs")
+        
+        # Step 2: Create paired datasets
         train_datasets = []
         test_datasets = []
         
@@ -409,14 +403,24 @@ class andrii0_podcast_pair(TrainingSetup):
                 output_electrode_labels=True
             )
             
-            # Split into train and test
-            train_size = int(len(dataset) * (1 - config['training']['p_test']))
-            train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, len(dataset) - train_size])
+            # TEMPORAL BLOCK SPLITTING (not random!)
+            # Split the dataset into temporal blocks to avoid contamination
+            n_windows = len(dataset)
+            train_size = int(n_windows * (1 - config['training']['p_test']))
+            
+            # Create temporal splits (first 80% for train, last 20% for test)
+            train_indices = list(range(train_size))
+            test_indices = list(range(train_size, n_windows))
+            
+            # Create subsets using the temporal indices
+            train_dataset = torch.utils.data.Subset(dataset, train_indices)
+            test_dataset = torch.utils.data.Subset(dataset, test_indices)
+            
             train_datasets.append(train_dataset)
             test_datasets.append(test_dataset)
             
             if self.verbose: 
-                log(f"Finished creating paired dataset: {len(dataset)} windows", indent=1, priority=1)
+                log(f"Finished creating paired dataset: {len(dataset)} windows (train: {len(train_indices)}, test: {len(test_indices)})", indent=1, priority=1)
 
         if not train_datasets:
             raise ValueError("No valid paired datasets found. Make sure train_subject_pairs is properly configured.")
@@ -436,8 +440,8 @@ class andrii0_podcast_pair(TrainingSetup):
                 shuffle=True
             ),
             num_workers=num_workers_dataloader_train,
-            pin_memory=True,
-            persistent_workers=True,
+            pin_memory=True,  # pin memory for faster GPU transfer
+            persistent_workers=True,  # keep worker processes alive between iterations
             prefetch_factor=config['cluster']['prefetch_factor'],
             collate_fn=PreprocessCollatorPair(preprocess_functions=self.get_preprocess_functions(pretraining=True))
         )
@@ -447,7 +451,7 @@ class andrii0_podcast_pair(TrainingSetup):
             batch_sampler=PodcastBatchPairSampler(
                 [len(ds) for ds in test_datasets],
                 batch_size=config['training']['batch_size'],
-                shuffle=False
+                shuffle=False  # No shuffling for test set
             ),
             num_workers=num_workers_dataloader_test,
             pin_memory=True,
@@ -455,6 +459,9 @@ class andrii0_podcast_pair(TrainingSetup):
             prefetch_factor=config['cluster']['prefetch_factor'],
             collate_fn=PreprocessCollatorPair(preprocess_functions=self.get_preprocess_functions(pretraining=True))
         )
-
+        
         self.train_dataloader = train_dataloader
-        self.test_dataloader = test_dataloader 
+        self.test_dataloader = test_dataloader
+        
+        if self.verbose:
+            log(f"Created dataloaders: train={len(train_dataset)} samples, test={len(test_dataset)} samples") 
