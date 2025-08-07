@@ -114,7 +114,7 @@ CONFIG_SCHEMA = {
     'other': {} 
 }
 
-def get_default_config(random_string, wandb_project):
+def get_default_config(random_string="TEMP", wandb_project=""):
     # Convert schema to actual config
     def convert_schema_to_config(schema):
         config = {}
