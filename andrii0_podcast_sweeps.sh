@@ -27,6 +27,8 @@ fi
 
 n_in_parallel=1 # How many jobs to run in parallel on the same job (on the same GPU!)
 
+model_name="andrii0_podcast"
+
 # these parameters are fixed
 # train on subjects 1-6 (first 6 subjects)
 train_subject_trials="podcast01_0,podcast02_0,podcast03_0,podcast04_0,podcast05_0,podcast06_0,podcast07_0,podcast08_0,podcast09_0"
@@ -43,6 +45,9 @@ n_dr=${#dropout_options[@]}
 n_wd=${#weight_decay_options[@]}
 n_total=$((n_dr * n_wd))
 
+# Track wandb run directories for syncing
+wandb_run_dirs=()
+
 # Launch n_in_parallel jobs
 for i in $(seq 0 $(( n_in_parallel - 1 ))); do
     idx=$(( base_idx + i ))
@@ -50,15 +55,18 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
     # Convert index to parameter selections
     dropout=${dropout_options[$((idx % n_dr))]}
     weight_decay=${weight_decay_options[$((idx / n_dr))]}
-    random_string="dropout${dropout}_wd${weight_decay}"
+    random_string="modified_$(date +%s)"
 
-    log_out="runs/logs/andrii0_podcast_modified_${random_string}.out"
-    log_err="runs/logs/andrii0_podcast_modified_${random_string}.err"
+    log_out="runs/logs/${model_name}_modified_wd${weight_decay}_dr${dropout}.out"
+    log_err="runs/logs/${model_name}_modified_wd${weight_decay}_dr${dropout}.err"
 
-    python -u pretrain.py  --training.setup_name andrii0_podcast \
+    # Store the expected wandb run directory name for this run
+    wandb_run_dirs+=("runs/wandb/wandb/offline-run-*-${model_name}_wd${weight_decay}_dr${dropout}_r${random_string}")
+
+    python -u pretrain.py  --training.setup_name $model_name \
         --cluster.cache_subjects 1 \
         --cluster.num_workers_dataloaders 4 \
-        --training.max_n_electrodes 45 \
+        --training.max_n_electrodes 235 \
         --training.batch_size 64 \
         --training.p_test 0.2 \
         --model.context_length 2 \
@@ -70,11 +78,20 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
         --training.eval_tasks "" \
         --training.dropout $dropout \
         --training.weight_decay $weight_decay \
-        --cluster.wandb_project roshnipm \
+        --cluster.wandb_project podcast \
         --cluster.wandb_entity andrii-mit \
         > "$log_out" 2> "$log_err" &
 done
 
 wait
 
-wandb sync runs/wandb/wandb/ 
+# Automatically sync the runs that were just created
+echo "Syncing wandb runs..."
+for pattern in "${wandb_run_dirs[@]}"; do
+    for run_dir in $pattern; do
+        if [ -d "$run_dir" ]; then
+            echo "Syncing $run_dir"
+            wandb sync "$run_dir"
+        fi
+    done
+done 

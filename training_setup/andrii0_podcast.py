@@ -7,9 +7,7 @@ from model.BFModule import BFModule
 from model.transformer_implementation import Transformer
 import torch.nn as nn
 from torch.utils.data import DataLoader, ConcatDataset
-from subject.dataset import SubjectTrialDataset
-from subject.batch_sampler import SubjectBatchSampler
-from subject.collator import PreprocessCollator
+from subject.dataset import SubjectTrialDataset, SubjectBatchSampler, PreprocessCollator
 
 # This file first defines the model components, then the training setup.
 
@@ -348,22 +346,16 @@ class andrii0_podcast(TrainingSetup):
         train_datasets = []
         test_datasets = []
         for dataset in datasets:
-            n_windows = len(dataset)
-            train_size = int(n_windows * (1 - config['training']['p_test']))
-            
-            # Create temporal splits (first 80% for train, last 20% for test)
-            train_indices = list(range(train_size))
-            test_indices = list(range(train_size, n_windows))
-            
-            # Create subsets using the temporal indices
-            train_dataset = torch.utils.data.Subset(dataset, train_indices)
-            test_dataset = torch.utils.data.Subset(dataset, test_indices)
+            train_size = int(len(dataset) * (1 - config['training']['p_test']))
+            # Use Subset for temporal splits (first 80% train, last 20% test)
+            train_dataset = torch.utils.data.Subset(dataset, range(train_size))
+            test_dataset = torch.utils.data.Subset(dataset, range(train_size, len(dataset)))
             
             train_datasets.append(train_dataset)
             test_datasets.append(test_dataset)
             
             if self.verbose:
-                log(f"Temporal split: train={len(train_indices)} windows, test={len(test_indices)} windows", indent=1, priority=1)
+                log(f"Temporal split: train={len(train_dataset)} windows, test={len(test_dataset)} windows", indent=1, priority=1)
         
         train_dataset = ConcatDataset(train_datasets)
         test_dataset = ConcatDataset(test_datasets)

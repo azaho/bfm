@@ -43,6 +43,9 @@ n_dr=${#dropout_options[@]}
 n_wd=${#weight_decay_options[@]}
 n_total=$((n_dr * n_wd))
 
+# Track wandb run directories for syncing
+wandb_run_dirs=()
+
 # Launch n_in_parallel jobs
 for i in $(seq 0 $(( n_in_parallel - 1 ))); do
     idx=$(( base_idx + i ))
@@ -54,6 +57,9 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
 
     log_out="runs/logs/${random_string}.out"
     log_err="runs/logs/${random_string}.err"
+
+    # Store the expected wandb run directory name for this run
+    wandb_run_dirs+=("runs/wandb/wandb/offline-run-*-${random_string}")
 
     python -u pretrain.py  --training.setup_name andrii0 \
         --cluster.cache_subjects 1 \
@@ -73,4 +79,13 @@ done
 
 wait
 
-wandb sync runs/wandb/wandb/
+# Automatically sync the runs that were just created
+echo "Syncing wandb runs..."
+for pattern in "${wandb_run_dirs[@]}"; do
+    for run_dir in $pattern; do
+        if [ -d "$run_dir" ]; then
+            echo "Syncing $run_dir"
+            wandb sync "$run_dir"
+        fi
+    done
+done
