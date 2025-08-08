@@ -1,0 +1,23 @@
+# Configuration for movie processing pipeline
+# Copy this content to a .env file and modify the values as needed
+
+# Directory containing the movie files
+MOVIES_DIR=/om2/data/public/braintreebank_movies
+
+# Base directory for output files
+OUTPUT_BASE_DIR=/om2/data/public/braintreebank_movies_preprocessed
+
+# Time interval between frames for visual features (in seconds)
+FRAME_INTERVAL=0.25
+
+# Time interval for audio segments (in seconds)
+AUDIO_FRAME_INTERVAL=0.0625
+
+# Length of audio segments (in seconds)
+AUDIO_SEGMENT_LENGTH=0.25
+
+# Audio model to use for feature extraction
+AUDIO_MODEL=facebook/wav2vec2-base-960h
+
+# Maximum number of parallel jobs
+MAX_PARALLEL_JOBS=4 
