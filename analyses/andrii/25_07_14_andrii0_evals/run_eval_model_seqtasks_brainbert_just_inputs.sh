@@ -7,7 +7,7 @@
 #SBATCH -t 3:00:00         # total run time limit (HH:MM:SS) (increased to 24 hours)
 #SBATCH --constraint=10GB
 #SBATCH --exclude=dgx001,dgx002
-#SBATCH --array=1-192  # 285 if doing mini btbench
+#SBATCH --array=1-24  # 285 if doing mini btbench
 #SBATCH --output runs/logs/%A_%a.out # STDOUT
 #SBATCH --error runs/logs/%A_%a.err # STDERR
 #SBATCH -p use-everything
@@ -31,14 +31,14 @@ declare -a trials=(1 2 0 4 0 1 0 1 0 1 0 1)
 declare -a model_dirs=(
     # "andrii0_lr0.003_wd0.001_dr0.0_rR1_t20250714_121055"
     # "andrii0_lr0.003_wd0.0_dr0.2_rR1_t20250714_121055"
-    "andrii_brainbert_lr0.003_wd0.0_dr0.2_rR2_t20250716_001553"
+    # "andrii_brainbert_lr0.003_wd0.0_dr0.2_rR2_t20250716_001553"
     "andrii_brainbert_lr0.0003_wd0.0_dr0.2_rR_SLR_t20250719_173751"
     "andrii_brainbert_lr0.003_wd0.0_dr0.2_rR_CZWPARAMS3_t20250719_173741"
-    "andrii_brainbert_lr0.0003_wd0.0_dr0.2_rR_CZWPARAMS3SLR_t20250719_173743"
+    # "andrii_brainbert_lr0.0003_wd0.0_dr0.2_rR_CZWPARAMS3SLR_t20250719_173743"
 )
 BATCH_SIZE=100 # 300GB takes ~<10G of RAM for andrii0 default params
 
-declare -a model_epochs=(0 10 15 30) #10 40)
+declare -a model_epochs=(0) # 10 15 30) #10 40)
 
 declare -a eval_names=(
     "frame_brightness"
@@ -108,7 +108,7 @@ echo "Save dir: $save_dir"
 echo "Split type: $SPLITS_TYPE"
 
 # Add the -u flag to Python to force unbuffered output
-python -u analyses/andrii/25_07_14_andrii0_evals/eval_model.py \
+python -u analyses/andrii/25_07_14_andrii0_evals/eval_model_just_inputs.py \
     --eval_name $EVAL_STR \
     --subject_id $SUBJECT \
     --trial_id $TRIAL \

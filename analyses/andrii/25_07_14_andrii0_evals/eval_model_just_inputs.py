@@ -149,7 +149,11 @@ def load_dataset(dataset):
         with torch.no_grad():
             for preprocess_function in training_setup.get_preprocess_functions(pretraining=False):
                 batch = preprocess_function(batch)
-            features = training_setup.generate_frozen_features(batch)
+
+            batch['data'] = batch['data'].to(training_setup.model.device, dtype=training_setup.model.dtype, non_blocking=True)
+            training_setup.model.spectrogram_preprocessor.output_transform = torch.nn.Identity()
+            preprocessed_input = training_setup.model.spectrogram_preprocessor(batch, mask=False)['data']
+            features = preprocessed_input
 
             if 'meanT' in feature_type:
                 features = features.mean(dim=2, keepdim=True) # shape: (batch_size, n_electrodes + 1, 1, d_model)
@@ -204,7 +208,7 @@ neural_data_loaded = False
 for eval_name in eval_names:
     start_time = time.time()
 
-    file_save_dir = f"{save_dir}/{classifier_type}_{model_dir}_epoch{model_epoch}_{feature_type}"
+    file_save_dir = f"{save_dir}/{classifier_type}_inputs_no_otf_{model_dir}_epoch{model_epoch}_{feature_type}"
     os.makedirs(file_save_dir, exist_ok=True) # Create save directory if it doesn't exist
 
     file_save_path = f"{file_save_dir}/population_{subject.subject_identifier}_{trial_id}_{eval_name}.json"
@@ -231,13 +235,13 @@ for eval_name in eval_names:
                                                                                         output_indices=False, 
                                                                                         start_neural_data_before_word_onset=int(bins_start_before_word_onset_seconds*neuroprobe_config.SAMPLING_RATE), 
                                                                                         end_neural_data_after_word_onset=int(bins_end_after_word_onset_seconds*neuroprobe_config.SAMPLING_RATE),
-                                                                                        lite=lite, nano=nano)
+                                                                                        lite=lite, nano=nano, allow_partial_cache=True)
     elif splits_type == "SS_DM":
         train_datasets, test_datasets = neuroprobe_train_test_splits.generate_splits_SS_DM(subject, trial_id, eval_name, dtype=torch.float32, 
                                                                                         output_indices=False, 
                                                                                         start_neural_data_before_word_onset=int(bins_start_before_word_onset_seconds*neuroprobe_config.SAMPLING_RATE), 
                                                                                         end_neural_data_after_word_onset=int(bins_end_after_word_onset_seconds*neuroprobe_config.SAMPLING_RATE),
-                                                                                        lite=lite)
+                                                                                        lite=lite, allow_partial_cache=True)
         train_datasets = [train_datasets]
         test_datasets = [test_datasets]
     elif splits_type == "DS_DM":
@@ -255,7 +259,7 @@ for eval_name in eval_names:
                                                                                         output_indices=False, 
                                                                                         start_neural_data_before_word_onset=int(bins_start_before_word_onset_seconds*neuroprobe_config.SAMPLING_RATE), 
                                                                                         end_neural_data_after_word_onset=int(bins_end_after_word_onset_seconds*neuroprobe_config.SAMPLING_RATE),
-                                                                                        lite=lite, nano=nano)
+                                                                                        lite=lite, nano=nano, allow_partial_cache=True)
         train_datasets = [train_datasets]
         test_datasets = [test_datasets]
 
