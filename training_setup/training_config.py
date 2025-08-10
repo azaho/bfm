@@ -85,10 +85,10 @@ CONFIG_SCHEMA = {
         'optimizer': ParamConfig('Muon', str, 'Optimizer type'),
         'batch_size': ParamConfig(100, int, 'Batch size for training'),
         
-        'learning_rate': ParamConfig(0.001, float, 'Learning rate'),  # Reduced from 0.003
-        'lr_schedule': ParamConfig('cosine', str, 'Learning rate schedule (none, linear, cosine)'),  # Changed to cosine
-        'weight_decay': ParamConfig(0.01, float, 'Weight decay for optimizer', include_in_dirname=True, dirname_format=lambda x: f'wd{x}'),  # Increased from 0.0001
-        'dropout': ParamConfig(0.3, float, 'Dropout rate', include_in_dirname=True, dirname_format=lambda x: f'dr{x}'),  # Increased from 0.1
+        'learning_rate': ParamConfig(0.003, float, 'Learning rate'),
+        'lr_schedule': ParamConfig('linear', str, 'Learning rate schedule (none, linear, cosine)'),
+        'weight_decay': ParamConfig(0.01, float, 'Weight decay for optimizer', include_in_dirname=True, dirname_format=lambda x: f'wd{x}'),
+        'dropout': ParamConfig(0.3, float, 'Dropout rate', include_in_dirname=True, dirname_format=lambda x: f'dr{x}'),
         
         'max_n_electrodes': ParamConfig(128, int, 'Maximum number of electrodes to use during pretraining', dirname_format=lambda x: f'nes{x}'),
 
