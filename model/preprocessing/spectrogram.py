@@ -32,10 +32,10 @@ class SpectrogramPreprocessor(BFModule):
         # Transform FFT output to match expected output dimension
         self.output_transform = nn.Identity() if self.output_dim == -1 else nn.Linear(self.max_frequency_bin, self.output_dim)
     
-    def forward(self, batch):
+    def forward(self, batch, output_time_frequency_bins=False, z_score=True):
         # batch['data'] is of shape (batch_size, n_electrodes, n_samples)
         # batch['metadata'] is a dictionary containing metadata like the subject identifier and trial id, sampling rate, etc.
-        batch_size, n_electrodes = batch['data'].shape[:2]
+        batch_size, n_electrodes, n_samples = batch['data'].shape
         
         # Reshape for STFT
         x = batch['data'].reshape(batch_size * n_electrodes, -1)
@@ -65,8 +65,18 @@ class SpectrogramPreprocessor(BFModule):
         # Take magnitude
         x = torch.abs(x)
 
+        # Calculate frequency bins (in Hz)
+        # These represent the center frequency of each frequency bin in the spectrogram
+        freq_bins = torch.fft.rfftfreq(nperseg, d=1.0/sampling_rate, device=x.device)
+        
+        # Calculate time bins (in seconds)
+        # These represent the center time of each time window in the spectrogram
+        n_times = x.shape[2]
+        time_bins = torch.arange(n_times, device=x.device, dtype=torch.float32) * hop_length / sampling_rate
+
         # Trim to max frequency (using a pre-calculated max frequency bin)
         x = x[:, :self.max_frequency_bin, :]
+        freq_bins = freq_bins[:self.max_frequency_bin]
             
         # Reshape back
         _, n_freqs, n_times = x.shape
@@ -74,10 +84,16 @@ class SpectrogramPreprocessor(BFModule):
         x = x.transpose(2, 3) # (batch_size, n_electrodes, n_timebins, n_freqs)
         
         # Z-score normalization
-        x = x - x.mean(dim=[0, 2], keepdim=True)
-        x = x / (x.std(dim=[0, 2], keepdim=True) + 1e-5)
+        if z_score:
+            x = x - x.mean(dim=[0, 2], keepdim=True)
+            x = x / (x.std(dim=[0, 2], keepdim=True) + 1e-5)
 
         # Transform to match expected output dimension
         x = self.output_transform(x)  # shape: (batch_size, n_electrodes, n_timebins, output_dim)
-        
-        return x.to(dtype=batch['data'].dtype)
+
+        x = x.to(dtype=batch['data'].dtype)
+
+        if output_time_frequency_bins:
+            return x, freq_bins, time_bins
+        else:
+            return x
