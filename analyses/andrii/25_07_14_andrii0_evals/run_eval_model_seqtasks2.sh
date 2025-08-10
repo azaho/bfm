@@ -6,16 +6,13 @@
 #SBATCH --gres=gpu:1
 #SBATCH -t 3:00:00         # total run time limit (HH:MM:SS) (increased to 24 hours)
 #SBATCH --constraint=10GB
-#SBATCH --exclude=dgx001,dgx002
-#SBATCH --array=1-192  # 285 if doing mini btbench
+#SBATCH --exclude=dgx001,dgx002,node057
+#SBATCH --array=1-108  # 285 if doing mini btbench
 #SBATCH --output runs/logs/%A_%a.out # STDOUT
 #SBATCH --error runs/logs/%A_%a.err # STDERR
 #SBATCH -p use-everything
 
-
-echo "PATH: $PATH"
-echo "Running on node: ${hostname}"
-
+echo "Running on node: $(hostname)"
 nvidia-smi
 
 export PYTHONUNBUFFERED=1
@@ -31,14 +28,15 @@ declare -a trials=(1 2 0 4 0 1 0 1 0 1 0 1)
 declare -a model_dirs=(
     # "andrii0_lr0.003_wd0.001_dr0.0_rR1_t20250714_121055"
     # "andrii0_lr0.003_wd0.0_dr0.2_rR1_t20250714_121055"
-    "andrii_brainbert_lr0.003_wd0.0_dr0.2_rR2_t20250716_001553"
-    "andrii_brainbert_lr0.0003_wd0.0_dr0.2_rR_SLR_t20250719_173751"
-    "andrii_brainbert_lr0.003_wd0.0_dr0.2_rR_CZWPARAMS3_t20250719_173741"
-    "andrii_brainbert_lr0.0003_wd0.0_dr0.2_rR_CZWPARAMS3SLR_t20250719_173743"
+    "mse_ar_lr0.003_wd0.001_dr0.2_rR1_t20250723_113733"
+    "mse_ar_lr0.003_wd0.001_dr0.0_rR1_t20250723_113729"
+    # "mse_rm_lr0.003_wd0.0_dr0.2_rR5_pme0.5_pmt0.2_t20250726_120024"
+    # "mse_rm_lr0.003_wd0.0_dr0.0_rR5_pme0.5_pmt0.2_t20250726_120022"
+    "mse_rm_lr0.003_wd0.0_dr0.2_rR7_pme0.5_pmt0.2_fbi1_t20250727_211004"
 )
-BATCH_SIZE=100 # 300GB takes ~<10G of RAM for andrii0 default params
+BATCH_SIZE=150 # 300 on adnrii0 takes ~<10G of RAM
 
-declare -a model_epochs=(0 10 15 30) #10 40)
+declare -a model_epochs=(0 10 30)
 
 declare -a eval_names=(
     "frame_brightness"

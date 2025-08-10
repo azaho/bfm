@@ -5,7 +5,7 @@ import json
 import os
 import glob, math
 import pandas as pd
-# from evaluation.neuroprobe import config as neuroprobe_config
+import evaluation.neuroprobe.config as neuroprobe_config
 
 ### PARSE ARGUMENTS ###
 
@@ -24,7 +24,7 @@ overall_axis_ylim = (0.4925, 0.75) if separate_overall_yscale else (0.48, 0.95)
 other_axis_ylim = (0.48, 0.95)
 
 figure_size_multiplier = 1.8
-n_fig_legend_cols = 3 #if figure_size_multiplier<1.8 else 4
+n_fig_legend_cols = 3 if figure_size_multiplier<1.8 else 4
 
 ### DEFINE MODELS ###
 
@@ -50,75 +50,42 @@ models = [
     {
         'name': f'Andrii0 epoch {model_epoch} ({feature_type})',
         'color_palette': 'rainbow',
-        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_andrii0_lr0.003_wd0.0_dr0.2_rR1_t20250714_121055_epoch{model_epoch}_{feature_type}/',
+        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_andrii0_lr0.003_wd0.001_dr0.0_rR1_t20250714_121055_epoch{model_epoch}_{feature_type}/',
         'pad_x': 1 if model_epoch==0 else 0,
-    } for feature_type in ['keepall'] for model_epoch in [0, 1, 10, 20]
+    } for feature_type in ['keepall', 'cls'] for model_epoch in [0, 1, 20] # , 'meanE', 'cls', 'meanT', 'meanT_meanE', 'meanT_cls'
 ] + [
     {
-        'name': f'Andrii_BrainBERT epoch {model_epoch} ({feature_type})',
+        'name': f'MSE-AR (dr0.2) epoch {model_epoch} ({feature_type})',
         'color_palette': 'rainbow',
-        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_{"andrii_brainbert_lr0.003_wd0.0_dr0.2_rR2_t20250716_001553"}_epoch{model_epoch}_{feature_type}/',
+        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_{"mse_ar_lr0.003_wd0.001_dr0.2_rR1_t20250723_113733"}_epoch{model_epoch}_{feature_type}/',
         'pad_x': 1 if model_epoch==0 else 0,
-    } for feature_type in ['keepall'] for model_epoch in [0, 1, 10, 20]
+    } for feature_type in ['keepall'] for model_epoch in [0, 10, 30] # , 'meanE', 'meanT', 'meanT_meanE'
 ] + [
     {
-        'name': f'CZW_BrainBERT random init (keepall)',
+        'name': f'MSE-AR (dr0.0) epoch {model_epoch} ({feature_type})',
         'color_palette': 'rainbow',
-        'eval_results_path': f'/om2/user/zaho/BrainBERT/eval_results_{split_type}/brainbert_randomly_initialized_keepall/',
-        'pad_x': 1
-    },
-    {
-        'name': f'CZW_BrainBERT (keepall)',
-        'color_palette': 'rainbow',
-        'eval_results_path': f'/om2/user/zaho/BrainBERT/eval_results_{split_type}/brainbert_keepall/',
-        'pad_x': 0
-    },
-] + [
-    {
-        'name': f'Andrii BB CZW params epoch {model_epoch} ({feature_type})',
-        'color_palette': 'rainbow',
-        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_{"andrii_brainbert_lr0.003_wd0.0_dr0.2_rR_CZWPARAMS3_t20250719_173741"}_epoch{model_epoch}_{feature_type}/',
+        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_{"mse_ar_lr0.003_wd0.001_dr0.0_rR1_t20250723_113729"}_epoch{model_epoch}_{feature_type}/',
         'pad_x': 1 if model_epoch==0 else 0,
-    } for feature_type in ['keepall'] for model_epoch in [0, 10, 15, 30]
+    } for feature_type in ['keepall'] for model_epoch in [0, 10, 30] # , 'meanE', 'meanT', 'meanT_meanE'
 ] + [
     {
-        'name': f'Andrii BB CZW SLR params epoch {model_epoch} ({feature_type})',
+        'name': f'MSE-RM (dr0.2) epoch {model_epoch} ({feature_type})',
         'color_palette': 'rainbow',
-        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_{"andrii_brainbert_lr0.0003_wd0.0_dr0.2_rR_CZWPARAMS3SLR_t20250719_173743"}_epoch{model_epoch}_{feature_type}/',
+        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_{"mse_rm_lr0.003_wd0.0_dr0.2_rR7_pme0.5_pmt0.2_fbi1_t20250727_211004"}_epoch{model_epoch}_{feature_type}/',
         'pad_x': 1 if model_epoch==0 else 0,
-    } for feature_type in ['keepall'] for model_epoch in [0, 10, 15, 30]
+    } for feature_type in ['keepall'] for model_epoch in [0, 10, 30] # , 'meanE', 'meanT', 'meanT_meanE'
 ] + [
     {
-        'name': f'Andrii BB SLR params epoch {model_epoch} ({feature_type})',
+        'name': f'Andrii BB {bb_model_name} {model_epoch} ({feature_type})',
         'color_palette': 'rainbow',
-        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_{"andrii_brainbert_lr0.0003_wd0.0_dr0.2_rR_SLR_t20250719_173751"}_epoch{model_epoch}_{feature_type}/',
+        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_{bb_model_dir}_epoch{model_epoch}_{feature_type}/',
         'pad_x': 1 if model_epoch==0 else 0,
-    } for feature_type in ['keepall'] for model_epoch in [0, 10, 15, 30]
-] + [
-    {
-        'name': f'Inputs to BB CZW params',
-        'color_palette': 'rainbow',
-        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_inputs_{"andrii_brainbert_lr0.003_wd0.0_dr0.2_rR_CZWPARAMS3_t20250719_173741"}_epoch0_keepall/',
-        'pad_x': 1,
-    },
-    {
-        'name': f'Inputs to BB SLR params',
-        'color_palette': 'rainbow',
-        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_inputs_{"andrii_brainbert_lr0.0003_wd0.0_dr0.2_rR_SLR_t20250719_173751"}_epoch0_keepall/',
-        'pad_x': 1,
-    },{
-        'name': f'Inputs to BB CZW params (no otf)',
-        'color_palette': 'rainbow',
-        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_inputs_no_otf_{"andrii_brainbert_lr0.003_wd0.0_dr0.2_rR_CZWPARAMS3_t20250719_173741"}_epoch0_keepall/',
-        'pad_x': 1,
-    },
-    {
-        'name': f'Inputs to BB SLR params (no otf)',
-        'color_palette': 'rainbow',
-        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_inputs_no_otf_{"andrii_brainbert_lr0.0003_wd0.0_dr0.2_rR_SLR_t20250719_173751"}_epoch0_keepall/',
-        'pad_x': 1,
-    }
-    
+    } for bb_model_name, bb_model_dir in {
+        "default": "andrii_brainbert_lr0.003_wd0.0_dr0.2_rR2_t20250716_001553",
+        "slr": "andrii_brainbert_lr0.0003_wd0.0_dr0.2_rR_SLR_t20250719_173751",
+        "czw": "andrii_brainbert_lr0.003_wd0.0_dr0.2_rR_CZWPARAMS3_t20250719_173741",
+        "czw_slr": "andrii_brainbert_lr0.0003_wd0.0_dr0.2_rR_CZWPARAMS3SLR_t20250719_173743"
+    }.items() for feature_type in ['keepall'] for model_epoch in [0, 10, 15, 30]
 ]
 
 ### DEFINE TASK NAME MAPPING ###
@@ -149,16 +116,9 @@ task_name_mapping = {
     # 'local_flow_angle': 'Local Flow Angle',
 }
 
-subject_trials = [
-    (1, 1), (1, 2), 
-    (2, 0), (2, 4),
-    (3, 0), (3, 1),
-    (4, 0), (4, 1),
-    (7, 0), (7, 1),
-    (10, 0), (10, 1)
-]
+subject_trials = neuroprobe_config.NEUROPROBE_LITE_SUBJECT_TRIALS
 if split_type == 'DS_DM':
-    subject_trials = [(s, t) for s, t in subject_trials if s != 2]
+    subject_trials = [(s, t) for s, t in subject_trials if s != neuroprobe_config.DS_DM_TRAIN_SUBJECT_ID]
 
 ### DEFINE RESULT PARSING FUNCTIONS ###
 
@@ -379,7 +339,7 @@ fig.legend(handles, [model['name'] for model in models] + ["Chance"],
             frameon=False)
 
 # Adjust layout with space at the bottom for legend
-rect_y = (0.17 + 0.05 * (math.ceil((len(models)+1)/n_fig_legend_cols)-1)) / figure_size_multiplier
+rect_y = (0.11 + 0.05 * (math.ceil((len(models)+1)/n_fig_legend_cols)-1)) / figure_size_multiplier
 plt.subplots_adjust(bottom=rect_y)
 
 # Save figure
