@@ -409,6 +409,7 @@ class roshnipm_pair_nocommon(TrainingSetup):
     def load_dataloaders(self):
         """
             This function loads the dataloaders for the training and test sets.
+            Uses temporal block splitting to avoid temporal contamination.
 
             It must set the self.train_dataloader and self.test_dataloader attributes to the dataloaders (they are used in the pretraining code in pretrain.py)
         """
@@ -500,14 +501,21 @@ class roshnipm_pair_nocommon(TrainingSetup):
         if not paired_datasets:
             raise ValueError("No valid paired datasets found. Make sure subjects in train_subject_trials watch the same movies.")
 
-        # Step 2: Split into train and test
+        # Step 2: TEMPORAL BLOCK SPLITTING (not random!)
         train_datasets = []
         test_datasets = []
         for dataset in paired_datasets:
             train_size = int(len(dataset) * (1 - config['training']['p_test']))
-            train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, len(dataset) - train_size])
+            # Use Subset for temporal splits (first 80% train, last 20% test)
+            train_dataset = torch.utils.data.Subset(dataset, range(train_size))
+            test_dataset = torch.utils.data.Subset(dataset, range(train_size, len(dataset)))
+            
             train_datasets.append(train_dataset)
             test_datasets.append(test_dataset)
+            
+            if self.verbose:
+                log(f"Temporal split: train={len(train_dataset)} windows, test={len(test_dataset)} windows", indent=1, priority=1)
+        
         train_dataset = ConcatDataset(train_datasets)
         test_dataset = ConcatDataset(test_datasets)
 

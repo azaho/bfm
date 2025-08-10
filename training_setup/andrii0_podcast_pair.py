@@ -292,14 +292,14 @@ class andrii0_podcast_pair(TrainingSetup):
         losses = {}
         config = self.config
         def _add_to_loss_contrastive(losses, output, target, loss_suffix):
-            # output and target shape: (batch_size, n_electrodes, n_timebins-future_bin_idx, d_model)
+            # output and target shape: (batch_size, n_timebins-future_bin_idx, d_model) - now both are time transformer outputs
             if config['training']['normalize_features']:
                 output_ = output / (torch.norm(output, dim=-1, keepdim=True) + 0.001)
                 target_ = target / (torch.norm(target, dim=-1, keepdim=True) + 0.001)
-            similarity = output_.permute(1, 2, 0, 3) @ target_.permute(1, 2, 3, 0) # shape: (n_electrodes, n_timebins-future_bin_idx, batch_size, batch_size)
+            similarity = output_.permute(1, 0, 2) @ target_.permute(1, 2, 0) # shape: (n_timebins-future_bin_idx, batch_size, batch_size)
             if config['training']['use_temperature_param']:
                 similarity = similarity * torch.minimum(torch.exp(self.model.temperature_param), torch.tensor(config['training']['max_temperature_param'], device=self.model.device, dtype=self.model.dtype))
-            expanded_arange = torch.arange(batch_size).unsqueeze(0).unsqueeze(0).repeat(output.shape[1], output.shape[2], 1).to(self.model.device, dtype=torch.long).reshape(-1)
+            expanded_arange = torch.arange(batch_size).unsqueeze(0).repeat(output.shape[1], 1).to(self.model.device, dtype=torch.long).reshape(-1)
 
             loss = torch.nn.functional.cross_entropy(similarity.view(-1, batch_size), expanded_arange)
             losses[f'contrastive_{loss_suffix}'] = loss
@@ -328,9 +328,22 @@ class andrii0_podcast_pair(TrainingSetup):
         electrode_transformed_data_a, time_transformed_data_a = self.model(batch_a, embeddings_a) # shape: (batch_size, n_electrodes + 1, n_timebins, d_model), (batch_size, 1, n_timebins, d_model)
         electrode_transformed_data_b, time_transformed_data_b = self.model(batch_b, embeddings_b) # shape: (batch_size, n_electrodes + 1, n_timebins, d_model), (batch_size, 1, n_timebins, d_model)
 
-        # add two symmetric loss components (comparing subjects A and B)
-        losses = _add_to_loss_contrastive(losses, time_transformed_data_a[:, :, :-future_bin_idx], electrode_transformed_data_b[:, :1, future_bin_idx:], 'a')
-        losses = _add_to_loss_contrastive(losses, time_transformed_data_b[:, :, :-future_bin_idx], electrode_transformed_data_a[:, :1, future_bin_idx:], 'b')
+        # Extract time transformer outputs (remove the extra dimension)
+        time_output_a = time_transformed_data_a.squeeze(1)  # shape: (batch_size, n_timebins, d_model)
+        time_output_b = time_transformed_data_b.squeeze(1)  # shape: (batch_size, n_timebins, d_model)
+
+        # NEW: Compare time transformer outputs instead of time vs electrode
+        # Person A's time transformer predicts Person B's time transformer output
+        if future_bin_idx == 0:
+            # When predicting current time bin, use all time bins for both tensors
+            losses = _add_to_loss_contrastive(losses, time_output_a, time_output_b, 'a')
+            # Person B's time transformer predicts Person A's time transformer output  
+            losses = _add_to_loss_contrastive(losses, time_output_b, time_output_a, 'b')
+        else:
+            # When predicting future time bins, use offset slicing
+            losses = _add_to_loss_contrastive(losses, time_output_a[:, :-future_bin_idx], time_output_b[:, future_bin_idx:], 'a')
+            # Person B's time transformer predicts Person A's time transformer output  
+            losses = _add_to_loss_contrastive(losses, time_output_b[:, :-future_bin_idx], time_output_a[:, future_bin_idx:], 'b')
 
         return losses
 
@@ -403,23 +416,23 @@ class andrii0_podcast_pair(TrainingSetup):
                 output_electrode_labels=True
             )
             
-            # TEMPORAL BLOCK SPLITTING (not random!)
-            # Split the dataset into temporal blocks to avoid contamination
-            n_windows = len(dataset)
-            train_size = int(n_windows * (1 - config['training']['p_test']))
+            # TEMPORAL BLOCK SPLITTING (80/20 split)
+            # Split into contiguous train/test blocks to prevent temporal leakage
+            total_windows = len(dataset)
+            train_size = int(total_windows * (1 - config['training']['p_test']))
             
-            # Create temporal splits (first 80% for train, last 20% for test)
+            # Create train indices (first 80% of windows)
             train_indices = list(range(train_size))
-            test_indices = list(range(train_size, n_windows))
+            # Create test indices (last 20% of windows) 
+            test_indices = list(range(train_size, total_windows))
             
-            # Create subsets using the temporal indices
             train_dataset = torch.utils.data.Subset(dataset, train_indices)
             test_dataset = torch.utils.data.Subset(dataset, test_indices)
             
             train_datasets.append(train_dataset)
             test_datasets.append(test_dataset)
             
-            if self.verbose: 
+            if self.verbose:
                 log(f"Finished creating paired dataset: {len(dataset)} windows (train: {len(train_indices)}, test: {len(test_indices)})", indent=1, priority=1)
 
         if not train_datasets:
