@@ -7,6 +7,7 @@ from torch.utils.data import Dataset, ConcatDataset, DataLoader
 
 from subject.braintreebank import BrainTreebankSubject
 from subject.mgh2024 import MGH2024Subject
+from subject.podcast import PodcastSubject
 from training_setup.training_config import log
 
 
@@ -38,7 +39,7 @@ class SubjectTrialDataset(Dataset):
         window = self.subject.get_all_electrode_data(self.trial_id, start_idx, end_idx).to(dtype=self.dtype)
 
         output = {'data': window}
-        if self.output_metadata: 
+        if self.output_metadata: # this doesn't make sense, why isn't this around the 'metadata' key as well?
             output['subject_trial'] = (self.subject.subject_identifier, self.trial_id)
         if self.output_electrode_labels:
             output['electrode_labels'] = self.subject.electrode_labels # Also output the electrode label
@@ -62,6 +63,7 @@ class PreprocessCollator:
         output = {
             'data': torch.stack([item['data'] for item in batch]),
         }
+        
         if 'electrode_labels' in batch[0]:
             output['electrode_labels'] = [item['electrode_labels'] for item in batch]
         if 'metadata' in batch[0]:
@@ -80,6 +82,7 @@ class PreprocessCollator:
         
         return output
 
+# based on random subject/trial, make a batch
 class SubjectBatchSampler(torch.utils.data.Sampler):
         def __init__(self, dataset_sizes, batch_size, shuffle=True, drop_last=True):
             self.dataset_sizes = dataset_sizes
@@ -97,7 +100,7 @@ class SubjectBatchSampler(torch.utils.data.Sampler):
                 if self.shuffle:
                     random.shuffle(subject_indices)
                 
-                # Create batches
+                # Create batches for all subjects
                 subject_batches = [subject_indices[i:i + self.batch_size] 
                                 for i in range(0, len(subject_indices), self.batch_size)
                                 if not self.drop_last or i + self.batch_size <= len(subject_indices)]
@@ -130,6 +133,9 @@ def load_subjects(train_subject_trials, eval_subject_trials, dtype, cache=True, 
         elif "mgh" in subject_identifier:
             subject_id = int(subject_identifier.replace("mgh", ""))
             all_subjects[subject_identifier] = MGH2024Subject(subject_id, dtype=dtype, cache=cache, allow_corrupted=allow_corrupted)
+        elif "podcast" in subject_identifier:
+            subject_id = int(subject_identifier.replace("podcast", ""))
+            all_subjects[subject_identifier] = PodcastSubject(subject_id, dtype=dtype, cache=cache, allow_corrupted=allow_corrupted)
         else:
             raise ValueError(f"Unknown subject identifier: {subject_identifier}")
 
@@ -138,5 +144,7 @@ def load_subjects(train_subject_trials, eval_subject_trials, dtype, cache=True, 
 if __name__ == "__main__":
     subject = BrainTreebankSubject(3, cache=False)
     dataset = SubjectTrialDataset(subject, 0, 100, torch.float32)
+    # this is the number of windows in the dataset, whereas 100 is the number
+    # of samples in each window
     print("Length of dataset:", len(dataset))
     print("Shape of dataset[0]:", dataset[0]['data'].shape)

@@ -119,34 +119,43 @@ for optimizer in optimizers:
 # eval_tasks = ['frame_brightness', 'global_flow', 'local_flow', 'global_flow_angle', 'local_flow_angle', 'face_num', 'volume', 'pitch', 'delta_volume', 
 #               'delta_pitch', 'speech', 'onset', 'gpt2_surprisal', 'word_length', 'word_gap', 'word_index', 'word_head_pos', 'word_part_speech', 'speaker']
 eval_tasks = config['training']['eval_tasks'].split(',')
-evaluation = FrozenModelEvaluation_SS_SM(
-    # model evaluation function
-    model_preprocess_functions=training_setup.get_preprocess_functions(pretraining=False),
-    model_evaluation_function=training_setup.generate_frozen_features,
-    eval_aggregation_method=config['cluster']['eval_aggregation_method'],
-    # benchmark parameters 
-    eval_names=eval_tasks, lite=True,
-    subject_trials=[(all_subjects[subject_identifier], trial_id) for subject_identifier, trial_id in config['training']['eval_subject_trials']],
-    # dataloader parameters
-    device=device,
-    dtype=config['training']['data_dtype'],
-    batch_size=config['training']['batch_size'],
-    num_workers_eval=config['cluster']['num_workers_eval'],
-    prefetch_factor=config['cluster']['prefetch_factor'],
-)
+# Filter out empty strings
+eval_tasks = [task for task in eval_tasks if task.strip()]
+
+if eval_tasks:  # Only create evaluation if there are tasks
+    evaluation = FrozenModelEvaluation_SS_SM(
+        # model evaluation function
+        model_preprocess_functions=training_setup.get_preprocess_functions(pretraining=False),
+        model_evaluation_function=training_setup.generate_frozen_features,
+        # benchmark parameters 
+        eval_names=eval_tasks, lite=True,
+        subject_trials=[(all_subjects[subject_identifier], trial_id) for subject_identifier, trial_id in config['training']['eval_subject_trials']],
+        # dataloader parameters
+        device=device,
+        dtype=config['training']['data_dtype'],
+        batch_size=config['training']['batch_size'],
+        num_workers_eval=config['cluster']['num_workers_eval'],
+        prefetch_factor=config['cluster']['prefetch_factor'],
+    )
+else:
+    evaluation = None
 
 ### WANDB SETUP ###
 
 if wandb: 
-    wandb_dir = os.path.join(RUNS_DIR, 'wandb')
-    os.makedirs(wandb_dir, exist_ok=True)
-    wandb.init(project=config['cluster']['wandb_project'], name=config['cluster']['wandb_name'], id=config['cluster']['wandb_name'],
-               config=config, settings=wandb.Settings(init_timeout=480), dir=wandb_dir)
+    os.makedirs("runs/wandb", exist_ok=True)
+    if len(config['cluster']['wandb_entity']) > 0:
+        wandb.init(project=config['cluster']['wandb_project'], name=config['cluster']['wandb_name'], id=config['cluster']['wandb_name'],
+                    entity=config['cluster']['wandb_entity'],
+                    config=config, settings=wandb.Settings(init_timeout=1000), dir="runs/wandb")
+    else:
+        wandb.init(project=config['cluster']['wandb_project'], name=config['cluster']['wandb_name'], id=config['cluster']['wandb_name'],
+                    config=config, settings=wandb.Settings(init_timeout=1000), dir="runs/wandb")
 
 ### EVALUATION OF THE MODEL BEFORE TRAINING ###
 
 eval_results = {}
-if config['cluster']['eval_at_beginning']:
+if config['cluster']['eval_at_beginning'] and evaluation is not None:
     log(f"Evaluating model...", priority=0)
     training_setup.eval_mode()
     # 
@@ -227,11 +236,18 @@ for epoch_i in range(config['training']['n_epochs']):
     with torch.no_grad():
         test_loss_dict = training_setup.calculate_pretrain_test_loss()
         eval_results.update({f"test_{k}": v.item() for k, v in test_loss_dict.items()})
-        eval_results['test_loss'] = sum([v.item() for k, v in test_loss_dict.items() if 'accuracy' not in k]) / len([v for k, v in test_loss_dict.items() if 'accuracy' not in k])
+        # Check if there are any non-accuracy losses in the test_loss_dict
+        non_accuracy_losses = [v.item() for k, v in test_loss_dict.items() if 'accuracy' not in k]
+        if len(non_accuracy_losses) > 0:
+            eval_results['test_loss'] = sum(non_accuracy_losses) / len(non_accuracy_losses)
+        else:
+            # If no test data or only accuracy metrics, set test_loss to a default value
+            log("Warning: No test data available or test dataloader is empty. Setting test_loss to inf.", priority=1)
+            eval_results['test_loss'] = float('inf')  # or 0.0, depending on your preference
         losses_string = f" / ".join([f"{k.split('_')[1]}: {v:.4f}" for k, v in test_loss_dict.items() if 'accuracy' not in k])
         accuracy_string = f" / ".join([f"{k.split('_')[1]}: {v:.4f}" for k, v in test_loss_dict.items() if 'accuracy' in k])
         log(f"Test loss: {eval_results['test_loss']:.4f} ({losses_string}), Accuracies: {accuracy_string}", priority=0)
-        if (epoch_i+1) % config['cluster']['eval_model_every_n_epochs'] == 0:
+        if (epoch_i+1) % config['cluster']['eval_model_every_n_epochs'] == 0 and evaluation is not None:
             evaluation_results_strings = evaluation.evaluate_on_all_metrics(quick_eval=config['cluster']['quick_eval'], only_keys_containing='auroc/average')
             eval_results.update(evaluation_results_strings)
             log("eval_full_model" + str(evaluation_results_strings))
