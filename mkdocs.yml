@@ -1,0 +1,53 @@
+site_name: Brain Foundation Models
+site_description: Codebase Documentation for the Brain Foundation Models (BFM) project.
+site_author: Andrii Zahorodnii
+repo_url: https://github.com/azaho/bfm
+
+nav:
+  - Home: index.md
+  - Reference:
+      - Overview: reference/index.md
+  - Getting Started:
+      - Overview: getting-started/index.md
+      - Installation: getting-started/installation.md
+      - Preliminary Background: getting-started/preliminary-background.md
+      - Onboarding Task: getting-started/onboarding-task.md
+      - Onboarding Reflections: getting-started/onboarding-reflections.md
+theme:
+  name: material
+  icon:
+    logo: material/brain
+  favicon: assets/favicon.ico
+  features:
+    - navigation.tabs
+    - navigation.instant
+    - navigation.tracking
+    - navigation.path
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+  palette:
+    # Palette toggle for light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: white
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+
+    # Palette toggle for dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+extra_css:
+  - styles/extra.css
+
+markdown_extensions:
+  - pymdownx.superfences
+  - pymdownx.highlight
+  - admonition

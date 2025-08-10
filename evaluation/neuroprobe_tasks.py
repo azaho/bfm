@@ -1,14 +1,18 @@
-from torch.utils.data import DataLoader
+import gc
+
+import numpy as np
 import sklearn.metrics
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
-import numpy as np
-from .neuroprobe.train_test_splits import generate_splits_SS_SM
-from .neuroprobe.config import NEUROPROBE_LITE_ELECTRODES
-from training_setup.training_config import log
+
 import torch
-import gc
 import torch.cuda
+from torch.utils.data import DataLoader
+
+from training_setup.training_config import log
+from evaluation.neuroprobe.train_test_splits import generate_splits_SS_SM
+from evaluation.neuroprobe.config import NEUROPROBE_LITE_ELECTRODES
+
 
 # Evaluation class for Same Subject Same Movie (SS-SM), on neuroprobe evals
 class FrozenModelEvaluation_SS_SM():
@@ -16,6 +20,7 @@ class FrozenModelEvaluation_SS_SM():
                  # model preprocess and evaluation function
                  model_preprocess_functions,
                  model_evaluation_function,
+                 eval_aggregation_method,
                  # benchmark parameters
                  eval_names, subject_trials, 
                  lite=True, 
@@ -23,6 +28,7 @@ class FrozenModelEvaluation_SS_SM():
                  device=torch.device('cuda'),
                  dtype=torch.float32, batch_size=100,
                  num_workers_eval=4, prefetch_factor=2,
+                 output_indices=False,
                  # regression parameters
                  regression_random_state=42,  regression_solver='lbfgs', 
                  regression_tol=1e-3,
@@ -37,6 +43,7 @@ class FrozenModelEvaluation_SS_SM():
         """
         self.model_preprocess_functions = model_preprocess_functions
         self.model_evaluation_function = model_evaluation_function
+        self.eval_aggregation_method = eval_aggregation_method
         self.eval_names = eval_names
         self.subject_trials = subject_trials
         all_subject_values = set([subject for subject, trial_id in self.subject_trials])
@@ -47,7 +54,8 @@ class FrozenModelEvaluation_SS_SM():
         self.batch_size = batch_size
         self.lite = lite
         self.max_float_precision = max_float_precision
-
+        self.output_indices = output_indices
+        
         self.regression_max_iter = regression_max_iter
         self.regression_random_state = regression_random_state
         self.regression_solver = regression_solver
@@ -58,7 +66,7 @@ class FrozenModelEvaluation_SS_SM():
         self.evaluation_datasets = {}
         for eval_name in self.eval_names:
             for subject, trial_id in self.subject_trials:
-                splits = generate_splits_SS_SM(subject, trial_id, eval_name, dtype=self.dtype, lite=self.lite, start_neural_data_before_word_onset=0, end_neural_data_after_word_onset=2048)
+                splits = generate_splits_SS_SM(subject, trial_id, eval_name, dtype=self.dtype, lite=self.lite, start_neural_data_before_word_onset=0, end_neural_data_after_word_onset=2048, output_indices=self.output_indices)
                 self.evaluation_datasets[(eval_name, subject.subject_identifier, trial_id)] = splits
                 
         self.all_subject_electrode_labels = {
@@ -87,7 +95,16 @@ class FrozenModelEvaluation_SS_SM():
             else:
                 for preprocess_function in self.model_preprocess_functions:
                     batch = preprocess_function(batch)
-                features = self.model_evaluation_function(batch).reshape(batch_input.shape[0], -1)
+                features = self.model_evaluation_function(batch) # shape: (batch_size, n_electrodes or n_electrodes+1, n_timebins, *) where * can be arbitrary
+
+                if 'meanT' in self.eval_aggregation_method:
+                    features = features.mean(dim=2, keepdim=True) # shape: (batch_size, n_electrodes + 1, 1, d_model)
+                if 'meanE' in self.eval_aggregation_method:
+                    features = features.mean(dim=1, keepdim=True) # shape: (batch_size, 1, n_timebins, d_model)
+                if 'cls' in self.eval_aggregation_method:
+                    features = features[:, 0:1, :, :] # shape: (batch_size, 1, n_timebins, d_model) -- take just the cls token
+
+                features = features.reshape(batch_input.shape[0], -1)
 
             log(f'done generating frozen features for batch {i} of {len(dataloader)}', priority=log_priority, indent=3)
             X.append(features.detach().cpu().float().numpy())

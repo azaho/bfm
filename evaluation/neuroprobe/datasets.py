@@ -10,12 +10,12 @@ from .braintreebank_subject import BrainTreebankSubject
 # Defining the names of evaluations and preparing them for downstream processing
 single_float_variables_name_remapping = {
     "pitch": "enhanced_pitch", #"pitch",
-    "volume": "enhanced_volume", #"rms",
+    "volume": "rms", #"rms",
     "frame_brightness": "mean_pixel_brightness",
     "global_flow": "max_global_magnitude",
     "local_flow": "max_vector_magnitude",
     "delta_volume": "delta_rms",
-    "delta_pitch": "delta_pitch",
+    "delta_pitch": "delta_enhanced_pitch",
     "gpt2_surprisal": "gpt2_surprisal",
     "word_length": "word_length"
 }
@@ -37,7 +37,7 @@ all_tasks = single_float_variables + four_way_cardinal_direction_variables + ["o
 class BrainTreebankSubjectTrialBenchmarkDataset(Dataset):
     def __init__(self, subject, trial_id, dtype, eval_name, output_indices=False, 
                  start_neural_data_before_word_onset=START_NEURAL_DATA_BEFORE_WORD_ONSET * SAMPLING_RATE, end_neural_data_after_word_onset=END_NEURAL_DATA_AFTER_WORD_ONSET * SAMPLING_RATE,
-                 lite=True, random_seed=NEUROPROBE_GLOBAL_RANDOM_SEED, allow_partial_cache=True, output_dict=False):
+                 lite=True, nano=False, random_seed=NEUROPROBE_GLOBAL_RANDOM_SEED, allow_partial_cache=True, output_dict=False):
         """
         Args:
             subject (Subject): the subject to evaluate on
@@ -48,6 +48,7 @@ class BrainTreebankSubjectTrialBenchmarkDataset(Dataset):
                     frame_brightness, global_flow, local_flow, global_flow_angle, local_flow_angle, face_num, volume, pitch, delta_volume, 
                     delta_pitch, speech, onset, gpt2_surprisal, word_length, word_gap, word_index, word_head_pos, word_part_speech, speaker
             lite (bool): if True, the eval is Neuroprobe-Lite (the default), otherwise it is Neuroprobe-Full
+            nano (bool): if True, the eval is Neuroprobe-Nano (the default), otherwise it is Neuroprobe-Lite (if lite is True)
 
             output_indices (bool): 
                 if True, the dataset will output the indices of the samples in the neural data in a tuple: (index_from, index_to); 
@@ -83,11 +84,15 @@ class BrainTreebankSubjectTrialBenchmarkDataset(Dataset):
         self.start_neural_data_before_word_onset = start_neural_data_before_word_onset
         self.end_neural_data_after_word_onset = end_neural_data_after_word_onset
         self.lite = lite
+        self.nano = nano
         self.binary_tasks = True # Neuroprobe always uses binary tasks
         self.n_classes = 0
         self.output_dict = output_dict
 
-        if self.lite:
+        if self.nano:
+            nano_electrodes = NEUROPROBE_NANO_ELECTRODES[subject.subject_identifier]
+            self.electrode_indices_subset = [subject.electrode_labels.index(e) for e in nano_electrodes if e in subject.electrode_labels]
+        elif self.lite:
             lite_electrodes = NEUROPROBE_LITE_ELECTRODES[subject.subject_identifier]
             self.electrode_indices_subset = [subject.electrode_labels.index(e) for e in lite_electrodes if e in subject.electrode_labels]
 
@@ -242,14 +247,14 @@ class BrainTreebankSubjectTrialBenchmarkDataset(Dataset):
             self.n_samples = len(self.balanced_indices)
         
 
-        # If lite, then cache only the part of the neural data that is needed for the dataset. This is to save memory.
-        # the samples will be the first NEUROPROBE_LITE_MAX_SAMPLES samples of the movie
+        # If lite/nano, then cache only the part of the neural data that is needed for the dataset. This is to save memory.
+        # the samples will be the first NEUROPROBE_LITE_MAX_SAMPLES/NEUROPROBE_NANO_MAX_SAMPLES samples of the movie
         self.cache_window_from = None
         self.cache_window_to = None
-        if self.lite:
+        if self.lite or self.nano:
             # if self.n_samples < NEUROPROBE_LITE_MAX_SAMPLES: print(f"WARNING: Subject {self.subject.subject_id}, Trial {self.trial_id}, Eval {self.eval_name}: Not enough samples to create a lite dataset, using all {self.n_samples} samples")
-            max_samples = min(NEUROPROBE_LITE_MAX_SAMPLES, self.n_samples)
-            self.n_samples = max_samples
+            max_samples = NEUROPROBE_NANO_MAX_SAMPLES if self.nano else NEUROPROBE_LITE_MAX_SAMPLES
+            self.n_samples = min(max_samples, self.n_samples)
 
             if allow_partial_cache:
                 n_try_indices = self.n_classes # try some first and last samples to get a good estimate of the edges of the needed data in the dataset
@@ -266,7 +271,7 @@ class BrainTreebankSubjectTrialBenchmarkDataset(Dataset):
         self.subject.load_neural_data(self.trial_id, cache_window_from=self.cache_window_from, cache_window_to=self.cache_window_to)
         if not self.output_indices and not force_output_indices:
             input = self.subject.get_all_electrode_data(self.trial_id, window_from=window_from, window_to=window_to)
-            if self.lite:
+            if self.lite or self.nano:
                 input = input[self.electrode_indices_subset]
             return input.to(dtype=self.dtype)
         else:

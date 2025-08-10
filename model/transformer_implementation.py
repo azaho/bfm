@@ -2,6 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 from utils.muon_optimizer import orthogonalize
 from model.BFModule import BFModule
 
@@ -180,7 +181,7 @@ class Transformer(BFModule):
             else:
                 attention_mask = positions.unsqueeze(2) >= positions.unsqueeze(1) # Causal mask given the positions
 
-
+        if stop_at_block is not None and stop_at_block < 0: stop_at_block = len(self.blocks) + stop_at_block + 1 # allow for negative indices to count from the end
         for block_i, block in enumerate(self.blocks):
             x = block(x, attention_mask=attention_mask, positions=positions)
             if stop_at_block is not None and block_i+1 == stop_at_block:

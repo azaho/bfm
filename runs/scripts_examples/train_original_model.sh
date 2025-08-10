@@ -13,12 +13,14 @@
 source .venv/bin/activate
 export TMPDIR=/om2/scratch/tmp
 
+echo "Running on: $(hostname)"
+
+
 n_in_parallel=1 # How many jobs to run in parallel on the same job (on the same GPU!)
 
 # these parameters are dixed
-train_subject_trials="btbank1_0,btbank2_1,btbank2_2,btbank2_3,btbank2_5,btbank2_6,btbank3_2,btbank4_2,btbank5_0,btbank6_0,btbank6_1,btbank6_4,btbank8_0,btbank9_0,btbank1_1,btbank1_2,btbank2_0,btbank2_4,btbank3_0,btbank3_1,btbank4_0,btbank4_1,btbank7_0,btbank7_1,btbank10_0,btbank10_1"
-#eval_subject_trials="btbank1_1,btbank1_2,btbank2_0,btbank2_4,btbank3_0,btbank3_1,btbank4_0,btbank4_1,btbank7_0,btbank7_1,btbank10_0,btbank10_1"
-eval_subject_trials="btbank1_1,btbank2_0,btbank3_0,btbank4_0,btbank7_0,btbank10_0" # just half, for speed
+train_subject_trials="btbank1_0,btbank2_1,btbank2_2,btbank2_3,btbank2_5,btbank2_6,btbank3_2,btbank4_2,btbank5_0,btbank6_0,btbank6_1,btbank6_4,btbank8_0,btbank9_0,btbank7_100,btbank7_101,btbank7_102,btbank10_100,btbank10_101"
+eval_subject_trials="btbank1_1,btbank1_2,btbank2_0,btbank2_4,btbank3_0,btbank3_1,btbank4_0,btbank4_1,btbank7_0,btbank7_1,btbank10_0,btbank10_1"
 wandb_project="WANDB_PROJECT_NAME"
 
 # these parameters are swept over
