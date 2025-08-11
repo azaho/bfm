@@ -155,7 +155,7 @@ class mse_ar(TrainingSetup):
         transformed_data = self.model(preprocessed_data, embeddings) # shape: (batch_size, n_electrodes, n_timebins, d_output)
 
         losses = {
-            "mse_a": torch.nn.functional.mse_loss(transformed_data[:, :, :-1, :], preprocessed_data[:, :, 1:, :])
+            "mse_a": torch.nn.functional.mse_loss(transformed_data[:, :, :-self.config['training']['future_bin_idx'], :], preprocessed_data[:, :, self.config['training']['future_bin_idx']:, :])
         }
         return losses
 

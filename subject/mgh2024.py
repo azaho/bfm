@@ -189,7 +189,7 @@ class MGH2024Subject(Subject):
         original_h5_electrode_keys = np.array(original_h5_electrode_ids)#["channel_"+str(i) for i in original_h5_electrode_ids]
 
         with h5py.File(h5_path, 'r', locking=False) as f:
-            self.neural_data_cache[session_id] = torch.from_numpy(f['data'][original_h5_electrode_keys, :]).to(self.dtype)
+            self.neural_data_cache[session_id] = torch.from_numpy(f['data'][original_h5_electrode_keys, :]).to(self.dtype) * 10**6 # convert to microvolts
 
     def clear_neural_data_cache(self, session_id=None):
         if session_id is None:
@@ -253,7 +253,7 @@ class MGH2024Subject(Subject):
             original_h5_electrode_labels = self._preprocess_electrode_labels(self.session_metadata[session_id]['channel_names'])
             electrode_id = original_h5_electrode_labels.index(electrode_label)
             h5_electrode_key = "channel_" + str(electrode_id)
-            return torch.from_numpy(self.h5_files[session_id]['data'][h5_electrode_key][window_from:window_to]).to(self.dtype)
+            return torch.from_numpy(self.h5_files[session_id]['data'][h5_electrode_key][window_from:window_to]).to(self.dtype) * 10**6 # convert to microvolts
 
     def get_all_electrode_data(self, session_id, window_from=None, window_to=None):
         if session_id not in self.electrode_data_length: self.load_neural_data(session_id)
@@ -270,7 +270,7 @@ class MGH2024Subject(Subject):
             original_h5_electrode_keys = np.array(original_h5_electrode_ids)#["channel_"+str(i) for i in original_h5_electrode_ids]
 
             with h5py.File(h5_path, 'r', locking=False) as f:
-                data = torch.from_numpy(f['data'][original_h5_electrode_keys, window_from:window_to]).to(self.dtype)
+                data = torch.from_numpy(f['data'][original_h5_electrode_keys, window_from:window_to]).to(self.dtype) * 10**6 # convert to microvolts
             return data
 
 if __name__ == "__main__":

@@ -31,7 +31,7 @@ CONFIG_SCHEMA = {
 
         'signal_preprocessing': {
             'laplacian_rereference': ParamConfig(True, bool, 'Whether to Laplacian rereference the signal before feeding it to the model'),
-            'normalize_voltage': ParamConfig(True, bool, 'Whether to normalize the voltage of the signal (batch norm) before feeding it to the model'),
+            'normalize_voltage': ParamConfig(False, bool, 'Whether to normalize the voltage of the signal (batch norm) before feeding it to the model'),
 
             'spectrogram': ParamConfig(True, bool, 'Whether to use spectrogram'), # Whether to use spectrogram of the signal or take raw voltage as input
             'spectrogram_parameters': {
@@ -57,6 +57,7 @@ CONFIG_SCHEMA = {
 
     'cluster': {
         'wandb_project': ParamConfig("", str, 'wandb.com project name'), # If empty, no wandb is used
+        'wandb_entity': ParamConfig("", str, 'wandb.com entity name'), # If empty, no wandb is used
         'save_model_every_n_epochs': ParamConfig(1, int, 'Save the model weights and training statistics every n epochs'),
         'eval_model_every_n_epochs': ParamConfig(1, int, 'Evaluate the model every n epochs'),
         'eval_at_beginning': ParamConfig(True, bool, 'Whether to evaluate the model at the beginning of the training'),
@@ -73,6 +74,8 @@ CONFIG_SCHEMA = {
 
     'training': {
         'setup_name': ParamConfig("andrii0", str, 'Setup name', required=True),
+        # added paired mode for testing paired subject contrastive learning learning dataloader
+        'paired_mode': ParamConfig(False, bool, 'Whether to use paired mode'),
 
         'train_subject_trials': ParamConfig("btbank3_1", str, 'Train subject trials'), # a string like btbank3_1,btbank3_2,...
         'eval_subject_trials': ParamConfig("", str, 'Eval subject trials'), # a string like btbank3_0,btbank3_1,...
@@ -111,7 +114,7 @@ CONFIG_SCHEMA = {
     'other': {} 
 }
 
-def get_default_config(random_string, wandb_project):
+def get_default_config(random_string="TEMP", wandb_project=""):
     # Convert schema to actual config
     def convert_schema_to_config(schema):
         config = {}

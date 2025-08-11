@@ -9,7 +9,7 @@ from .config import *
 
 
 def generate_splits_DS_DM(all_subjects, test_subject_id, test_trial_id, eval_name, dtype=torch.float32,
-                          lite=True, nano=False, allow_partial_cache=True,
+                          lite=True, nano=False,
                           
                           # Dataset parameters
                           output_indices=False, 
@@ -29,7 +29,6 @@ def generate_splits_DS_DM(all_subjects, test_subject_id, test_trial_id, eval_nam
         dtype (torch.dtype, optional): Data type for tensors. Defaults to torch.float32.
         lite (bool): if True, the eval is Neuroprobe-Lite (the default), otherwise it is Neuroprobe-Full.
         nano (bool): if True, the eval is Neuroprobe-Nano (the default), otherwise it is Neuroprobe-Lite (if lite is True)
-        allow_partial_cache (bool): if True, the dataset will allow partial caching of the neural data. Defaults to True.
 
         # Dataset parameters
         output_indices (bool, optional): Whether to output the indices of the neural data. Defaults to False.
@@ -45,18 +44,18 @@ def generate_splits_DS_DM(all_subjects, test_subject_id, test_trial_id, eval_nam
 
     test_dataset = BrainTreebankSubjectTrialBenchmarkDataset(all_subjects[test_subject_id], test_trial_id, dtype=dtype, eval_name=eval_name, 
                                                              output_indices=output_indices, start_neural_data_before_word_onset=start_neural_data_before_word_onset, end_neural_data_after_word_onset=end_neural_data_after_word_onset,
-                                                             lite=lite, nano=nano, allow_partial_cache=allow_partial_cache)
+                                                             lite=lite, nano=nano)
     
     train_subject_id, train_trial_id = DS_DM_TRAIN_SUBJECT_ID, DS_DM_TRAIN_TRIAL_ID
     train_dataset = BrainTreebankSubjectTrialBenchmarkDataset(all_subjects[train_subject_id], train_trial_id, dtype=dtype, eval_name=eval_name, 
                                                                 output_indices=output_indices, start_neural_data_before_word_onset=start_neural_data_before_word_onset, end_neural_data_after_word_onset=end_neural_data_after_word_onset,
-                                                                lite=lite, nano=nano, allow_partial_cache=allow_partial_cache)
+                                                                lite=lite, nano=nano)
 
     return train_dataset, test_dataset
 
 
 def generate_splits_DS_SM(all_subjects, test_subject_id, test_trial_id, eval_name, dtype=torch.float32,
-                          lite=True, allow_partial_cache=True,
+                          lite=True,
                           
                           # Dataset parameters
                           output_indices=False, 
@@ -77,7 +76,6 @@ def generate_splits_DS_SM(all_subjects, test_subject_id, test_trial_id, eval_nam
         eval_name (str): Name of the evaluation metric to use (e.g. "rms")
         dtype (torch.dtype, optional): Data type for tensors. Defaults to torch.float32.
         lite (bool): if True, the eval is Neuroprobe-Lite (the default), otherwise it is Neuroprobe-Full.
-        allow_partial_cache (bool): if True, the dataset will allow partial caching of the neural data. Defaults to True.
 
         # Dataset parameters
         output_indices (bool, optional): Whether to output the indices of the neural data. Defaults to False.
@@ -102,18 +100,18 @@ def generate_splits_DS_SM(all_subjects, test_subject_id, test_trial_id, eval_nam
 
     test_dataset = BrainTreebankSubjectTrialBenchmarkDataset(all_subjects[test_subject_id], test_trial_id, dtype=dtype, eval_name=eval_name, 
                                                              output_indices=output_indices, start_neural_data_before_word_onset=start_neural_data_before_word_onset, end_neural_data_after_word_onset=end_neural_data_after_word_onset,
-                                                             lite=lite, allow_partial_cache=allow_partial_cache)
+                                                             lite=lite)
     train_datasets = []
     for other_subject_id, other_trial_id in other_subject_trials_list:
         train_datasets.append(BrainTreebankSubjectTrialBenchmarkDataset(all_subjects[other_subject_id], other_trial_id, dtype=dtype, eval_name=eval_name, 
                                                                         output_indices=output_indices, start_neural_data_before_word_onset=start_neural_data_before_word_onset, end_neural_data_after_word_onset=end_neural_data_after_word_onset,
-                                                                        lite=lite, allow_partial_cache=allow_partial_cache))
+                                                                        lite=lite))
     #train_dataset = ConcatDataset(train_datasets)
     return train_datasets, test_dataset
     
 
 def generate_splits_SS_DM(test_subject, test_trial_id, eval_name, dtype=torch.float32,
-                          lite=True, allow_partial_cache=True,
+                          lite=True,
                           
                           # Dataset parameters
                           output_indices=False, 
@@ -133,7 +131,6 @@ def generate_splits_SS_DM(test_subject, test_trial_id, eval_name, dtype=torch.fl
         eval_name (str): Name of the evaluation metric to use (e.g. "rms")
         dtype (torch.dtype, optional): Data type for tensors. Defaults to torch.float32.
         lite (bool): if True, the eval is Neuroprobe-Lite (the default), otherwise it is Neuroprobe-Full.
-        allow_partial_cache (bool): if True, the dataset will allow partial caching of the neural data. Defaults to True.
 
         # Dataset parameters
         output_indices (bool, optional): Whether to output the indices of the neural data. Defaults to False.
@@ -149,7 +146,7 @@ def generate_splits_SS_DM(test_subject, test_trial_id, eval_name, dtype=torch.fl
     
     test_dataset = BrainTreebankSubjectTrialBenchmarkDataset(test_subject, test_trial_id, dtype=dtype, eval_name=eval_name, 
                                                              output_indices=output_indices, start_neural_data_before_word_onset=start_neural_data_before_word_onset, end_neural_data_after_word_onset=end_neural_data_after_word_onset,
-                                                             lite=lite, allow_partial_cache=allow_partial_cache)
+                                                             lite=lite)
         
     if not lite:
         train_trial_id = NEUROPROBE_LONGEST_TRIALS_FOR_SUBJECT[test_subject.subject_id][0]
@@ -161,12 +158,12 @@ def generate_splits_SS_DM(test_subject, test_trial_id, eval_name, dtype=torch.fl
 
     train_dataset = BrainTreebankSubjectTrialBenchmarkDataset(test_subject, train_trial_id, dtype=dtype, eval_name=eval_name, 
                                                                 output_indices=output_indices, start_neural_data_before_word_onset=start_neural_data_before_word_onset, end_neural_data_after_word_onset=end_neural_data_after_word_onset,
-                                                                lite=lite, allow_partial_cache=allow_partial_cache)
+                                                                lite=lite)
     return train_dataset, test_dataset
 
 
 def generate_splits_SS_SM(test_subject, test_trial_id, eval_name, dtype=torch.float32,
-                          lite=True, nano=False, allow_partial_cache=True,
+                          lite=True, nano=False,
                           
                           # Dataset parameters
                           output_indices=False, 
@@ -187,7 +184,6 @@ def generate_splits_SS_SM(test_subject, test_trial_id, eval_name, dtype=torch.fl
         dtype (torch.dtype, optional): Data type for tensors. Defaults to torch.float32.
         lite (bool): if True, the eval is Neuroprobe-Lite (the default), otherwise it is Neuroprobe-Full.
         nano (bool): if True, the eval is Neuroprobe-Nano (the default), otherwise it is Neuroprobe-Lite (if lite is True)
-        allow_partial_cache (bool): if True, the dataset will allow partial caching of the neural data. Defaults to True.
 
         # Dataset parameters
         output_indices (bool, optional): Whether to output the indices of the neural data. Defaults to False.
@@ -205,7 +201,7 @@ def generate_splits_SS_SM(test_subject, test_trial_id, eval_name, dtype=torch.fl
 
     dataset = BrainTreebankSubjectTrialBenchmarkDataset(test_subject, test_trial_id, dtype=dtype, eval_name=eval_name, 
                                                         output_indices=output_indices, start_neural_data_before_word_onset=start_neural_data_before_word_onset, end_neural_data_after_word_onset=end_neural_data_after_word_onset,
-                                                        lite=lite, nano=nano, allow_partial_cache=allow_partial_cache)
+                                                        lite=lite, nano=nano)
     
     k_folds = NEUROPROBE_LITE_N_FOLDS if not nano else NEUROPROBE_NANO_N_FOLDS
     kf = KFold(n_splits=k_folds, shuffle=False)  # shuffle=False is important to avoid correlated train/test splits!

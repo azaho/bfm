@@ -94,6 +94,31 @@ models = [
         'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_{"andrii_brainbert_lr0.0003_wd0.0_dr0.2_rR_SLR_t20250719_173751"}_epoch{model_epoch}_{feature_type}/',
         'pad_x': 1 if model_epoch==0 else 0,
     } for feature_type in ['keepall'] for model_epoch in [0, 10, 15, 30]
+] + [
+    {
+        'name': f'Inputs to BB CZW params',
+        'color_palette': 'rainbow',
+        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_inputs_{"andrii_brainbert_lr0.003_wd0.0_dr0.2_rR_CZWPARAMS3_t20250719_173741"}_epoch0_keepall/',
+        'pad_x': 1,
+    },
+    {
+        'name': f'Inputs to BB SLR params',
+        'color_palette': 'rainbow',
+        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_inputs_{"andrii_brainbert_lr0.0003_wd0.0_dr0.2_rR_SLR_t20250719_173751"}_epoch0_keepall/',
+        'pad_x': 1,
+    },{
+        'name': f'Inputs to BB CZW params (no otf)',
+        'color_palette': 'rainbow',
+        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_inputs_no_otf_{"andrii_brainbert_lr0.003_wd0.0_dr0.2_rR_CZWPARAMS3_t20250719_173741"}_epoch0_keepall/',
+        'pad_x': 1,
+    },
+    {
+        'name': f'Inputs to BB SLR params (no otf)',
+        'color_palette': 'rainbow',
+        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_inputs_no_otf_{"andrii_brainbert_lr0.0003_wd0.0_dr0.2_rR_SLR_t20250719_173751"}_epoch0_keepall/',
+        'pad_x': 1,
+    }
+    
 ]
 
 ### DEFINE TASK NAME MAPPING ###

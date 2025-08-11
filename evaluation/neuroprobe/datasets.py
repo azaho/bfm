@@ -37,7 +37,7 @@ all_tasks = single_float_variables + four_way_cardinal_direction_variables + ["o
 class BrainTreebankSubjectTrialBenchmarkDataset(Dataset):
     def __init__(self, subject, trial_id, dtype, eval_name, output_indices=False, 
                  start_neural_data_before_word_onset=START_NEURAL_DATA_BEFORE_WORD_ONSET * SAMPLING_RATE, end_neural_data_after_word_onset=END_NEURAL_DATA_AFTER_WORD_ONSET * SAMPLING_RATE,
-                 lite=True, nano=False, random_seed=NEUROPROBE_GLOBAL_RANDOM_SEED, allow_partial_cache=True, output_dict=False):
+                 lite=True, nano=False, random_seed=NEUROPROBE_GLOBAL_RANDOM_SEED, output_dict=False):
         """
         Args:
             subject (Subject): the subject to evaluate on
@@ -60,10 +60,6 @@ class BrainTreebankSubjectTrialBenchmarkDataset(Dataset):
                     "label": the label
                     "electrode_labels": the labels of the electrodes
                 If False, the dataset will output a tuple (input, label) or ((index_from, index_to), label) directly
-
-
-            allow_partial_cache (bool): if True, the dataset will allow partial caching of the neural data 
-                (if only part of the recording is needed for the dataset); this is useful for large datasets
             
             start_neural_data_before_word_onset (int): the number of samples to start the neural data before each word onset
             end_neural_data_after_word_onset (int): the number of samples to end the neural data after each word onset
@@ -85,8 +81,7 @@ class BrainTreebankSubjectTrialBenchmarkDataset(Dataset):
         self.end_neural_data_after_word_onset = end_neural_data_after_word_onset
         self.lite = lite
         self.nano = nano
-        self.binary_tasks = True # Neuroprobe always uses binary tasks
-        self.n_classes = 0
+        self.n_classes = 2
         self.output_dict = output_dict
 
         if self.nano:
@@ -116,17 +111,6 @@ class BrainTreebankSubjectTrialBenchmarkDataset(Dataset):
         new_columns = [col for col in original_features_df.columns if col not in self.all_words_df.columns]
         for col in new_columns:
             self.all_words_df[col] = self.all_words_df['original_index'].map(original_features_df[col])
-
-        rebalance_classes = False # setting this flag as false by default; it is only relevant for classification tasks
-        if eval_name == "word_gap": # create the word gap column
-            word_gaps = []
-            for i in range(len(self.all_words_df)):
-                if i == 0 or self.all_words_df.iloc[i]['sentence'] != self.all_words_df.iloc[i-1]['sentence']:
-                    word_gaps.append(-1) 
-                else:
-                    gap = self.all_words_df.iloc[i]['start'] - self.all_words_df.iloc[i-1]['end']
-                    word_gaps.append(gap)
-            self.all_words_df['word_gap'] = word_gaps
         
         if eval_name in single_float_variables:
             # Grab the new pitch volume features if they exist
@@ -144,131 +128,88 @@ class BrainTreebankSubjectTrialBenchmarkDataset(Dataset):
                 pitch_volume_features = normalized_pvf
 
                 start_times = self.all_words_df['start'].to_list()
-
                 all_labels = []
                 for start_time_val in start_times:
                     lookup_key = f"{start_time_val:.{TARGET_DP_FOR_KEYS}f}"
                     label = pitch_volume_features[lookup_key][self.eval_name_remapped]
                     all_labels.append(label)
-
                 all_labels = np.array(all_labels)
             else:
                 all_labels = self.all_words_df[self.eval_name_remapped].to_numpy()
 
-
             # Get indices for words in top and bottom quartiles
             label_percentiles = np.array([np.mean(all_labels < x) for x in all_labels])
-            self.extreme_indices = np.where((label_percentiles > 0.75) | (label_percentiles < 0.25))[0]
-            self.extreme_labels = torch.from_numpy((label_percentiles[self.extreme_indices] > 0.75).astype(int))
-            self.n_samples = len(self.extreme_indices)
-            self.n_classes = 2
+            self.positive_indices = np.where(label_percentiles > 0.75)[0]
+            self.negative_indices = np.where(label_percentiles < 0.25)[0]
         elif eval_name in ["onset", "speech"]:
             self.positive_indices = np.where(self.all_words_df["is_onset"].to_numpy() == 1)[0] if eval_name == "onset" else np.arange(len(self.all_words_df))
             self.negative_indices = np.arange(len(self.nonverbal_df))
-            min_len = min(len(self.positive_indices), len(self.negative_indices)) # make sure we have an equal number of positive and negative samples
-            self.positive_indices = np.sort(self.rng.choice(self.positive_indices, size=min_len, replace=False))
-            self.negative_indices = np.sort(self.rng.choice(self.negative_indices, size=min_len, replace=False))
-            self.n_samples = len(self.positive_indices) + len(self.negative_indices)
-            self.n_classes = 2
         elif eval_name in four_way_cardinal_direction_variables: 
             self.class_labels = np.zeros(len(self.all_words_df), dtype=int)
             angles = self.all_words_df[self.eval_name_remapped].to_numpy()
-            cardinal_directions = np.array([0, 90, 180, 270]) if not self.binary_tasks else np.array([0, 180])
+            cardinal_directions = np.array([0, 90, 180, 270])
             angles_expanded = angles[:, np.newaxis]
             distances = np.minimum(np.abs(angles_expanded - cardinal_directions),
                                 360 - np.abs(angles_expanded - cardinal_directions))
-            self.class_labels = np.argmin(distances, axis=1)
-            rebalance_classes = True
-            self.n_classes = len(cardinal_directions)
+            class_labels = np.argmin(distances, axis=1)
+            self.positive_indices = np.where(class_labels == 0)[0]
+            self.negative_indices = np.where(class_labels == 2)[0]
         elif eval_name == "face_num":
-            self.n_samples = len(self.all_words_df)
-            self.n_classes = 3 if not self.binary_tasks else 2
-            self.class_labels = self.all_words_df["face_num"].to_numpy().astype(int)
-            self.class_labels[self.class_labels > self.n_classes-1] = self.n_classes-1 # cap at 2
-            rebalance_classes = True
+            face_nums = self.all_words_df["face_num"].to_numpy().astype(int)
+            self.positive_indices = np.where(face_nums > 0)[0]
+            self.negative_indices = np.where(face_nums == 0)[0]
         elif eval_name == "word_index":
-            self.n_samples = len(self.all_words_df)
-            self.n_classes = 4 if not self.binary_tasks else 2
-            self.class_labels = self.all_words_df["idx_in_sentence"].to_numpy().astype(int)
-            self.class_labels[self.class_labels > self.n_classes-1] = self.n_classes-1 # cap at 3
-            rebalance_classes = True
+            word_indices = self.all_words_df["idx_in_sentence"].to_numpy().astype(int)
+            self.positive_indices = np.where(word_indices == 0)[0]
+            self.negative_indices = np.where(word_indices == 1)[0]
         elif eval_name == "word_head_pos":
-            self.n_samples = len(self.all_words_df)
-            self.class_labels = self.all_words_df[self.eval_name_remapped].to_numpy().astype(int)
-            rebalance_classes = True
-            self.n_classes = 2
+            head_pos = self.all_words_df[self.eval_name_remapped].to_numpy().astype(int)
+            self.positive_indices = np.where(head_pos == 0)[0]
+            self.negative_indices = np.where(head_pos == 1)[0]
         elif eval_name == "word_part_speech":
-            self.n_samples = len(self.all_words_df)
-            self.n_classes = 4 if not self.binary_tasks else 2
-            self.class_labels = np.ones(len(self.all_words_df)).astype(int) * (self.n_classes - 1)
-            for i, pos in enumerate(["VERB", "NOUN", "PRON"][:self.n_classes-1]):
-                self.class_labels[self.all_words_df[self.eval_name_remapped] == pos] = i
-            rebalance_classes = True                
+            pos = self.all_words_df[self.eval_name_remapped].to_numpy()         
+            self.positive_indices = np.where(pos == "VERB")[0]
+            self.negative_indices = np.where(pos == "NOUN")[0]
         elif eval_name == "speaker":
-            self.n_samples = len(self.all_words_df)
-            self.n_classes = 4 if not self.binary_tasks else 2
-            self.class_labels = np.ones(len(self.all_words_df)).astype(int) * (self.n_classes - 1)
-            most_frequent_speakers = self.all_words_df['speaker'].value_counts().index
-            for i, speaker in enumerate(most_frequent_speakers[:self.n_classes-1]):
-                self.class_labels[self.all_words_df['speaker'] == speaker] = i
-            rebalance_classes = True
+            speakers = self.all_words_df['speaker']
+            most_frequent_speaker = speakers.value_counts().index[0]
+            self.positive_indices = np.where(speakers == most_frequent_speaker)[0]
+            self.negative_indices = np.where(speakers != most_frequent_speaker)[0]
         elif eval_name == "word_gap":
-            # Get indices for words in top and bottom quartiles, ignoring -1 values
-            all_labels = self.all_words_df[self.eval_name_remapped].to_numpy()
-            valid_mask = all_labels != -1
-            valid_labels = all_labels[valid_mask]
-            label_percentiles = np.array([np.mean(valid_labels < x) for x in all_labels[valid_mask]])
-            valid_indices = np.where(valid_mask)[0]
-            extreme_mask = (label_percentiles > 0.75) | (label_percentiles < 0.25)
-            self.extreme_indices = valid_indices[extreme_mask]
-            self.extreme_labels = torch.from_numpy((label_percentiles[extreme_mask] > 0.75).astype(int))
-            self.n_samples = len(self.extreme_indices)
-            self.n_classes = 2
+            word_gap_distribution = []
+            for i in range(1, len(self.all_words_df)):
+                if self.all_words_df.iloc[i]['sentence'] != self.all_words_df.iloc[i-1]['sentence']: continue
+                gap = self.all_words_df.iloc[i]['start'] - self.all_words_df.iloc[i-1]['end']
+                word_gap_distribution.append(gap)
+            word_gap_distribution = np.array(word_gap_distribution)
+
+            positive_indices = []
+            negative_indices = []
+            for i in range(1, len(self.all_words_df)):
+                if self.all_words_df.iloc[i]['sentence'] != self.all_words_df.iloc[i-1]['sentence']: continue
+                gap = self.all_words_df.iloc[i]['start'] - self.all_words_df.iloc[i-1]['end']
+                gap_percentile = np.mean(word_gap_distribution < gap)
+                if gap_percentile > 0.75:
+                    positive_indices.append(i)
+                elif gap_percentile < 0.25:
+                    negative_indices.append(i)
+            self.positive_indices = np.array(positive_indices)
+            self.negative_indices = np.array(negative_indices)
         else:
             raise ValueError(f"Invalid eval_name: {eval_name}")
 
-        if rebalance_classes:
-            # Get counts for each class
-            unique_classes, class_counts = np.unique(self.class_labels, return_counts=True)
-            min_count = np.min(class_counts)
-            # Create balanced subset by randomly sampling min_count elements from each class
-            balanced_indices = []
-            for class_label in unique_classes:
-                class_indices = np.where(self.class_labels == class_label)[0]
-                sampled_indices = self.rng.choice(class_indices, size=min_count, replace=False)
-                sampled_indices = np.sort(sampled_indices)
-                balanced_indices.extend(sampled_indices)
-            
-            # Print rebalancing information
-            # print(f"Subject {self.subject.subject_id}, Trial {self.trial_id}, Eval {self.eval_name}: Total datapoints before rebalancing: {len(self.class_labels)}, Classes: {', '.join([f'Class {cl}: {ct}' for cl, ct in zip(unique_classes, class_counts)])}, Total after rebalancing: {len(unique_classes) * min_count}")
-            
-            self.balanced_indices = np.sort(np.array(balanced_indices))
-            self.class_labels = self.class_labels[self.balanced_indices]
-            self.n_samples = len(self.balanced_indices)
-        
-
-        # If lite/nano, then cache only the part of the neural data that is needed for the dataset. This is to save memory.
-        # the samples will be the first NEUROPROBE_LITE_MAX_SAMPLES/NEUROPROBE_NANO_MAX_SAMPLES samples of the movie
-        self.cache_window_from = None
-        self.cache_window_to = None
-        if self.lite or self.nano:
-            # if self.n_samples < NEUROPROBE_LITE_MAX_SAMPLES: print(f"WARNING: Subject {self.subject.subject_id}, Trial {self.trial_id}, Eval {self.eval_name}: Not enough samples to create a lite dataset, using all {self.n_samples} samples")
-            max_samples = NEUROPROBE_NANO_MAX_SAMPLES if self.nano else NEUROPROBE_LITE_MAX_SAMPLES
-            self.n_samples = min(max_samples, self.n_samples)
-
-            if allow_partial_cache:
-                n_try_indices = self.n_classes # try some first and last samples to get a good estimate of the edges of the needed data in the dataset
-                window_indices = []
-                for i in list(range(n_try_indices))+list(range(self.n_samples-n_try_indices, self.n_samples)):
-                    (window_from, window_to), _ = self.__getitem__(i, force_output_indices=True)
-                    window_indices.append(window_from)
-                    window_indices.append(window_to)
-                self.cache_window_from = np.min(window_indices)
-                self.cache_window_to = np.max(window_indices)
+        n_samples_each = min(len(self.positive_indices), len(self.negative_indices))
+        if self.lite: 
+            n_samples_each = min(n_samples_each, NEUROPROBE_LITE_MAX_SAMPLES//2)
+        elif self.nano:
+            n_samples_each = min(n_samples_each, NEUROPROBE_NANO_MAX_SAMPLES//2)
+        self.positive_indices = np.sort(self.rng.choice(self.positive_indices, size=n_samples_each, replace=False))
+        self.negative_indices = np.sort(self.rng.choice(self.negative_indices, size=n_samples_each, replace=False))
+        self.n_samples = len(self.positive_indices) + len(self.negative_indices)
         
 
     def _get_neural_data(self, window_from, window_to, force_output_indices=False):
-        self.subject.load_neural_data(self.trial_id, cache_window_from=self.cache_window_from, cache_window_to=self.cache_window_to)
+        self.subject.load_neural_data(self.trial_id)
         if not self.output_indices and not force_output_indices:
             input = self.subject.get_all_electrode_data(self.trial_id, window_from=window_from, window_to=window_to)
             if self.lite or self.nano:
@@ -277,55 +218,35 @@ class BrainTreebankSubjectTrialBenchmarkDataset(Dataset):
         else:
             return window_from, window_to # just return the window indices
 
-    def _simple_float_variable__getitem__(self, idx, force_output_indices=False):
-        word_index = self.extreme_indices[idx]
-        row = self.all_words_df.iloc[word_index]
-        est_idx = int(row['est_idx']) - int(self.start_neural_data_before_word_onset)
-        est_end_idx = int(row['est_idx']) + int(self.end_neural_data_after_word_onset)
-        input = self._get_neural_data(est_idx, est_end_idx, force_output_indices=force_output_indices)
-        return input, self.extreme_labels[idx].item()
-
     def _positive_negative_getitem__(self, idx, force_output_indices=False):
-        if idx % 2 == 0: # even indices are positive samples
-            word_index = self.positive_indices[idx//2]
+        # even indices are positive samples, odd indices are negative samples
+        word_index = self.positive_indices[idx//2] if idx % 2 == 0 else self.negative_indices[idx//2]
+        if self.eval_name in ["onset", "speech"] and idx % 2 == 1: # for onset and speech, we need to get the nonverbal data
+            row = self.nonverbal_df.iloc[word_index]
+        else:
             row = self.all_words_df.iloc[word_index]
-            est_idx = int(row['est_idx']) - int(self.start_neural_data_before_word_onset)
-            est_end_idx = int(row['est_idx']) + int(self.end_neural_data_after_word_onset)
-            input = self._get_neural_data(est_idx, est_end_idx, force_output_indices=force_output_indices)
-            return input, 1
-        else: # odd indices are negative samples
-            item_index = self.negative_indices[idx//2]
-            row = self.nonverbal_df.iloc[item_index]
-            est_idx = int(row['est_idx'])
-            est_end_idx = est_idx + self.end_neural_data_after_word_onset + self.start_neural_data_before_word_onset
-            input = self._get_neural_data(est_idx, est_end_idx, force_output_indices=force_output_indices)
-            return input, 0
-        
-    def _classification__getitem__(self, idx, force_output_indices=False):
-        word_index = self.balanced_indices[idx]
-        row = self.all_words_df.iloc[word_index]
         est_idx = int(row['est_idx']) - int(self.start_neural_data_before_word_onset)
-        est_end_idx = int(row['est_idx']) + int(self.end_neural_data_after_word_onset)
+        est_end_idx = est_idx + int(self.start_neural_data_before_word_onset) + int(self.end_neural_data_after_word_onset)
         input = self._get_neural_data(est_idx, est_end_idx, force_output_indices=force_output_indices)
-        return input, self.class_labels[idx].item()
-        
+        return input, (1 if idx % 2 == 0 else 0)
         
     def __len__(self):
         return self.n_samples
     def __getitem__(self, idx, force_output_indices=False):
         if idx >= self.n_samples:
             raise IndexError(f"Index {idx} out of bounds for dataset of size {self.n_samples}")
+        input, label = self._positive_negative_getitem__(idx, force_output_indices=force_output_indices)
         
-        if self.eval_name in single_float_variables or self.eval_name == "word_gap":
-            input, label = self._simple_float_variable__getitem__(idx, force_output_indices=force_output_indices)
-        elif self.eval_name in four_way_cardinal_direction_variables or self.eval_name in ["face_num", "word_index", "word_head_pos", "word_part_speech", "speaker"]:
-            input, label = self._classification__getitem__(idx, force_output_indices=force_output_indices)
-        elif self.eval_name in ["onset", "speech"]:
-            input, label = self._positive_negative_getitem__(idx, force_output_indices=force_output_indices)
-        else:
-            raise ValueError(f"Invalid eval_name: {self.eval_name}")
-
         if self.output_dict:
-            return {"data": input, "label": label, "electrode_labels": self.subject.electrode_labels}
+            return {
+                "data": input, 
+                "label": label, 
+                "electrode_labels": self.subject.electrode_labels,
+                "metadata": {
+                    "subject_identifier": self.subject.subject_identifier,
+                    "trial_id": self.trial_id,
+                    "sampling_rate": 2048,
+                }
+            }
         else:
             return input, label

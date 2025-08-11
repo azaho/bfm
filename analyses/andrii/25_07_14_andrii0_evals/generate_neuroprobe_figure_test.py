@@ -60,6 +60,41 @@ models = [
         'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_{"andrii_brainbert_lr0.003_wd0.0_dr0.2_rR2_t20250716_001553"}_epoch{model_epoch}_{feature_type}/',
         'pad_x': 1 if model_epoch==0 else 0,
     } for feature_type in ['keepall', 'meanE', 'meanT', 'meanT_meanE'] for model_epoch in [0, 1, 10, 20]
+] + [
+    {
+        'name': f'MSE-AR (dr0.2) epoch {model_epoch} ({feature_type})',
+        'color_palette': 'rainbow',
+        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_{"mse_ar_lr0.003_wd0.001_dr0.2_rR1_t20250723_113733"}_epoch{model_epoch}_{feature_type}/',
+        'pad_x': 1 if model_epoch==0 else 0,
+    } for feature_type in ['keepall'] for model_epoch in [0, 10, 30, 70] # , 'meanE', 'meanT', 'meanT_meanE'
+] + [
+    {
+        'name': f'MSE-AR (dr0.0) epoch {model_epoch} ({feature_type})',
+        'color_palette': 'rainbow',
+        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_{"mse_ar_lr0.003_wd0.001_dr0.0_rR1_t20250723_113729"}_epoch{model_epoch}_{feature_type}/',
+        'pad_x': 1 if model_epoch==0 else 0,
+    } for feature_type in ['keepall', 'meanT'] for model_epoch in [0, 10, 30, 70] # , 'meanE', 'meanT', 'meanT_meanE'
+] + [
+    {
+        'name': f'MSE-RM (dr0.2) epoch {model_epoch} ({feature_type})',
+        'color_palette': 'rainbow',
+        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_{"mse_rm_lr0.003_wd0.0_dr0.2_rR5_pme0.5_pmt0.2_t20250726_120024"}_epoch{model_epoch}_{feature_type}/',
+        'pad_x': 1 if model_epoch==0 else 0,
+    } for feature_type in ['keepall', 'meanT'] for model_epoch in [0, 10, 40] # , 'meanE', 'meanT', 'meanT_meanE'
+]+ [
+    {
+        'name': f'MSE-RM (dr0.0) epoch {model_epoch} ({feature_type})',
+        'color_palette': 'rainbow',
+        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_{"mse_rm_lr0.003_wd0.0_dr0.0_rR5_pme0.5_pmt0.2_t20250726_120022"}_epoch{model_epoch}_{feature_type}/',
+        'pad_x': 1 if model_epoch==0 else 0,
+    } for feature_type in ['keepall', 'meanT'] for model_epoch in [0, 10, 40] # , 'meanE', 'meanT', 'meanT_meanE'
+]*0 + [
+        {
+        'name': f'MSE-RM (dr0.2) fixed epoch {model_epoch} ({feature_type})',
+        'color_palette': 'rainbow',
+        'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_{"mse_rm_lr0.003_wd0.0_dr0.2_rR7_pme0.5_pmt0.2_fbi1_t20250727_211004"}_epoch{model_epoch}_{feature_type}/',
+        'pad_x': 1 if model_epoch==0 else 0,
+    } for feature_type in ['keepall'] for model_epoch in [0, 5, 35] # , 'meanE', 'meanT', 'meanT_meanE'
 ]
 
 ### DEFINE TASK NAME MAPPING ###
