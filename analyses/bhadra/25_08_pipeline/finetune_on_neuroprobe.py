@@ -68,7 +68,6 @@ bins_end_after_word_onset_seconds = 1.0
 
 # Load the checkpoint
 if model_epoch < 0: model_epoch = "final"
-# Support absolute or relative model_dir
 
 ckpt_dir = os.path.join(RUNS_DIR, model_dir)
 
@@ -131,8 +130,9 @@ training_setup.initialize_model()
 log(f"Loading model weights...", priority=0)
 training_setup.load_model(model_epoch)
 
+# andrii0_lr0.003_wd0.0_dr0.1_rTEMP_t20250812_133427
+
 # Step 0. Define the linear layer
-linear_head = nn.Linear(config['model']['d_model'], 1).to(device)
 
 # Step 0.1: Define the train and test split
 
@@ -200,11 +200,22 @@ for eval_name in eval_tasks:
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
-    linear_head = nn.Linear(config['model']['d_model'], 1).to(device)
+    linear_head = nn.Linear(config['model']['transformer']['d_model'], 1).to(device)
+
     optimizer = torch.optim.AdamW(
         list(training_setup.model.parameters()) + list(linear_head.parameters()),
         lr=finetuning_learning_rate
     )
+    # Step 1. Set up the optimizer
+    # Step 2. Loop over the number of fine-tuning epochs
+    # Step 3. For each epoch, loop over the number of batches
+    # Step 4. For each batch, compute the features (NOTE: avoid the torch.no_grad() context manager)
+    # Step 5. Pass the features through the linear layer to get the predictions
+    # Step 6. Compute the loss (logistic regression loss)
+    # Step 7. Backpropagate the loss - loss.backward()
+    # Step 8. Update the weights - optimizer.step()
+    # Step 9. Log the loss - wandb.log()
+    # Step 10. Save the model - torch.save()
 
     # Pass through model to get all train and test outputs
     for epoch_idx in range(finetuning_epochs):
@@ -220,6 +231,7 @@ for eval_name in eval_tasks:
                     "subject_identifier": train_subject.subject_identifier,
                     "trial_id": train_trial_id,
                     "eval_name": eval_name,
+                    "sampling_rate": neuroprobe_config.SAMPLING_RATE
                 }
             }
             for preprocess_function in training_setup.get_preprocess_functions(pretraining=False):
@@ -238,7 +250,7 @@ for eval_name in eval_tasks:
             logits = linear_head(pooled).squeeze()
 
             loss = loss_fn(logits, batch_label.float().to(device))
-            optimizer.zero_grad()
+            optimizer.zero_grad() # diff from no grad
             loss.backward()
             optimizer.step()
             train_losses.append(loss.item())
@@ -281,6 +293,13 @@ for eval_name in eval_tasks:
             "train/auroc": auroc,
             "epoch": epoch_idx
         })
+
+        torch.save({
+            'model_state_dict': training_setup.model.state_dict(),
+            'linear_head_state_dict': linear_head.state_dict(),
+            'config': config
+        }, os.path.join(ckpt_dir, f"finetuned_epoch_{epoch_idx}.pth"))
+
     wandb.finish()
 
     # X_all_bins = np.concatenate(X_all_bins, axis=0) # shape: (n_dataset, feature_vector_dimension)
