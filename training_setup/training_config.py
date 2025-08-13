@@ -81,7 +81,7 @@ CONFIG_SCHEMA = {
         'eval_subject_trials': ParamConfig("", str, 'Eval subject trials'), # a string like btbank3_0,btbank3_1,...
         'data_dtype': ParamConfig(torch.bfloat16, torch.dtype, 'Data type for tensors'),
         
-        'eval_tasks': ParamConfig("onset,gpt2_surprisal", str, 'Eval tasks from Neuroprobe'), # a list of neuroprobe tasks to evaluate on during pretraining
+        'eval_tasks': ParamConfig("", str, 'Eval tasks from Neuroprobe'), # a list of neuroprobe tasks to evaluate on during pretraining -- onset,gpt2_surprisal
         
         'n_epochs': ParamConfig(100, int, 'Number of epochs to train'),
         'p_test': ParamConfig(0.1, float, 'Proportion of data to use as a test split (different from the eval)'),
