@@ -44,6 +44,8 @@ class NeuroprobeFrozenFeaturesExtractor():
         self.device = device
         self.dtype = dtype
         self.batch_size = batch_size
+        self.all_subjects = all_subjects
+        self.training_setup = training_setup
         self.log_priority = log_priority
         self.eval_names = eval_names if eval_names is not None else neuroprobe_config.NEUROPROBE_TASKS
         self.subject_trials = subject_trials if subject_trials is not None else neuroprobe_config.NEUROPROBE_LITE_SUBJECT_TRIALS
@@ -80,17 +82,37 @@ class NeuroprobeFrozenFeaturesExtractor():
         electrode_subset_indices = [subject.electrode_labels.index(e) for e in neuroprobe_config.NEUROPROBE_LITE_ELECTRODES[subject_identifier]]
 
         indices = self.subject_indices[subject_identifier]
-        for i_start in range(0, len(indices), self.batch_size):
-            log(f"Generating features for batch {i_start} of {len(indices)}", priority=self.log_priority+1, indent=1)
-            i_end = min(i_start + self.batch_size, len(indices))
-            indices_batch = indices[i_start:i_end]
-
-            model_input = torch.zeros((len(indices_batch), len(electrode_subset_indices), window_size), device=self.device, dtype=self.dtype)
-            for i_index, index in enumerate(indices_batch):
-                model_input[i_index, :, :] = subject.get_all_electrode_data(trial_id, window_from=index, window_to=index+window_size)[electrode_subset_indices, :]
-
+        window_size = 1 * neuroprobe_config.SAMPLING_RATE # 1 second
+        
+        # Create dataset that loads windows of data
+        class WindowDataset(torch.utils.data.Dataset):
+            def __init__(self, subject, trial_id, indices, electrode_subset_indices, window_size):
+                self.subject = subject
+                self.trial_id = trial_id
+                self.indices = indices
+                self.electrode_subset_indices = electrode_subset_indices
+                self.window_size = window_size
+                
+            def __len__(self):
+                return len(self.indices)
+                
+            def __getitem__(self, idx):
+                index = self.indices[idx]
+                data = self.subject.get_all_electrode_data(
+                    self.trial_id, 
+                    window_from=index,
+                    window_to=index+self.window_size
+                )[self.electrode_subset_indices, :]
+                return data
+        
+        dataset = WindowDataset(subject, trial_id, indices, electrode_subset_indices, window_size)
+        dataloader = DataLoader(dataset, batch_size=self.batch_size, shuffle=False)
+        
+        for i, data in enumerate(dataloader):
+            log(f"Generating features for batch {i*self.batch_size} of {len(indices)}", priority=self.log_priority+1, indent=1)
+            
             batch = {
-                'data': model_input, # shape (batch_size, n_electrodes, n_samples),
+                'data': data.to(device=self.device, dtype=self.dtype), # shape (batch_size, n_electrodes, n_samples)
                 'electrode_labels': [neuroprobe_config.NEUROPROBE_LITE_ELECTRODES[subject_identifier]],
                 'metadata': {
                     'subject_identifier': subject_identifier,
@@ -100,21 +122,21 @@ class NeuroprobeFrozenFeaturesExtractor():
             }
 
             with torch.no_grad():
-                for preprocess_function in training_setup.get_preprocess_functions(pretraining=False):
+                for preprocess_function in self.training_setup.get_preprocess_functions(pretraining=False):
                     batch = preprocess_function(batch)
-                features = training_setup.generate_frozen_features(batch)
+                features = self.training_setup.generate_frozen_features(batch)
                 if self.feature_aggregation_method is not None:
                     features = apply_feature_aggregation(features, self.feature_aggregation_method)
 
             if frozen_features is None: frozen_features = torch.zeros((len(indices), *features.shape[1:]), device=self.device, dtype=self.dtype)
-            frozen_features[i_start:i_end, :] = features
+            frozen_features[i*self.batch_size:(i+1)*self.batch_size, :] = features
         return frozen_features
     
     def generate_frozen_features(self, subject_trials=None, save_path=None):
         if subject_trials is None: subject_trials = self.subject_trials
         frozen_features = {} # subject_identifier_trial_id -> features: frozen_features, indices: indices, labels: eval: labels
         for subject_id, trial_id in subject_trials:
-            subject_identifier = "btbank" + subject_id
+            subject_identifier = "btbank" + str(subject_id)
             subject_trial_frozen_features = self.generate_frozen_features_for_subject_trial(subject_identifier, trial_id)
             frozen_features[subject_identifier + "_" + str(trial_id)] = {
                 "features": subject_trial_frozen_features,
