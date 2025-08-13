@@ -334,6 +334,7 @@ if eval_tasks:  # Only create evaluation if there are tasks
         # model evaluation function
         model_preprocess_functions=training_setup.get_preprocess_functions(pretraining=False),
         model_evaluation_function=training_setup.generate_frozen_features,
+        eval_aggregation_method=config['cluster']['eval_aggregation_method'],
         # benchmark parameters 
         eval_names=eval_tasks, lite=True,
         subject_trials=[(all_subjects[subject_identifier], trial_id) for subject_identifier, trial_id in config['training']['eval_subject_trials']],
