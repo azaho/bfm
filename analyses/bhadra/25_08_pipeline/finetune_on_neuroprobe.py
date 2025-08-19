@@ -202,10 +202,20 @@ for eval_name in eval_tasks:
 
     linear_head = nn.Linear(config['model']['transformer']['d_model'], 1).to(device)
 
+    base_lr = finetuning_learning_rate
+    head_lr = base_lr * 10
+
     optimizer = torch.optim.AdamW(
-        list(training_setup.model.parameters()) + list(linear_head.parameters()),
-        lr=finetuning_learning_rate
+        [
+        {"params": training_setup.model.parameters(), "lr": base_lr},
+        {"params": linear_head.parameters(), "lr": head_lr}
+        ]
     )
+
+    finetune_run_name = f"{model_dir}_FT_{eval_name}_S{train_subject_id}-{train_trial_id}_T{test_subject_id}-{test_trial_id}"
+    config['cluster']['dir_name'] = finetune_run_name
+
+    training_setup.model_components['linear_head'] = linear_head
     # Step 1. Set up the optimizer
     # Step 2. Loop over the number of fine-tuning epochs
     # Step 3. For each epoch, loop over the number of batches
@@ -219,9 +229,12 @@ for eval_name in eval_tasks:
 
     # Pass through model to get all train and test outputs
     for epoch_idx in range(finetuning_epochs):
+        # ---- TRAIN ----
         training_setup.model.train()
         linear_head.train()
         train_losses = []
+        all_train_preds = []
+        all_train_labels = []
 
         for batch_idx, (batch_input, batch_label) in enumerate(train_loader):
             batch = {
@@ -236,85 +249,130 @@ for eval_name in eval_tasks:
             }
             for preprocess_function in training_setup.get_preprocess_functions(pretraining=False):
                 batch = preprocess_function(batch)
-            model_output = training_setup.generate_frozen_features(batch) # not really frozen? idr
 
-            #HERE: Instead of just saving the features, we will need to 
-            # and then compute the loss
-            # and then backpropagate the loss
-            # and then update the weights
-            # and then log the loss
-            # and then save the model
-
+            # forward through encoder (we are fine-tuning, so keep grads on)
+            model_output = training_setup.generate_frozen_features(batch)
             cls = model_output[:, 0, :, :]
             pooled = cls.mean(dim=1)
-            logits = linear_head(pooled).squeeze()
+            logits = linear_head(pooled).squeeze(-1)
 
             loss = loss_fn(logits, batch_label.float().to(device))
-            optimizer.zero_grad() # diff from no grad
+            optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            log("optimizer step")
+
             train_losses.append(loss.item())
-            
-            # log(f"Computed features for batch {batch_idx+1} of {len(dataloader)}: model output shape {model_output.shape}", priority=0, indent=1)
-            # X_all_bins.append(model_output.float().cpu().numpy())
-            # y.append(batch_label.float().cpu().numpy())
+            all_train_preds.append(logits.detach().cpu())
+            all_train_labels.append(batch_label.detach().cpu())
 
-            # HERE: save all the logs somewhere and update to wandb
+            wandb.log({
+                "batch_loss": loss.item(),
+                "epoch": epoch_idx,
+                "batch_idx": batch_idx
+            })
 
-            if batch_idx == 0:
-                all_preds = logits.detach().cpu()
-                all_labels = batch_label.detach().cpu()
-            else:
-                all_preds = torch.cat((all_preds, logits.detach().cpu()), dim=0)
-                all_labels = torch.cat((all_labels, batch_label.detach().cpu()), dim=0)
-
-            wandb.log({"batch_loss": loss.item(), "epoch": epoch_idx, "batch_idx": batch_idx, "train/loss": np.mean(train_losses)})
-
-            del batch_input, batch_label, model_output, batch
+            del batch_input, batch_label, model_output, batch, logits, pooled, cls
             gc.collect()
             torch.cuda.empty_cache()
-        
-        pred_probs = torch.sigmoid(all_preds).numpy()
-        pred_binary = (pred_probs > 0.5).astype(np.float32)
-        true_labels = all_labels.numpy()
 
-        # Compute metrics
+        # aggregate train metrics for the epoch
+        all_train_preds = torch.cat(all_train_preds, dim=0)
+        all_train_labels = torch.cat(all_train_labels, dim=0)
+        train_probs = torch.sigmoid(all_train_preds).numpy()
+        train_bin = (train_probs > 0.5).astype(np.float32)
+        train_true = all_train_labels.numpy()
         try:
-            auroc = roc_auc_score(true_labels, pred_probs)
+            train_auroc = roc_auc_score(train_true, train_probs)
         except ValueError:
-            auroc = float('nan')  # e.g., if only one class present
+            train_auroc = float('nan')
+        train_acc = accuracy_score(train_true, train_bin)
+        train_loss_mean = float(np.mean(train_losses))
 
-        accuracy = accuracy_score(true_labels, pred_binary)
+        # ---- EVAL / TEST ----
+        training_setup.model.eval()
+        linear_head.eval()
+        test_losses = []
+        all_test_preds = []
+        all_test_labels = []
 
-        # Log to wandb
+        with torch.no_grad():
+            for batch_idx, (batch_input, batch_label) in enumerate(test_loader):
+                batch = {
+                    "data": batch_input.to(device, dtype=config['training']['data_dtype']),
+                    "electrode_labels": [electrode_subset],
+                    "metadata": {
+                        "subject_identifier": test_subject.subject_identifier,
+                        "trial_id": test_trial_id,
+                        "eval_name": eval_name,
+                        "sampling_rate": neuroprobe_config.SAMPLING_RATE
+                    }
+                }
+                for preprocess_function in training_setup.get_preprocess_functions(pretraining=False):
+                    batch = preprocess_function(batch)
+
+                model_output = training_setup.generate_frozen_features(batch)
+                cls = model_output[:, 0, :, :]
+                pooled = cls.mean(dim=1)
+                logits = linear_head(pooled).squeeze(-1)
+
+                loss = loss_fn(logits, batch_label.float().to(device))
+                test_losses.append(loss.item())
+                all_test_preds.append(logits.cpu())
+                all_test_labels.append(batch_label.cpu())
+
+                del batch_input, batch_label, model_output, batch, logits, pooled, cls
+                gc.collect()
+                torch.cuda.empty_cache()
+
+        # aggregate test metrics
+        all_test_preds = torch.cat(all_test_preds, dim=0)
+        all_test_labels = torch.cat(all_test_labels, dim=0)
+        test_probs = torch.sigmoid(all_test_preds).numpy()
+        test_bin = (test_probs > 0.5).astype(np.float32)
+        test_true = all_test_labels.numpy()
+        try:
+            test_auroc = roc_auc_score(test_true, test_probs)
+        except ValueError:
+            test_auroc = float('nan')
+        test_acc = accuracy_score(test_true, test_bin)
+        test_loss_mean = float(np.mean(test_losses)) if len(test_losses) > 0 else float('nan')
+
+        # ---- Log per-epoch metrics ----
         wandb.log({
-            "train/loss": np.mean(train_losses),
-            "train/accuracy": accuracy,
-            "train/auroc": auroc,
-            "epoch": epoch_idx
+            "epoch": epoch_idx,
+            "train/loss": train_loss_mean,
+            "train/accuracy": train_acc,
+            "train/auroc": train_auroc,
+            "test/loss": test_loss_mean,
+            "test/accuracy": test_acc,
+            "test/auroc": test_auroc,
+            "lr/encoder": optimizer.param_groups[0]["lr"],
+            "lr/head": optimizer.param_groups[1]["lr"],
         })
 
-        torch.save({
-            'model_state_dict': training_setup.model.state_dict(),
-            'linear_head_state_dict': linear_head.state_dict(),
-            'config': config
-        }, os.path.join(ckpt_dir, f"finetuned_epoch_{epoch_idx}.pth"))
+        # ---- Save finetuned weights for this epoch ----
+        eval_results = {
+        "epoch": epoch_idx,
+        "train/loss": train_loss_mean,
+        "train/accuracy": train_acc,
+        "train/auroc": train_auroc,
+        "test/loss": test_loss_mean,
+        "test/accuracy": test_acc,
+        "test/auroc": test_auroc,
+        }
 
-    wandb.finish()
 
-    # X_all_bins = np.concatenate(X_all_bins, axis=0) # shape: (n_dataset, feature_vector_dimension)
-    # y = np.concatenate(y, axis=0)
+        training_setup.save_model(
+            epoch=epoch_idx,
+            eval_results=eval_results,
+            save_in_dir=RUNS_DIR,
+            training_statistics_store=None,
+        )
 
-    # # Save results as npy file
-    # np.save(save_file_path, {
-    #     'X': X_all_bins,
-    #     'y': y,
-
-    #     'metadata': {
-    #         'subject_id': subject.subject_identifier,
-    #         'trial_id': trial_id,
-    #         'eval_name': eval_name,
-    #         'config': convert_dtypes(config),
-    #     }
-    # })
-    # log(f"Saved results to {save_file_path}")
+        log(
+        f"[Epoch {epoch_idx+1}/{finetuning_epochs}] "
+        f"Train - Loss: {train_loss_mean:.4f}, Acc: {train_acc:.4f}, AUROC: {train_auroc:.4f} | "
+        f"Test - Loss: {test_loss_mean:.4f}, Acc: {test_acc:.4f}, AUROC: {test_auroc:.4f}",
+        priority=0
+        )
