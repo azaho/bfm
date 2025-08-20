@@ -6,82 +6,24 @@ from training_setup.training_setup import TrainingSetup
 from model.BFModule import BFModule
 from model.transformer_implementation import Transformer
 import torch.nn as nn
+import time
 
 # This file first defines the model components, then the training setup.
 
-### 
+###
 # Flow of data in this model:
 # The data starts out as (batch_size, n_electrodes, n_timesamples)
 # 1. (batch_size, n_electrodes, n_timesamples) -> FFT -> (batch_size, n_electrodes, n_timebins, max_frequency_bin)
 # 2. (batch_size, n_electrodes, n_timebins, max_frequency_bin) -> electrode transformer -> (batch_size, n_timebins, d_model)
 # 3. (batch_size, n_timebins, d_model) -> time transformer -> (batch_size, 1, n_timebins, d_model)
-# loss function: compare the output of the time transformer on half of electrodes 
+# loss function: compare the output of the time transformer on half of electrodes
 #   to the output of the electrode transformer on the other half on the next timestep, using a contrastive loss
 ###
 
 
 ### DEFINING THE MODEL COMPONENTS ###
 
-class SpectrogramPreprocessor(BFModule):
-    def __init__(self, output_dim=-1, max_frequency=200):
-        super(SpectrogramPreprocessor, self).__init__()
-        self.max_frequency = max_frequency
-        self.output_dim = output_dim
-
-        assert self.max_frequency == 200, "Max frequency must be 200"
-        self.max_frequency_bin = 40 # XXX hardcoded max frequency bin
-        
-        # Transform FFT output to match expected output dimension
-        self.output_transform = nn.Identity() if self.output_dim == -1 else nn.Linear(self.max_frequency_bin, self.output_dim)
-    
-    def forward(self, batch):
-        # batch['data'] is of shape (batch_size, n_electrodes, n_samples)
-        # batch['metadata'] is a dictionary containing metadata like the subject identifier and trial id, sampling rate, etc.
-        batch_size, n_electrodes = batch['data'].shape[:2]
-        
-        # Reshape for STFT
-        x = batch['data'].reshape(batch_size * n_electrodes, -1)
-        x = x.to(dtype=torch.float32)  # Convert to float32 for STFT
-        
-        # STFT parameters
-        # new parameters based on andrii's sweeps
-        nperseg = 512
-        noverlap = 384
-        window = torch.hann_window(nperseg, device=x.device)
-        hop_length = nperseg - noverlap
-        
-        # Compute STFT
-        x = torch.stft(x,
-                      n_fft=nperseg, 
-                      hop_length=hop_length,
-                      win_length=nperseg,
-                      window=window,
-                      return_complex=True,
-                      normalized=False,
-                      center=True)
-        
-        # Take magnitude
-        x = torch.abs(x)
-        
-        # Pad or trim to max_frequency dimension
-        if x.shape[1] < self.max_frequency_bin:
-            x = torch.nn.functional.pad(x, (0, 0, 0, self.max_frequency_bin - x.shape[1]))
-        else:
-            x = x[:, :self.max_frequency_bin]
-            
-        # Reshape back
-        _, n_freqs, n_times = x.shape
-        x = x.reshape(batch_size, n_electrodes, n_freqs, n_times)
-        x = x.transpose(2, 3) # (batch_size, n_electrodes, n_timebins, n_freqs)
-        
-        # Z-score normalization
-        x = x - x.mean(dim=[0, 2], keepdim=True)
-        x = x / (x.std(dim=[0, 2], keepdim=True) + 1e-5)
-
-        # Transform to match expected output dimension
-        x = self.output_transform(x)  # shape: (batch_size, n_electrodes, n_timebins, output_dim)
-        
-        return x.to(dtype=batch['data'].dtype)
+from model.preprocessing.spectrogram import SpectrogramPreprocessor
 
 class ElectrodeTransformer(BFModule):
     def __init__(self, d_model, n_layers=5, n_heads=12, dropout=0.1):
@@ -89,8 +31,8 @@ class ElectrodeTransformer(BFModule):
         self.d_model = d_model
         self.n_layers = n_layers
 
-        self.transformer = Transformer(d_input=d_model, d_model=d_model, d_output=d_model, 
-                                            n_layer=n_layers, n_head=n_heads, causal=False, 
+        self.transformer = Transformer(d_input=d_model, d_model=d_model, d_output=d_model,
+                                            n_layer=n_layers, n_head=n_heads, causal=False,
                                             rope=False, dropout=dropout)
         self.cls_token = nn.Parameter(torch.zeros(1, d_model))
 
@@ -98,7 +40,7 @@ class ElectrodeTransformer(BFModule):
         # electrode_data is of shape (batch_size, n_electrodes, n_timebins, d_model)
         # embeddings is of shape (batch_size, n_electrodes, d_model)
         batch_size, n_electrodes, n_timebins, d_model = electrode_data.shape
-        
+
         if embeddings is not None:
             electrode_data = electrode_data + embeddings.unsqueeze(2) # shape: (batch_size, n_electrodes, n_timebins, d_model)
 
@@ -122,10 +64,10 @@ class TimeTransformer(BFModule):
         super().__init__()
         self.d_model = d_model
         self.n_layers = n_layers
-        self.transformer = Transformer(d_input=d_model, d_model=d_model, d_output=d_model, 
-                                            n_layer=n_layers, n_head=n_heads, causal=True, 
+        self.transformer = Transformer(d_input=d_model, d_model=d_model, d_output=d_model,
+                                            n_layer=n_layers, n_head=n_heads, causal=True,
                                             rope=True, rope_base=128, dropout=dropout)
-    
+
     def forward(self, electrode_transformed_data):
         # electrode_transformed_data is of shape (batch_size, n_timebins, d_model)
         batch_size, n_timebins, d_model = electrode_transformed_data.shape
@@ -133,13 +75,13 @@ class TimeTransformer(BFModule):
         return electrode_transformed_data
 
 class OriginalModel(BFModule):
-    def __init__(self, d_model, n_layers_electrode=5, n_layers_time=5, n_heads=12, dropout=0.1):
+    def __init__(self, d_model, spectrogram_parameters, n_layers_electrode=5, n_layers_time=5, n_heads=12, dropout=0.1):
         super().__init__()
         self.d_model = d_model
         self.n_layers_electrode = n_layers_electrode
         self.n_layers_time = n_layers_time
-        
-        self.fft_preprocessor = SpectrogramPreprocessor(output_dim=d_model, max_frequency=200)
+
+        self.fft_preprocessor = SpectrogramPreprocessor(spectrogram_parameters, output_dim=d_model)
         self.electrode_transformer = ElectrodeTransformer(d_model, n_layers_electrode, n_heads, dropout)
         self.time_transformer = TimeTransformer(d_model, n_layers_time, n_heads, dropout)
 
@@ -148,15 +90,15 @@ class OriginalModel(BFModule):
     def forward(self, batch, embeddings=None, electrode_transformer_only=False):
         # batch['data'] is of shape (batch_size, n_electrodes, n_timesamples)
         # batch['electrode_index'] is of shape (batch_size, n_electrodes)
-        # batch['metadata'] is a dictionary containing metadata like the subject identifier and trial id, sampling rate, etc.        
-        
+        # batch['metadata'] is a dictionary containing metadata like the subject identifier and trial id, sampling rate, etc.
+
         electrode_data = self.fft_preprocessor(batch) # shape: (batch_size, n_electrodes, n_timebins, d_model)
 
         electrode_transformed_data = self.electrode_transformer(electrode_data, embeddings) # shape: (batch_size, n_electrodes + 1, n_timebins, d_model)
         if electrode_transformer_only:
             return electrode_transformed_data
-        
-        time_transformed_data = self.time_transformer(electrode_transformed_data[:, 0, :, :]) # shape: (batch_size, n_timebins, d_model) 
+
+        time_transformed_data = self.time_transformer(electrode_transformed_data[:, 0, :, :]) # shape: (batch_size, n_timebins, d_model)
         return electrode_transformed_data, time_transformed_data.unsqueeze(1) # shape: (batch_size, n_electrodes + 1, n_timebins, d_model), (batch_size, 1, n_timebins, d_model)
 
 
@@ -180,6 +122,7 @@ class andrii0(TrainingSetup):
         ### LOAD MODEL ###
 
         self.model = OriginalModel(
+            spectrogram_parameters=config['model']['signal_preprocessing']['spectrogram_parameters'],
             d_model=config['model']['transformer']['d_model'],
             n_layers_electrode=config['model']['transformer']['n_layers'],
             n_layers_time=config['model']['transformer']['n_layers'],
@@ -187,6 +130,9 @@ class andrii0(TrainingSetup):
             dropout=config['training']['dropout']
         ).to(device, dtype=config['model']['dtype'])
         config['model']['name'] = "AndriiOriginalModel"
+
+        self.model = torch.compile(self.model) # <- Kerrnel fusion
+        self.model.to(device, dtype=config['model']['dtype'])
 
         ### LOAD ELECTRODE EMBEDDINGS ###
 
@@ -198,7 +144,7 @@ class andrii0(TrainingSetup):
         }[config['model']['electrode_embedding']['type']]
 
         self.electrode_embeddings = electrode_embeddings_class( # Initialize the electrode embeddings
-            config['model']['transformer']['d_model'], 
+            config['model']['transformer']['d_model'],
             embedding_dim=config['model']['electrode_embedding']['dim'],
             coordinate_noise_std=config['model']['electrode_embedding']['coordinate_noise_std'],
         ).to(device, dtype=config['model']['dtype'])
@@ -226,14 +172,14 @@ class andrii0(TrainingSetup):
         if 'electrode_index' in batch:
             batch['electrode_index'] = batch['electrode_index'][:, selected_idx]
         return batch
-    
+
     # All of these will be applied to the batch before it is passed to the model
     def get_preprocess_functions(self, pretraining=False):
         preprocess_functions = []
         if self.config['model']['signal_preprocessing']['laplacian_rereference']:
             preprocess_functions.append(self._preprocess_laplacian_rereference)
         if self.config['model']['signal_preprocessing']['normalize_voltage']:
-            preprocess_functions.append(self._preprocess_normalize_voltage) 
+            preprocess_functions.append(self._preprocess_normalize_voltage)
         preprocess_functions.append(self._preprocess_add_electrode_indices)
         if pretraining:
             preprocess_functions.append(self._preprocess_subset_electrodes)
@@ -249,7 +195,7 @@ class andrii0(TrainingSetup):
         #   The final loss is the mean of all the losses. Accuracies are exempt and are just used for logging.
         batch['data'] = batch['data'].to(self.model.device, dtype=self.model.dtype, non_blocking=True)
         batch['electrode_index'] = batch['electrode_index'].to(self.model.device, non_blocking=True)
-        
+
         losses = {}
         config = self.config
         def _add_to_loss_contrastive(losses, output, target, loss_suffix):
@@ -272,7 +218,7 @@ class andrii0(TrainingSetup):
 
         # Note that due to the RandomELectrodeCollator in the dataset class, the electrodes are already shuffled and cut to max_n_electrodes
         batch_size, n_electrodes, n_samples = batch['data'].shape
-        
+
         # Split the batch into two halves, so that we can compute the contrastive loss on the two halves
         batch_a = {
             'data': batch['data'][:, :n_electrodes//2, :],
@@ -303,16 +249,11 @@ class andrii0(TrainingSetup):
         #   batch['electrode_labels'] shape: list of length 1 (since it's the same across the batch), each element is a list of electrode labels
         #   batch['metadata']: dictionary containing metadata like the subject identifier and trial id, sampling rate, etc.
         # OUTPUT:
-        #   features shape: (batch_size, *) where * can be arbitrary (and will be concatenated for regression)
+        #   features shape: (batch_size, n_electrodes or n_electrodes+1, n_timebins, *) where * can be arbitrary
+        #   if n_electrodes+1, then the first dimension is the cls token
         batch['data'] = batch['data'].to(self.model.device, dtype=self.model.dtype, non_blocking=True)
         batch['electrode_index'] = batch['electrode_index'].to(self.model.device, non_blocking=True)
 
         embeddings = self.electrode_embeddings(batch)
         features = self.model(batch, embeddings, electrode_transformer_only=True) # shape: (batch_size, n_electrodes + 1, n_timebins, d_model)
-        features = features[:, 0:1, :, :] # shape: (batch_size, 1, n_timebins, d_model) -- take just the cls token
-
-        if self.config['cluster']['eval_aggregation_method'] == 'mean':
-            features = features.mean(dim=[1, 2])
-        elif self.config['cluster']['eval_aggregation_method'] == 'concat':
-            features = features.reshape(batch['data'].shape[0], -1)
         return features

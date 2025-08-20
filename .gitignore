@@ -1,3 +1,4 @@
+*.ipynb_checkpoints/
 .venv/
 __pycache__/
 **/__pycache__/
@@ -12,6 +13,14 @@ runs/data/
 runs/logs/
 runs/wandb/
 runs/scripts/*
+runs/analyses
 
 # Not committing any personal working directories
 _*/
+
+# MkDocs build output
+site/
+
+# Not committing any figures
+# **/*.pdf
+# **/*.png

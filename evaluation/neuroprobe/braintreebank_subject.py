@@ -68,7 +68,8 @@ class BrainTreebankSubject:
         # Step 1. Remove corrupted electrodes
         if not self.allow_corrupted:
             corrupted_electrodes_file = os.path.join(ROOT_DIR, "corrupted_elec.json")
-            corrupted_electrodes = json.load(open(corrupted_electrodes_file))
+            with open(corrupted_electrodes_file, 'r') as f:
+                corrupted_electrodes = json.load(f)
             corrupted_electrodes = [self._clean_electrode_label(e) for e in corrupted_electrodes[f'sub_{self.subject_id}']]
             filtered_electrode_labels = [e for e in filtered_electrode_labels if e not in corrupted_electrodes]
         # Step 2. Remove trigger electrodes

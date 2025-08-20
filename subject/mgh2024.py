@@ -1,13 +1,18 @@
-import os
 import json
-import numpy as np
-import torch
-import h5py
+import os
 import re
+
+import h5py
+import numpy as np
 import pandas as pd
+import torch
+
 from subject.subject import Subject
 
-MGH_ROOT_DIR = "/om2/data/public/Infolab/mgh2024_data" # Root directory for the data
+from dotenv import load_dotenv
+load_dotenv()  # Load environment variables from .env file
+
+MGH_ROOT_DIR = os.environ["MGH_ROOT_DIR"]  # Root directory for the MGH data
 
 class MGH2024Subject(Subject):
     """ 
@@ -109,12 +114,23 @@ class MGH2024Subject(Subject):
             num = int(''.join(c for c in suffix if c.isdigit()))
             return base + str(num)
         return name
+    
+    def _preprocess_electrode_labels(self, electrode_labels):
+        # replace substrings like "CM" and "ANT" in the electrode labels with ""
+        electrode_labels = [e.replace("CM", "").replace("ANT", "") for e in electrode_labels]
+        # replace the dashed names with clean names
+        electrode_labels = [self._process_channel_name(e) for e in electrode_labels]
+        return electrode_labels
+    
     def _filter_electrode_labels(self, electrode_labels, session_id=None, keep_corrupted=False):
         """Filter out corrupted and non-neural electrodes"""
         filtered_electrode_labels = electrode_labels
+
+        # remove corrupted electrodes
         if not self.allow_corrupted and not keep_corrupted and session_id is not None:
             corrupted_electrodes = self._get_corrupted_electrodes(session_id)
             filtered_electrode_labels = [e for e in filtered_electrode_labels if e not in corrupted_electrodes]
+
         # Remove non-neural channels
         non_neural_channels = ["X", "DC", "TRIG"]
         non_neural_channels += ["EMG", "LEMG", "REMG"]
@@ -123,13 +139,10 @@ class MGH2024Subject(Subject):
         non_neural_channels += ["OSAT", "PR", "PLETH", "SP"]
         non_neural_channels += ["CI", "C."] # not sure what those are, names like "CII" and "C. II"
         non_neural_channels += ["C"] # Those are the "default" electrode names, and we do not know what they are; for now, just removed
-    
         filtered_electrode_labels = [e for e in filtered_electrode_labels if not any(e.upper().startswith(x) for x in non_neural_channels)]
 
-        # replace substrings like "CM" and "ANT" in the electrode labels with ""
-        filtered_electrode_labels = [e.replace("CM", "").replace("ANT", "") for e in filtered_electrode_labels]
-        # replace the dashed names with clean names
-        filtered_electrode_labels = [self._process_channel_name(e) for e in filtered_electrode_labels]
+        # preprocess the electrode labels
+        filtered_electrode_labels = self._preprocess_electrode_labels(filtered_electrode_labels)
 
         # remove electrodes that are not of the format [A-Za-z]+\d+ (where \d+ is any number)
         filtered_electrode_labels = [e for e in filtered_electrode_labels if re.match(r'[A-Za-z]+\d+$', e)]
@@ -171,7 +184,7 @@ class MGH2024Subject(Subject):
         
         session_hash = self.sessions[session_id]
         h5_path = os.path.join(MGH_ROOT_DIR, 'h5', session_hash + '.h5')
-        original_h5_electrode_labels = self.session_metadata[session_id]['channel_names']
+        original_h5_electrode_labels = self._preprocess_electrode_labels(self.session_metadata[session_id]['channel_names'])
         original_h5_electrode_ids = [original_h5_electrode_labels.index(e) for e in self.get_electrode_labels(session_id)]
         original_h5_electrode_keys = np.array(original_h5_electrode_ids)#["channel_"+str(i) for i in original_h5_electrode_ids]
 
@@ -237,7 +250,7 @@ class MGH2024Subject(Subject):
             electrode_id = self.electrode_ids[electrode_label]
             return self.neural_data_cache[session_id][electrode_id][window_from:window_to]
         else:
-            original_h5_electrode_labels = self.session_metadata[session_id]['channel_names']
+            original_h5_electrode_labels = self._preprocess_electrode_labels(self.session_metadata[session_id]['channel_names'])
             electrode_id = original_h5_electrode_labels.index(electrode_label)
             h5_electrode_key = "channel_" + str(electrode_id)
             return torch.from_numpy(self.h5_files[session_id]['data'][h5_electrode_key][window_from:window_to]).to(self.dtype)
@@ -252,7 +265,7 @@ class MGH2024Subject(Subject):
         else:
             session_hash = self.sessions[session_id]
             h5_path = os.path.join(MGH_ROOT_DIR, 'h5', session_hash + '.h5')
-            original_h5_electrode_labels = self.session_metadata[session_id]['channel_names']
+            original_h5_electrode_labels = self._preprocess_electrode_labels(self.session_metadata[session_id]['channel_names'])
             original_h5_electrode_ids = [original_h5_electrode_labels.index(e) for e in self.get_electrode_labels(session_id)]
             original_h5_electrode_keys = np.array(original_h5_electrode_ids)#["channel_"+str(i) for i in original_h5_electrode_ids]
 
