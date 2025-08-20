@@ -1,43 +1,27 @@
 from model.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
-from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch, laplacian_rereference_neural_data
+from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
 from training_setup.training_config import log
 import torch
 from training_setup.training_setup import TrainingSetup
-# from subject.dataset import SubjectTrialDataset, PreprocessCollator, SubjectBatchSampler
-from subject.dataset_pair_nocommon import SubjectTrialPairDataset, PreprocessCollatorPair, SubjectBatchPairSampler, load_subjects
 from model.BFModule import BFModule
 from model.transformer_implementation import Transformer
 import torch.nn as nn
 from torch.utils.data import DataLoader, ConcatDataset
-import os
-
-import numpy as np
-from evaluation.neuroprobe.config import ROOT_DIR, SAMPLING_RATE, BRAINTREEBANK_SUBJECT_TRIAL_MOVIE_NAME_MAPPING
-import pandas as pd
-from training_setup.training_setup import TrainingSetup
-
-# for main function
-from evaluation.neuroprobe.config import NEUROPROBE_FULL_SUBJECT_TRIALS
-
+from subject.podcast_pair import PodcastTrialPairDataset, PodcastBatchPairSampler, load_podcast_subjects
+from subject.podcast_pair import PreprocessCollatorPair
 
 # This file first defines the model components, then the training setup.
 
 ### 
 # Flow of data in this model:
-# The data starts out as (batch_size, n_electrodes, n_timesamples)
+# The data starts out as (batch_size, n_electrodes, n_timesamples) for two subjects
 # 1. (batch_size, n_electrodes, n_timesamples) -> FFT -> (batch_size, n_electrodes, n_timebins, max_frequency_bin)
 # 2. (batch_size, n_electrodes, n_timebins, max_frequency_bin) -> electrode transformer -> (batch_size, n_timebins, d_model)
 # 3. (batch_size, n_timebins, d_model) -> time transformer -> (batch_size, 1, n_timebins, d_model)
-# loss function: compare the output of the time transformer on half of electrodes 
-#   to the output of the electrode transformer on the other half on the next timestep, using a contrastive loss
-#
-# NOTE: For paired training (comparing two brains), may need to reduce batch_size by ~50% 
-# since you're processing twice the data per batch compared to single-brain training.
+# loss function: compare the output of the time transformer on subject A 
+#   to the output of the electrode transformer on subject B at the same time point, using a contrastive loss
 ###
 
-### Running command for initial benchmarking: 
-# python pretrain.py --training.setup_name andrii0 --cluster.cache_subjects 1 --cluster.eval_at_beginning 1 --training.train_subject_trials btbank3_0,btbank7_0,btbank10_0,btbank4_1,btbank7_1 --training.eval_subject_trials btbank3_1,btbank3_2,btbank4_0,btbank4_2,btbank10_1  --cluster.eval_model_every_n_epochs 5 --training.eval_tasks speech,gpt2_surprisal --training.n_epochs 500
-# python pretrain.py --training.setup_name roshnipm_pair_nocommon --cluster.cache_subjects 1 --cluster.eval_at_beginning 1 --training.train_subject_trials btbank3_0,btbank7_0,btbank10_0,btbank4_1,btbank7_1 --training.eval_subject_trials btbank3_1,btbank3_2,btbank4_0,btbank4_2,btbank10_1 --training.max_n_electrodes 64 --cluster.eval_model_every_n_epochs 5 --training.eval_tasks speech,gpt2_surprisal --training.n_epochs 500
 
 ### DEFINING THE MODEL COMPONENTS ###
 
@@ -53,7 +37,6 @@ class SpectrogramPreprocessor(BFModule):
         # Transform FFT output to match expected output dimension
         self.output_transform = nn.Identity() if self.output_dim == -1 else nn.Linear(self.max_frequency_bin, self.output_dim)
     
-    # edited to process both subjects
     def forward(self, batch):
         # batch['data'] is of shape (batch_size, n_electrodes, n_samples)
         # batch['metadata'] is a dictionary containing metadata like the subject identifier and trial id, sampling rate, etc.
@@ -79,9 +62,10 @@ class SpectrogramPreprocessor(BFModule):
                       return_complex=True,
                       normalized=False,
                       center=True)
+        
         # Take magnitude
         x = torch.abs(x)
-
+        
         # Pad or trim to max_frequency dimension
         if x.shape[1] < self.max_frequency_bin:
             x = torch.nn.functional.pad(x, (0, 0, 0, self.max_frequency_bin - x.shape[1]))
@@ -92,7 +76,7 @@ class SpectrogramPreprocessor(BFModule):
         _, n_freqs, n_times = x.shape
         x = x.reshape(batch_size, n_electrodes, n_freqs, n_times)
         x = x.transpose(2, 3) # (batch_size, n_electrodes, n_timebins, n_freqs)
-
+        
         # Z-score normalization
         x = x - x.mean(dim=[0, 2], keepdim=True)
         x = x / (x.std(dim=[0, 2], keepdim=True) + 1e-5)
@@ -142,8 +126,8 @@ class TimeTransformer(BFModule):
         self.d_model = d_model
         self.n_layers = n_layers
         self.transformer = Transformer(d_input=d_model, d_model=d_model, d_output=d_model, 
-                                            n_layer=n_layers, n_head=n_heads, causal=True, 
-                                            rope=True, rope_base=128, dropout=dropout)
+                                            n_layer=n_layers, n_head=n_heads, causal=False, 
+                                            rope=False, dropout=dropout)
     
     def forward(self, electrode_transformed_data):
         # electrode_transformed_data is of shape (batch_size, n_timebins, d_model)
@@ -181,7 +165,7 @@ class OriginalModel(BFModule):
 
 ### DEFINING THE TRAINING SETUP ###
 
-class roshnipm_pair_nocommon(TrainingSetup):
+class andrii0_podcast_pair_bert(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)
 
@@ -205,7 +189,7 @@ class roshnipm_pair_nocommon(TrainingSetup):
             n_heads=config['model']['transformer']['n_heads'],
             dropout=config['training']['dropout']
         ).to(device, dtype=config['model']['dtype'])
-        config['model']['name'] = "RoshniPM_PairModel"
+        config['model']['name'] = "AndriiBERTPodcastPairModel"
 
         ### LOAD ELECTRODE EMBEDDINGS ###
 
@@ -231,35 +215,25 @@ class roshnipm_pair_nocommon(TrainingSetup):
         self.model_components['model'] = self.model
         self.model_components['electrode_embeddings'] = self.electrode_embeddings
 
-    # for Laplacian rereferencing, we need the labels of the electrodes to determine the immediate neighbors of each electrode.
-    # For example, for the right amygdala electrode RAMY2, the neighbors are RAMY1 and RAMY3
-    def _preprocess_laplacian_rereference(self, batch):
-        laplacian_rereference_batch(batch, remove_non_laplacian=False, inplace=True)
-
-        if 'data_b' in batch:
-            electrode_data = batch['data_b']
-            electrode_labels = batch['electrode_labels_b']
-
-            rereferenced_data, rereferenced_labels, original_electrode_indices = laplacian_rereference_neural_data(electrode_data, electrode_labels[0], remove_non_laplacian=False)
-            
-            batch['data_b'] = rereferenced_data
-            batch['electrode_labels_b'] = [rereferenced_labels] * batch['data_b'].shape[0]
-
-            if 'electrode_index_b' in batch:
-                batch['electrode_index_b'] = batch['electrode_index_b'][:, original_electrode_indices]
+    def _preprocess_add_electrode_indices(self, batch):
+        electrode_indices = []
+        subject_identifier = batch['metadata']['subject_identifier']
+        for electrode_label in batch['electrode_labels'][0]:
+            key = (subject_identifier, electrode_label)
+            electrode_indices.append(self.electrode_embeddings.embeddings_map[key])
+        batch['electrode_index'] = torch.tensor(electrode_indices, dtype=torch.long).unsqueeze(0).expand(batch['data'].shape[0], -1) # shape: (batch_size, n_electrodes)
         
+        # Handle second subject
+        if 'data_b' in batch:
+            electrode_indices = []
+            subject_identifier = batch['metadata_b']['subject_identifier']
+            for electrode_label in batch['electrode_labels_b'][0]:
+                key = (subject_identifier, electrode_label)
+                electrode_indices.append(self.electrode_embeddings.embeddings_map[key])
+            batch['electrode_index_b'] = torch.tensor(electrode_indices, dtype=torch.long).unsqueeze(0).expand(batch['data_b'].shape[0], -1) # shape: (batch_size, n_electrodes)
+            
         return batch
     
-    def _preprocess_normalize_voltage(self, batch):
-        batch['data'] = batch['data'] - torch.mean(batch['data'], dim=[0, 2], keepdim=True)
-        batch['data'] = batch['data'] / (torch.std(batch['data'], dim=[0, 2], keepdim=True) + 1)
-        
-        if 'data_b' in batch:
-            batch['data_b'] = batch['data_b'] - torch.mean(batch['data_b'], dim=[0, 2], keepdim=True)
-            batch['data_b'] = batch['data_b'] / (torch.std(batch['data_b'], dim=[0, 2], keepdim=True) + 1)
-        
-        return batch
-
     def _preprocess_subset_electrodes(self, batch):
         batch_size = batch['data'].shape[0]
         n_electrodes = batch['data'].shape[1]
@@ -272,6 +246,7 @@ class roshnipm_pair_nocommon(TrainingSetup):
         if 'electrode_index' in batch:
             batch['electrode_index'] = batch['electrode_index'][:, selected_idx]
 
+        # Handle second subject
         if 'data_b' in batch:
             batch_size = batch['data_b'].shape[0]
             n_electrodes = batch['data_b'].shape[1]
@@ -285,30 +260,10 @@ class roshnipm_pair_nocommon(TrainingSetup):
                 batch['electrode_index_b'] = batch['electrode_index_b'][:, selected_idx]
 
         return batch
-
-    def _preprocess_add_electrode_indices(self, batch):
-        electrode_indices = []
-        subject_identifier = batch['metadata']['subject_identifier']
-        for electrode_label in batch['electrode_labels'][0]:
-            key = (subject_identifier, electrode_label)
-            electrode_indices.append(self.electrode_embeddings.embeddings_map[key])
-        batch['electrode_index'] = torch.tensor(electrode_indices, dtype=torch.long).unsqueeze(0).expand(batch['data'].shape[0], -1) # shape: (batch_size, n_electrodes)
-        
-        # edited to process both subjects
-        if 'data_b' in batch:
-            electrode_indices = []
-            subject_identifier = batch['metadata_b']['subject_identifier']
-            for electrode_label in batch['electrode_labels_b'][0]:
-                key = (subject_identifier, electrode_label)
-                electrode_indices.append(self.electrode_embeddings.embeddings_map[key])
-            batch['electrode_index_b'] = torch.tensor(electrode_indices, dtype=torch.long).unsqueeze(0).expand(batch['data_b'].shape[0], -1) # shape: (batch_size, n_electrodes)
-            
-        return batch
     
     # All of these will be applied to the batch before it is passed to the model
     def get_preprocess_functions(self, pretraining=False):
         preprocess_functions = []
-        
         if self.config['model']['signal_preprocessing']['laplacian_rereference']:
             preprocess_functions.append(self._preprocess_laplacian_rereference)
         if self.config['model']['signal_preprocessing']['normalize_voltage']:
@@ -318,7 +273,6 @@ class roshnipm_pair_nocommon(TrainingSetup):
             preprocess_functions.append(self._preprocess_subset_electrodes)
         return preprocess_functions
 
-    # TODO: change to be the contrastive loss in the two subjects
     def calculate_pretrain_loss(self, batch, output_accuracy=True):
         # INPUT:
         #   batch['data'] shape: (batch_size, n_electrodes, n_timesamples) for subject A
@@ -393,7 +347,6 @@ class roshnipm_pair_nocommon(TrainingSetup):
 
         return losses
 
-
     def generate_frozen_features(self, batch):
         # INPUT:
         #   batch['data'] shape: (batch_size, n_electrodes, n_timesamples)
@@ -414,129 +367,89 @@ class roshnipm_pair_nocommon(TrainingSetup):
             features = features.reshape(batch['data'].shape[0], -1)
         return features
 
-    # TODO: change to be the contrastive loss in the two subjects
-    # everything should work without this extra function overriding the original training_setup.py load_dataloaders
-    # Task 1: make dataset_pair_scuffed.py work with the original training_setup.py load_dataloaders
-    # Task 2: make the contrastive loss work with the new dataset_pair_scuffed.py
     def load_dataloaders(self):
         """
-            This function loads the dataloaders for the training and test sets.
-            Uses temporal block splitting to avoid temporal contamination.
-
-            It must set the self.train_dataloader and self.test_dataloader attributes to the dataloaders (they are used in the pretraining code in pretrain.py)
+        Load dataloaders for paired podcast training.
+        Uses temporal block splitting to avoid temporal contamination.
         """
         config = self.config
-
-        # Step 1: Load datasets
-        # Group subjects by movie to create pairs
-        movie_to_subject_trials = {}
-        # for now, bypassing movie list
-        for subject_identifier, trial_id in config['training']['train_subject_trials']:
-            movie_key = f"{subject_identifier}_{trial_id}"
-            if movie_key in BRAINTREEBANK_SUBJECT_TRIAL_MOVIE_NAME_MAPPING:
-                movie_name = BRAINTREEBANK_SUBJECT_TRIAL_MOVIE_NAME_MAPPING[movie_key]
-                # if movie_name not already in movie_to_subject_trials, create an empty list
-                if movie_name not in movie_to_subject_trials:
-                    movie_to_subject_trials[movie_name] = []
-                # add the subject_identifier and trial_id to the list
-                movie_to_subject_trials[movie_name].append((subject_identifier, trial_id))
-
-        print(movie_to_subject_trials)
         
-        # Create pairs of subjects watching the same movie
-        paired_datasets = []
-        for movie_name, subject_trials in movie_to_subject_trials.items():
-            # if there are at least 2 subjects watching the same movie, create pairs
-            if len(subject_trials) >= 2:
-                # create pairs from all combinations
-                for i in range(len(subject_trials)):
-                    for j in range(len(subject_trials)):
-                        if i == j:
-                            continue
-                        subject_a_id, trial_a_id = subject_trials[i]
-                        subject_b_id, trial_b_id = subject_trials[j]
-                        
-                        if self.verbose: 
-                            log(f"Creating paired dataset: {subject_a_id}_{trial_a_id} + {subject_b_id}_{trial_b_id} (movie: {movie_name})", indent=1, priority=1)
-                        
-                        # Calculate window size in samples
-                        window_size = int(config['model']['context_length'] * SAMPLING_RATE)
-                        
-                        # Calculate actual movie duration from trigger times file
-                        # Use the shorter of the two trials to ensure both have data
-                        print(self.all_subjects)
-
-                        subject_a = self.all_subjects[subject_a_id]
-                        subject_b = self.all_subjects[subject_b_id]
-                        
-                        # Get movie duration from trigger times
-                        trigger_times_file_a = os.path.join(ROOT_DIR, "subject_timings", f'sub_{int(subject_a_id.replace("btbank", ""))}_trial{int(trial_a_id):03}_timings.csv')
-                        trigger_times_file_b = os.path.join(ROOT_DIR, "subject_timings", f'sub_{int(subject_b_id.replace("btbank", ""))}_trial{int(trial_b_id):03}_timings.csv')
-                        
-                        trigs_df_a = pd.read_csv(trigger_times_file_a)
-                        trigs_df_b = pd.read_csv(trigger_times_file_b)
-                        
-                        # Get the end time from the last row (should be the 'end' type row)
-                        movie_duration_a = trigs_df_a[trigs_df_a['type'] == 'end']['movie_time'].iloc[-1] if 'end' in trigs_df_a['type'].values else trigs_df_a['movie_time'].max()
-                        movie_duration_b = trigs_df_b[trigs_df_b['type'] == 'end']['movie_time'].iloc[-1] if 'end' in trigs_df_b['type'].values else trigs_df_b['movie_time'].max()
-                        
-                        # Debug: Print movie durations
-                        if self.verbose:
-                            log(f"  Movie durations: {subject_a_id}_{trial_a_id}={movie_duration_a:.2f}s, {subject_b_id}_{trial_b_id}={movie_duration_b:.2f}s", indent=2, priority=1)
-                        
-                        # Use the shorter duration to ensure both subjects have data
-                        total_time_seconds = min(movie_duration_a, movie_duration_b)
-                        
-                        window_time_seconds = window_size / SAMPLING_RATE
-                        n_windows = int(total_time_seconds / window_time_seconds)
-                        
-                        # Create movie times for consecutive windows
-                        movie_times = np.linspace(0, total_time_seconds, n_windows)
-                        
-                        # Create the paired dataset
-                        dataset = SubjectTrialPairDataset(
-                            subject_a, trial_a_id, window_size,
-                            dtype=config['training']['data_dtype'],
-                            output_metadata=True,
-                            output_electrode_labels=True,
-                            subject_b=subject_b, 
-                            trial_id_b=trial_b_id,
-                            movie_times=movie_times,
-                            trigger_times_dir=os.path.join(ROOT_DIR, "subject_timings"),
-                            sampling_rate=SAMPLING_RATE
-                        )
-                        
-                        paired_datasets.append(dataset)
-                        if self.verbose: 
-                            log(f"Finished creating paired dataset: {len(dataset)} windows", indent=1, priority=1)
-
-        if not paired_datasets:
-            raise ValueError("No valid paired datasets found. Make sure subjects in train_subject_trials watch the same movies.")
-
-        # Step 2: TEMPORAL BLOCK SPLITTING (not random!)
+        # Step 1: Generate all possible subject pairs
+        train_subject_trials = config['training']['train_subject_trials']
+        eval_subject_trials = config['training']['eval_subject_trials']
+        
+        # Create all possible non-self pairs
+        train_subject_pairs = []
+        for i, (subject_a_id, trial_a_id) in enumerate(train_subject_trials):
+            for j, (subject_b_id, trial_b_id) in enumerate(train_subject_trials):
+                if i < j:  # Avoid duplicates and self-pairs
+                    train_subject_pairs.append((subject_a_id, subject_b_id))
+        
+        eval_subject_pairs = []
+        for i, (subject_a_id, trial_a_id) in enumerate(eval_subject_trials):
+            for j, (subject_b_id, trial_b_id) in enumerate(eval_subject_trials):
+                if i < j:  # Avoid duplicates and self-pairs
+                    eval_subject_pairs.append((subject_a_id, subject_b_id))
+        
+        if self.verbose:
+            log(f"Generated {len(train_subject_pairs)} training pairs and {len(eval_subject_pairs)} evaluation pairs")
+        
+        # Step 2: Create paired datasets
         train_datasets = []
         test_datasets = []
-        for dataset in paired_datasets:
-            train_size = int(len(dataset) * (1 - config['training']['p_test']))
-            # Use Subset for temporal splits (first 80% train, last 20% test)
-            train_dataset = torch.utils.data.Subset(dataset, range(train_size))
-            test_dataset = torch.utils.data.Subset(dataset, range(train_size, len(dataset)))
+        
+        for subject_a_id, subject_b_id in train_subject_pairs:
+            if self.verbose: 
+                log(f"Creating paired dataset: {subject_a_id} + {subject_b_id}", indent=1, priority=1)
+            
+            subject_a = self.all_subjects[subject_a_id]
+            subject_b = self.all_subjects[subject_b_id]
+            
+            # Calculate window size
+            window_size = int(config['model']['context_length'] * subject_a.get_sampling_rate())
+            
+            # Create paired dataset
+            dataset = PodcastTrialPairDataset(
+                subject_a, subject_b, window_size,
+                dtype=config['training']['data_dtype'],
+                output_metadata=True,
+                output_electrode_labels=True
+            )
+            
+            # TEMPORAL BLOCK SPLITTING (first 40% + last 40% train, middle 20% test)
+            # Split into contiguous train/test blocks to prevent temporal leakage
+            total_windows = len(dataset)
+            first_train_size = int(total_windows * 0.4)  # First 40%
+            test_size = int(total_windows * 0.2)         # Middle 20%
+            last_train_start = first_train_size + test_size  # Start of last 40%
+            
+            # Create train indices (first 40% + last 40% of windows)
+            train_indices = list(range(first_train_size)) + list(range(last_train_start, total_windows))
+            # Create test indices (middle 20% of windows)
+            test_indices = list(range(first_train_size, last_train_start))
+            
+            train_dataset = torch.utils.data.Subset(dataset, train_indices)
+            test_dataset = torch.utils.data.Subset(dataset, test_indices)
             
             train_datasets.append(train_dataset)
             test_datasets.append(test_dataset)
             
             if self.verbose:
-                log(f"Temporal split: train={len(train_dataset)} windows, test={len(test_dataset)} windows", indent=1, priority=1)
-        
+                log(f"Finished creating paired dataset: {len(dataset)} windows (train: {len(train_indices)}, test: {len(test_indices)})", indent=1, priority=1)
+
+        if not train_datasets:
+            raise ValueError("No valid paired datasets found. Make sure train_subject_pairs is properly configured.")
+
         train_dataset = ConcatDataset(train_datasets)
         test_dataset = ConcatDataset(test_datasets)
 
         # Step 3: Create dataloaders with custom sampler
         num_workers_dataloader_test = max(int(config['cluster']['num_workers_dataloaders'] * 0.15), 1)
         num_workers_dataloader_train = config['cluster']['num_workers_dataloaders'] - num_workers_dataloader_test
+        
         train_dataloader = DataLoader(
             train_dataset,
-            batch_sampler=SubjectBatchPairSampler(
+            batch_sampler=PodcastBatchPairSampler(
                 [len(ds) for ds in train_datasets],
                 batch_size=config['training']['batch_size'],
                 shuffle=True
@@ -547,12 +460,13 @@ class roshnipm_pair_nocommon(TrainingSetup):
             prefetch_factor=config['cluster']['prefetch_factor'],
             collate_fn=PreprocessCollatorPair(preprocess_functions=self.get_preprocess_functions(pretraining=True))
         )
+        
         test_dataloader = DataLoader(
             test_dataset,
-            batch_sampler=SubjectBatchPairSampler(
+            batch_sampler=PodcastBatchPairSampler(
                 [len(ds) for ds in test_datasets],
                 batch_size=config['training']['batch_size'],
-                shuffle=False
+                shuffle=False  # No shuffling for test set
             ),
             num_workers=num_workers_dataloader_test,
             pin_memory=True,
@@ -560,6 +474,9 @@ class roshnipm_pair_nocommon(TrainingSetup):
             prefetch_factor=config['cluster']['prefetch_factor'],
             collate_fn=PreprocessCollatorPair(preprocess_functions=self.get_preprocess_functions(pretraining=True))
         )
-
+        
         self.train_dataloader = train_dataloader
         self.test_dataloader = test_dataloader
+        
+        if self.verbose:
+            log(f"Created dataloaders: train={len(train_dataset)} samples, test={len(test_dataset)} samples") 
