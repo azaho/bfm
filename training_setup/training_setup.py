@@ -93,17 +93,21 @@ class TrainingSetup:
         batch['data'] = batch['data'] / (torch.std(batch['data'], dim=[0, 2], keepdim=True) + 1)
         return batch
     
-    def _preprocess_subset_electrodes(self, batch, output_selected_idx=False, keys=['data']):
+    def _preprocess_subset_electrodes(self, batch, output_selected_idx=False, keys=['data'], allowed_remove_idx=None):
         # Find minimum number of electrodes in batch
         batch_size = batch[keys[0]].shape[0]
         n_electrodes = batch[keys[0]].shape[1]
         subset_n_electrodes = min(n_electrodes, self.config['training']['max_n_electrodes']) if self.config['training']['max_n_electrodes']>0 else n_electrodes
+        remove_n_electrodes = n_electrodes - subset_n_electrodes
 
-        # Randomly subselect / permute electrodes
-        selected_idx = torch.randperm(n_electrodes)[:subset_n_electrodes]
+        if allowed_remove_idx is None:
+            allowed_remove_idx = torch.arange(n_electrodes)
+        selected_remove_idx = allowed_remove_idx[torch.randperm(len(allowed_remove_idx))[:remove_n_electrodes]]
+        selected_idx = torch.arange(n_electrodes)
+        selected_idx = selected_idx[~torch.isin(selected_idx, selected_remove_idx)]
+
         if 'electrode_labels' in batch:
             batch['electrode_labels'] = [[batch['electrode_labels'][0][i] for i in selected_idx]] * batch_size
-
         for key in keys:
             batch[key] = batch[key][:, selected_idx]
 
