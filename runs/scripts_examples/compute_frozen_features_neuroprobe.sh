@@ -12,10 +12,13 @@
 #SBATCH --error runs/logs/cff_%A_%a.err # STDERR
 #SBATCH -p use-everything
 
+# Set up environment
+module load miniforge
+source .venv/bin/activate
+echo "Running on: $(hostname)"
 nvidia-smi
 
 export PYTHONUNBUFFERED=1
-source .venv/bin/activate
 
 model_dir="OM_wd0.0_dr0.0_rX1"
 

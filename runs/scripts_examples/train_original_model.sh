@@ -10,10 +10,12 @@
 #SBATCH --error runs/logs/%A_%a.err
 #SBATCH --array=1-12
 #SBATCH -p normal
-source .venv/bin/activate
-export TMPDIR=/om2/scratch/tmp
 
+# Set up environment
+module load miniforge
+source .venv/bin/activate
 echo "Running on: $(hostname)"
+nvidia-smi
 
 
 n_in_parallel=1 # How many jobs to run in parallel on the same job (on the same GPU!)
