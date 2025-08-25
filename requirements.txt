@@ -19,6 +19,7 @@ torchvision
 torchaudio
 wandb
 ipykernel
+jupyter
 mne
 tqdm
 mne_bids
