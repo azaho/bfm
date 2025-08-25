@@ -1,12 +1,20 @@
-from model.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
-from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
-from training_setup.training_config import log
+import time
 import torch
+import torch.nn as nn
+
+from training_setup.registry import register
+from training_setup.training_config import log
 from training_setup.training_setup import TrainingSetup
+
 from model.BFModule import BFModule
 from model.transformer_implementation import Transformer
-import torch.nn as nn
-import time
+from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
+from model.electrode_embedding import (
+    ElectrodeEmbedding_Learned, 
+    ElectrodeEmbedding_NoisyCoordinate, 
+    ElectrodeEmbedding_Learned_CoordinateInit, 
+    ElectrodeEmbedding_Zero
+)
 
 # This file first defines the model components, then the training setup.
 
@@ -103,8 +111,8 @@ class OriginalModel(BFModule):
 
 
 ### DEFINING THE TRAINING SETUP ###
-
-class andrii0(TrainingSetup):
+@register("andrii0")
+class Andrii0(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)
 

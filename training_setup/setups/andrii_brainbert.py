@@ -1,12 +1,16 @@
-from model.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
-from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
-from training_setup.training_config import log
 import torch
-from training_setup.training_setup import TrainingSetup
-from model.BFModule import BFModule
-from model.transformer_implementation import Transformer
 import torch.nn as nn
 import numpy as np
+
+from training_setup.training_config import log
+from training_setup.registry import register
+from training_setup.training_setup import TrainingSetup
+
+from model.BFModule import BFModule
+from model.transformer_implementation import Transformer
+from model.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
+from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
+
 
 # This file first defines the model components, then the training setup.
 
@@ -207,8 +211,8 @@ class BrainBERT(BFModule):
         return output
 
 ### DEFINING THE TRAINING SETUP ###
-
-class andrii_brainbert(TrainingSetup):
+@register("andrii_brainbert")
+class AndriiBrainbert(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)
 

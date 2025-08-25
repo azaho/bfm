@@ -9,6 +9,7 @@ import torch.nn as nn
 
 from model.BFModule import BFModule
 from training_setup.training_setup import TrainingSetup
+from training_setup.registry import register
 
 """
 Flow of data in this model:
@@ -77,8 +78,8 @@ class LinearModel(BFModule):
     
 
 ### DEFINING THE TRAINING SETUP ###
-
-class bradya0(TrainingSetup):
+@register("bradya0")
+class Bradya0(TrainingSetup):
     '''Simple Linear Model for Onboarding Task'''
     
     def __init__(self, all_subjects, config, verbose=True):

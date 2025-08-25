@@ -11,7 +11,7 @@ class ConvolutionPreprocessor(BFModule):
     """
     Preprocessor that applies a 2D convolution across time axis + linear mapping.
     
-    Based on preprocessing steps in BrainWave (https://arxiv.org/pdf/2402.10251).
+    Based on preprocessing steps in BrainWave (https://arxiv.org/abs/2402.10251).
     
     Args:
         input_dim (int): The input dimension (timebins) for the convolution.

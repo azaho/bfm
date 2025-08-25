@@ -6,10 +6,11 @@ size, and then use the linear regression to predict the future bin from the past
 
 For evaluation (generate_frozen_features), feel free to come up with your own scheme for what the "features" of the model will be
 '''
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+from training_setup.registry import register
 from training_setup.training_setup import TrainingSetup
 from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
 
@@ -38,6 +39,7 @@ class LinearModel(nn.Module):
         pred = self.linear(x[:, :-1, :])  # (batch, n_bins-1, bin_size)
         return pred, x[:, 1:, :]  # returns (prediction, target)
 
+@register("roshnipm")
 class roshnipm(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)

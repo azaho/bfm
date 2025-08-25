@@ -10,12 +10,14 @@ from torch.amp import autocast
 from torch.optim.lr_scheduler import ChainedScheduler
 
 import wandb
+
 from dotenv import load_dotenv
 load_dotenv() # Load environment variables from .env file
 
 from utils.muon_optimizer import Muon
 from subject.dataset import load_subjects
 from evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
+from training_setup.registry import resolve
 from training_setup.training_config import (
     log,
     update_dir_name,
@@ -62,16 +64,8 @@ all_subjects = load_subjects(
 ### LOADING TRAINING SETUP ###
 
 # Import the training setup class dynamically based on config
-training_setup_name = config["training"]["setup_name"].lower() # if this is X, the filename should be training_setup/X.py and the class name should be XTrainingSetup
-try:
-    setup_module = __import__(f'{TRAINING_SETUP_IMPORT}.{training_setup_name}', fromlist=[training_setup_name])
-    setup_class = getattr(setup_module, training_setup_name)
-    training_setup = setup_class(all_subjects, config, verbose=True)
-except (ImportError, AttributeError) as e:
-    print(f"ERROR: Could not load training setup '{config['training']['setup_name']}'. Are you sure the filename and the class name are the same and correspond to the parameter?")
-    print(f"Alternatively, the error could be because of a syntax error in the training setup file.")
-    print(f"Thrown error when trying to import the training setup: {str(e)}")
-    exit()
+training_setup_name = config["training"]["setup_name"] # Name in registry
+training_setup = resolve(training_setup_name, all_subjects=all_subjects, config=config, verbose=True)
 
 # Save a copy of the training setup file for reproducibility
 

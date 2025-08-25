@@ -1,11 +1,21 @@
-from model.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
-from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
-from training_setup.training_config import log
 import torch
+import torch.nn as nn
+
+from training_setup.registry import register
 from training_setup.training_setup import TrainingSetup
+from training_setup.training_config import log
+
 from model.BFModule import BFModule
 from model.transformer_implementation import Transformer
-import torch.nn as nn
+from model.preprocessing.spectrogram import SpectrogramPreprocessor    
+from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
+from model.electrode_embedding import (
+    ElectrodeEmbedding_Learned, 
+    ElectrodeEmbedding_NoisyCoordinate, 
+    ElectrodeEmbedding_Learned_CoordinateInit, 
+    ElectrodeEmbedding_Zero
+)
+
 
 # This file first defines the model components, then the training setup.
 
@@ -19,33 +29,6 @@ import torch.nn as nn
 
 ### DEFINING THE MODEL COMPONENTS ###
 
-from model.preprocessing.spectrogram import SpectrogramPreprocessor    
-
-def mask_random_electrodes_and_timebins(batch, p_electrodes=0.5, p_timebins=0.5, key='data'):
-    """
-    input: 
-        dictionary batch, with
-            batch[key] shape: (batch_size, n_electrodes, n_timebins, d_input)
-            batch['electrode_labels'] shape: list of length 1 (since it's the same across the batch), each element is a list of electrode labels
-            and batch['metadata'] containing the subject identifier and trial id
-    output:
-        the same dictionary batch, with the following changes:
-            batch[key], a masked version of the input data, with the same shape as the input data
-            batch['mask_electrodes'], a mask of shape (n_electrodes,), with 1s where the data is masked and 0s where it is not
-            batch['mask_timebins'], a mask of shape (n_timebins,), with 1s where the data is masked and 0s where it is not
-    """
-    batch_size, n_electrodes, n_timebins, d_input = batch[key].shape
-
-    mask_electrodes = torch.rand(n_electrodes) < p_electrodes
-    mask_timebins = torch.rand(n_timebins) < p_timebins
-
-    mask_electrodes = mask_electrodes.to(batch[key].device, dtype=batch[key].dtype)
-    mask_timebins = mask_timebins.to(batch[key].device, dtype=batch[key].dtype)
-
-    batch[key] = batch[key] * (1-mask_electrodes.unsqueeze(-1).unsqueeze(-1).unsqueeze(0)) * (1-mask_timebins.unsqueeze(0).unsqueeze(0).unsqueeze(-1))
-    batch['mask_electrodes'] = mask_electrodes
-    batch['mask_timebins'] = mask_timebins
-    return batch
 
 class SimpleMSEAutoregressiveModel(BFModule):
     def __init__(self, d_model, spectrogram_parameters, d_input, n_layers=5, n_heads=12, dropout=0.1):
@@ -81,8 +64,8 @@ class SimpleMSEAutoregressiveModel(BFModule):
 
 
 ### DEFINING THE TRAINING SETUP ###
-
-class mse_rm(TrainingSetup):
+@register("mse_ar")
+class MseAR(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)
 
@@ -96,14 +79,6 @@ class mse_rm(TrainingSetup):
         config = self.config
         device = config['device']
         assert config['model']['signal_preprocessing']['spectrogram'] == True, "For the moment, we only support spectrogram"
-
-        self.p_mask_electrodes = 0.5
-        self.p_mask_timebins = 0.5
-        if 'other' in config:
-            if 'p_mask_electrodes' in config['other']:
-                self.p_mask_electrodes = float(config['other']['p_mask_electrodes'])
-            if 'p_mask_timebins' in config['other']:
-                self.p_mask_timebins = float(config['other']['p_mask_timebins'])
 
         ### LOAD MODEL ###
 
@@ -186,21 +161,10 @@ class mse_rm(TrainingSetup):
         
         embeddings = self.electrode_embeddings(batch)
         preprocessed_data = self.fft_preprocessor(batch) # shape: (batch_size, n_electrodes, n_timebins, d_input)
-        
-        batch['preprocessed_data'] = preprocessed_data.clone()
-        batch = mask_random_electrodes_and_timebins(batch, p_electrodes=self.p_mask_electrodes, p_timebins=self.p_mask_timebins, key='preprocessed_data')
-
-        transformed_data = self.model(batch['preprocessed_data'], embeddings) # shape: (batch_size, n_electrodes, n_timebins, d_output)
-
-        n_timebins = preprocessed_data.shape[2]
-        mse_fbi = torch.nn.functional.mse_loss(transformed_data[:, :, :n_timebins-self.config['training']['future_bin_idx'], :], preprocessed_data[:, :, self.config['training']['future_bin_idx']:, :])
-        # mse_mask_electrodes = torch.nn.functional.mse_loss(transformed_data[:, batch['mask_electrodes'].bool(), :, :], preprocessed_data[:, batch['mask_electrodes'].bool(), :, :])
-        # mse_mask_timebins = torch.nn.functional.mse_loss(transformed_data[:, :, batch['mask_timebins'].bool(), :], preprocessed_data[:, :, batch['mask_timebins'].bool(), :])
+        transformed_data = self.model(preprocessed_data, embeddings) # shape: (batch_size, n_electrodes, n_timebins, d_output)
 
         losses = {
-            "mse_fbi": mse_fbi,
-            # "mse_mask_electrodes": mse_mask_electrodes,
-            # "mse_mask_timebins": mse_mask_timebins,
+            "mse_a": torch.nn.functional.mse_loss(transformed_data[:, :, :-self.config['training']['future_bin_idx'], :], preprocessed_data[:, :, self.config['training']['future_bin_idx']:, :])
         }
         return losses
 
