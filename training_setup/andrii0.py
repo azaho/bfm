@@ -131,7 +131,7 @@ class andrii0(TrainingSetup):
         ).to(device, dtype=config['model']['dtype'])
         config['model']['name'] = "AndriiOriginalModel"
 
-        self.model = torch.compile(self.model) # <- Kerrnel fusion
+        # self.model = torch.compile(self.model) # <- Kerrnel fusion
         self.model.to(device, dtype=config['model']['dtype'])
 
         ### LOAD ELECTRODE EMBEDDINGS ###
@@ -166,6 +166,7 @@ class andrii0(TrainingSetup):
             electrode_indices.append(self.electrode_embeddings.embeddings_map[key])
         batch['electrode_index'] = torch.tensor(electrode_indices, dtype=torch.long).unsqueeze(0).expand(batch['data'].shape[0], -1) # shape: (batch_size, n_electrodes)
         return batch
+    
     def _preprocess_subset_electrodes(self, batch):
         batch, selected_idx = super()._preprocess_subset_electrodes(batch, output_selected_idx=True)
         batch_size = batch['data'].shape[0]

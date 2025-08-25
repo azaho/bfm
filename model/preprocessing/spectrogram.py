@@ -1,19 +1,26 @@
+from typing import Optional, Dict
 import torch
 import torch.nn as nn
+
 from model.BFModule import BFModule
 from training_setup.training_config import get_default_config
 
+
 class SpectrogramPreprocessor(BFModule):
-    def __init__(self, spectrogram_parameters=None, output_dim=-1):
-        """
-        spectrogram_parameters is a dictionary with the following keys:
-        spectrogram_parameters = {
-            'max_frequency': int, 'Maximum frequency for spectrogram'
-            'tperseg': float, 'Time of each spectrogram segment in seconds'
-            'poverlap': float, 'Proportion of overlap between segments for spectrogram'
-            'window': str, 'Window function for spectrogram', # Allowed values: 'hann', 'boxcar'
-        }
-        """
+    """
+    Spectrogram Preprocessor for iEEG data
+    
+    Args:
+        spectrogram_parameters (dict, optional): Parameters for spectrogram computation.
+            Keys:
+                - max_frequency (int): Maximum frequency for spectrogram
+                - tperseg (float): Time of each spectrogram segment in seconds
+                - poverlap (float): Proportion of overlap between segments for spectrogram
+                - window (str): Window function for spectrogram, Allowed values: 'hann', 'boxcar'
+        output_dim (int, optional): Dimensionality of the output. 
+            If -1, output will have the full frequency resolution.
+    """
+    def __init__(self, spectrogram_parameters: Optional[Dict] = None, output_dim: int = -1):
         if spectrogram_parameters is None: # Load default spectrogram parameters from training config
             spectrogram_parameters = get_default_config()['model']['signal_preprocessing']['spectrogram_parameters']
 
@@ -31,8 +38,24 @@ class SpectrogramPreprocessor(BFModule):
 
         # Transform FFT output to match expected output dimension
         self.output_transform = nn.Identity() if self.output_dim == -1 else nn.Linear(self.max_frequency_bin, self.output_dim)
-    
-    def forward(self, batch, output_time_frequency_bins=False, z_score=True):
+
+    def forward(self, batch: Dict, output_time_frequency_bins: bool = False, z_score: bool = True) -> torch.Tensor | tuple:
+        """
+        Forward pass for the spectrogram preprocessor.
+        
+        Args:
+            batch (Dict): Input batch containing 'data' and 'metadata'.
+                - data (Tensor): Input data of shape (batch_size, n_electrodes, n_samples)
+                - metadata (Dict): Metadata containing information like sampling rate
+            output_time_frequency_bins (bool): If True, output will include time-frequency bins
+            z_score (bool): If True, apply z-score normalization
+        
+        Returns:
+            torch.Tensor | tuple:
+                - (batch_size, n_electrodes, n_timebins, n_freqbins) if output_dim=-1
+                OR (batch_size, n_electrodes, n_timebins, output_dim) if output_dim > 0
+                - If output_time_frequency_bins is True, also return (freq_bins, time_bins)
+        """
         # batch['data'] is of shape (batch_size, n_electrodes, n_samples)
         # batch['metadata'] is a dictionary containing metadata like the subject identifier and trial id, sampling rate, etc.
         batch_size, n_electrodes, n_samples = batch['data'].shape

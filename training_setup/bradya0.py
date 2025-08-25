@@ -99,7 +99,7 @@ class bradya0(TrainingSetup):
         self.model_components['model'] = self.model
 
 
-    def calculate_pretrain_loss(self, batch: Dict[str, Any]) -> Dict[str, torch.Tensor]:
+    def calculate_pretrain_loss(self, batch: Dict[str, Any], output_accuracy: bool = False) -> Dict[str, torch.Tensor]:
         '''
         Calculate the L2 loss between the predicted future bins and the actual next bins.
         
