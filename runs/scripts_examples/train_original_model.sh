@@ -10,10 +10,12 @@
 #SBATCH --error runs/logs/%A_%a.err
 #SBATCH --array=1-12
 #SBATCH -p normal
-source .venv/bin/activate
-export TMPDIR=/om2/scratch/tmp
 
+# Set up environment
+module load miniforge
+source .venv/bin/activate
 echo "Running on: $(hostname)"
+nvidia-smi
 
 
 n_in_parallel=1 # How many jobs to run in parallel on the same job (on the same GPU!)
@@ -35,13 +37,13 @@ n_dr=${#dropout_options[@]}
 n_wd=${#weight_decay_options[@]}
 
 # Launch n_in_parallel jobs
-for i in $(seq 0 $(( n_in_parallel - 1 ))); do
+for i in $(seq 0 $(( n_in_parallel - 1 ))); do  
     idx=$(( base_idx + i ))
     
     # Convert index to parameter selections
     dropout=${dropout_options[$((idx % n_dr))]}
-    random_string=${random_string_options[$((idx / n_rs % n_rs))]}
-    weight_decay=${weight_decay_options[$((idx / n_rs / n_dr % n_wd))]}
+    random_string=${random_string_options[$((idx / n_dr % n_rs))]}
+    weight_decay=${weight_decay_options[$((idx / n_dr / n_rs % n_wd))]}
 
     echo "Job $((i+1)) - RS: $random_string - Dropout: $dropout - Weight Decay: $weight_decay"
     python -u pretrain.py  --training.setup_name andrii0 \
