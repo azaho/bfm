@@ -1,11 +1,21 @@
-from model.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
-from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
-from training_setup.training_config import log
 import torch
+import torch.nn as nn
+
+from training_setup.registry import register
 from training_setup.training_setup import TrainingSetup
+from training_setup.training_config import log
+
 from model.BFModule import BFModule
 from model.transformer_implementation import Transformer
-import torch.nn as nn
+from model.preprocessing.spectrogram import SpectrogramPreprocessor    
+from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
+from model.electrode_embedding import (
+    ElectrodeEmbedding_Learned, 
+    ElectrodeEmbedding_NoisyCoordinate, 
+    ElectrodeEmbedding_Learned_CoordinateInit, 
+    ElectrodeEmbedding_Zero
+)
+
 
 # This file first defines the model components, then the training setup.
 
@@ -19,7 +29,6 @@ import torch.nn as nn
 
 ### DEFINING THE MODEL COMPONENTS ###
 
-from model.preprocessing.spectrogram import SpectrogramPreprocessor    
 
 class SimpleMSEAutoregressiveModel(BFModule):
     def __init__(self, d_model, spectrogram_parameters, d_input, n_layers=5, n_heads=12, dropout=0.1):
@@ -55,7 +64,7 @@ class SimpleMSEAutoregressiveModel(BFModule):
 
 
 ### DEFINING THE TRAINING SETUP ###
-
+@register("mse_ar")
 class mse_ar(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)

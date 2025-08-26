@@ -1,12 +1,20 @@
-from model.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
-from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
-from training_setup.training_config import log
+import time
 import torch
+import torch.nn as nn
+
+from training_setup.registry import register
+from training_setup.training_config import log
 from training_setup.training_setup import TrainingSetup
+
 from model.BFModule import BFModule
 from model.transformer_implementation import Transformer
-import torch.nn as nn
-import time
+from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
+from model.electrode_embedding import (
+    ElectrodeEmbedding_Learned, 
+    ElectrodeEmbedding_NoisyCoordinate, 
+    ElectrodeEmbedding_Learned_CoordinateInit, 
+    ElectrodeEmbedding_Zero
+)
 
 # This file first defines the model components, then the training setup.
 
@@ -103,7 +111,7 @@ class OriginalModel(BFModule):
 
 
 ### DEFINING THE TRAINING SETUP ###
-
+@register("andrii0")
 class andrii0(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)
@@ -166,6 +174,7 @@ class andrii0(TrainingSetup):
             electrode_indices.append(self.electrode_embeddings.embeddings_map[key])
         batch['electrode_index'] = torch.tensor(electrode_indices, dtype=torch.long).unsqueeze(0).expand(batch['data'].shape[0], -1) # shape: (batch_size, n_electrodes)
         return batch
+    
     def _preprocess_subset_electrodes(self, batch):
         batch, selected_idx = super()._preprocess_subset_electrodes(batch, output_selected_idx=True)
         batch_size = batch['data'].shape[0]

@@ -15,6 +15,7 @@ import numpy as np
 from evaluation.neuroprobe.config import ROOT_DIR, SAMPLING_RATE, BRAINTREEBANK_SUBJECT_TRIAL_MOVIE_NAME_MAPPING
 import pandas as pd
 from training_setup.training_setup import TrainingSetup
+from training_setup.registry import register
 
 # for main function
 from evaluation.neuroprobe.config import NEUROPROBE_FULL_SUBJECT_TRIALS
@@ -180,7 +181,7 @@ class OriginalModel(BFModule):
 
 
 ### DEFINING THE TRAINING SETUP ###
-
+@register("roshnipm_pair_nocommon")
 class roshnipm_pair_nocommon(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)

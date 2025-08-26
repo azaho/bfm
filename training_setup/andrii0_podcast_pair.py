@@ -1,12 +1,16 @@
-from model.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
-from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
-from training_setup.training_config import log
 import torch
-from training_setup.training_setup import TrainingSetup
-from model.BFModule import BFModule
-from model.transformer_implementation import Transformer
 import torch.nn as nn
 from torch.utils.data import DataLoader, ConcatDataset
+
+from training_setup.registry import register
+from training_setup.training_config import log
+from training_setup.training_setup import TrainingSetup
+
+from model.BFModule import BFModule
+from model.transformer_implementation import Transformer
+from model.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
+from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
+
 from subject.podcast_pair import PodcastTrialPairDataset, PodcastBatchPairSampler, load_podcast_subjects
 from subject.podcast_pair import PreprocessCollatorPair
 
@@ -164,7 +168,7 @@ class OriginalModel(BFModule):
 
 
 ### DEFINING THE TRAINING SETUP ###
-
+@register("andrii0_podcast_pair")
 class andrii0_podcast_pair(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)

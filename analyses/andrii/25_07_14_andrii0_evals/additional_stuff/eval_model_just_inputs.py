@@ -11,6 +11,7 @@ import gc
 
 from eval_utils import *
 
+from training_setup.registry import register
 from training_setup.training_config import log, parse_subject_trials_from_config, unconvert_dtypes, convert_dtypes
 from subject.dataset import load_subjects
 
@@ -108,13 +109,8 @@ subject = all_subjects[f"btbank{subject_id}"] # we only really have one subject,
 ### LOAD MODEL ###
 
 # Import the training setup class dynamically based on config
-try:
-    setup_module = __import__(f'training_setup.{config["training"]["setup_name"].lower()}', fromlist=[config["training"]["setup_name"]])
-    setup_class = getattr(setup_module, config["training"]["setup_name"])
-    training_setup = setup_class(all_subjects, config, verbose=True)
-except (ImportError, AttributeError) as e:
-    print(f"Could not load training setup '{config['training']['setup_name']}'. Are you sure the filename and the class name are the same and correspond to the parameter? Error: {str(e)}")
-    exit()
+training_setup_name = config["training"]["setup_name"] # Name in registry
+training_setup = resolve(training_setup_name, all_subjects=all_subjects, config=config, verbose=True)
 
 if verbose:
     log(f"Loading model...", priority=0)

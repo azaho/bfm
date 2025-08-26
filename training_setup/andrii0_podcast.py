@@ -1,13 +1,21 @@
-from model.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
-from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
-from training_setup.training_config import log
 import torch
-from training_setup.training_setup import TrainingSetup
-from model.BFModule import BFModule
-from model.transformer_implementation import Transformer
 import torch.nn as nn
 from torch.utils.data import DataLoader, ConcatDataset
+
+from training_setup.training_setup import TrainingSetup
+from training_setup.training_config import log
+from training_setup.registry import register
 from subject.dataset import SubjectTrialDataset, SubjectBatchSampler, PreprocessCollator
+
+from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
+from model.BFModule import BFModule
+from model.transformer_implementation import Transformer
+from model.electrode_embedding import (
+    ElectrodeEmbedding_Learned, 
+    ElectrodeEmbedding_NoisyCoordinate, 
+    ElectrodeEmbedding_Learned_CoordinateInit, 
+    ElectrodeEmbedding_Zero
+)
 
 # This file first defines the model components, then the training setup.
 
@@ -163,7 +171,7 @@ class OriginalModel(BFModule):
 
 
 ### DEFINING THE TRAINING SETUP ###
-
+@register("andrii0_podcast")
 class andrii0_podcast(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)
