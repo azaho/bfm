@@ -31,6 +31,20 @@ class SpectrogramPreprocessor(BFModule):
 
         # Transform FFT output to match expected output dimension
         self.output_transform = nn.Identity() if self.output_dim == -1 else nn.Linear(self.max_frequency_bin, self.output_dim)
+
+        if self.spectrogram_parameters['remove_line_noise']:
+            self.line_noise_freqs = [50, 60]
+            self.line_noise_margin = 2.0
+            self.line_noise_mask = self.line_noise_mask(self.line_noise_freqs, self.line_noise_margin)
+        else:
+            self.line_noise_mask = None
+
+    def line_noise_mask(self, freq_bins, line_noise_freqs=[50, 60], margin=2.0):
+        # 60 Hz and its harmonics
+        line_noise_mask = torch.zeros(freq_bins.shape[0], device=freq_bins.device, dtype=torch.bool)
+        for freq in line_noise_freqs:
+            line_noise_mask |= torch.abs(freq_bins - freq) <= margin
+        return line_noise_mask
     
     def forward(self, batch, output_time_frequency_bins=False, z_score=True):
         # batch['data'] is of shape (batch_size, n_electrodes, n_samples)
@@ -87,6 +101,9 @@ class SpectrogramPreprocessor(BFModule):
         if z_score:
             x = x - x.mean(dim=[0, 2], keepdim=True)
             x = x / (x.std(dim=[0, 2], keepdim=True) + 1e-5)
+
+        if self.line_noise_mask is not None: # If removing line noise, set line noise to 0
+            x = x.masked_fill(self.line_noise_mask, 0)
 
         # Transform to match expected output dimension
         x = self.output_transform(x)  # shape: (batch_size, n_electrodes, n_timebins, output_dim)
