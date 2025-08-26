@@ -1,25 +1,8 @@
+-e . # Download bfm in editable mode
 beautifulsoup4
-h5py
-joblib
-librosa
-matplotlib
 mkdocs
 mkdocs-material
+mkdocs-jupyter
 networkx
-numpy
-pandas
-psutil
-python-dotenv
-requests
-scikit-learn
-scipy
-seaborn
-torch
-torchvision
-torchaudio
-wandb
 ipykernel
 jupyter
-mne
-tqdm
-mne_bids
