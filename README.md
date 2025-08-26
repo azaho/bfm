@@ -32,11 +32,14 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-2. Copy over the contents of `.env.example` to `.env`. 
+2. Copy over the contents of `.env.example` to `.env` and correct all variables like `DATASET_ROOT_DIR` to point to the root directories of the datasets on your machine. To start, you will only need the BrainTreebank dataset. If you need, follow the [Neuroprobe repository's](https://github.com/azaho/neuroprobe) instructions for how to download the BrainTreebank dataset and correct the `.env` variable `BRAIN_TREEBANK_ROOT_DIR` to point to the root directory of the BrainTreebank dataset on your machine. 
 
-3. If you're not on Openmind, follow the [Neuroprobe repository's](https://github.com/azaho/neuroprobe) instructions for how to download the BrainTreebank dataset and correct the `.env` variable `BRAIN_TREEBANK_ROOT_DIR` to point to the root directory of the BrainTreebank dataset on your machine. If you're on Openmind, you are all set!
-
-4. Now you can try pretraining a model! Will require an A100 GPU (see the [openmind.mit.edu](https://openmind.mit.edu) instructions and FAQ for how to request a node with one).
+3. Now you can try pretraining a model! Will require an A100 GPU (see the [openmind.mit.edu](https://openmind.mit.edu) instructions and FAQ for how to request a node with one).
 ```sh
 python pretrain.py --training.setup_name andrii0 --cluster.cache_subjects 0 --cluster.eval_at_beginning 0
+```
+
+P.S. For requesting an A100 node with enough RAM on Engaging, you might want to run
+```sh
+salloc --mem=64G -p mit_preemptable --gres=gpu:a100:1
 ```
