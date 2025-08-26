@@ -131,7 +131,7 @@ class andrii0(TrainingSetup):
         ).to(device, dtype=config['model']['dtype'])
         config['model']['name'] = "AndriiOriginalModel"
 
-        # self.model = torch.compile(self.model) # <- Kerrnel fusion
+        # self.model = torch.compile(self.model) # <- Kernel fusion
         self.model.to(device, dtype=config['model']['dtype'])
 
         ### LOAD ELECTRODE EMBEDDINGS ###
