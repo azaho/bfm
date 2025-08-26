@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bfm"
+version = "0.1.0"
+description = "Brain Foundation Models"
+authors = [
+    { name = "Andrii Zahorodnii", email = "zaho@mit.edu" }
+]
+readme = "README.md"
+requires-python = ">=3.9"
+
+dependencies = [
+    "beautifulsoup4",
+    "h5py",
+    "joblib", 
+    "librosa",
+    "matplotlib",
+    "mkdocs",
+    "mkdocs-material",
+    "networkx",
+    "numpy",
+    "pandas",
+    "psutil",
+    "python-dotenv",
+    "requests",
+    "scikit-learn", 
+    "scipy",
+    "seaborn",
+    "torch",
+    "torchvision",
+    "torchaudio",
+    "wandb",
+    "ipykernel",
+    "jupyter",
+    "mne",
+    "tqdm",
+    "mne_bids",
+]
+
+[tool.setuptools.packages.find]
+where = ["bfm"]
