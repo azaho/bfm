@@ -7,6 +7,7 @@ nav:
   - Home: index.md
   - Reference:
       - Overview: reference/index.md
+  - Quickstart: quickstart.ipynb
   - Getting Started:
       - Overview: getting-started/index.md
       - Installation: getting-started/installation.md
@@ -15,6 +16,7 @@ nav:
       - Onboarding Reflections: getting-started/onboarding-reflections.md
 theme:
   name: material
+  custom_dir: docs/overrides
   icon:
     logo: material/brain
   favicon: assets/favicon.ico
@@ -51,3 +53,8 @@ markdown_extensions:
   - pymdownx.superfences
   - pymdownx.highlight
   - admonition
+
+plugins:
+  - mkdocs-jupyter:
+      execute: false
+      include_source: true
