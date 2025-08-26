@@ -3,7 +3,6 @@
 __pycache__/
 **/__pycache__/
 .env
-wandb/
 
 *.err
 *.out
@@ -24,3 +23,5 @@ site/
 # Not committing any figures
 # **/*.pdf
 # **/*.png
+
+*.egg-info/
