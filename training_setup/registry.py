@@ -12,6 +12,8 @@ Lets you register a method under a string key and resolve it later:
     setup = resolve("sample")
 ```
 """
+import importlib
+import pkgutil
 from typing import Callable, List, Dict
 from training_setup.training_setup import TrainingSetup
 
@@ -20,6 +22,7 @@ Factory = Callable[..., TrainingSetup]
 _REGISTRY: Dict[str, Factory] = {}
 _ALIASES: Dict[str, str] = {}
 
+_populated = False
 
 def register(name: str, *aliases: str) -> Callable[[Factory], Factory]:
     """
@@ -56,6 +59,7 @@ def resolve(name: str, **kwargs) -> TrainingSetup:
     Returns:
         TrainingSetup: The resolved training setup instance.
     """
+    autodiscover()
     key = name.strip().lower()
     key = _ALIASES.get(key, key)
     if key in _REGISTRY:
@@ -71,3 +75,12 @@ def list_setups() -> List[str]:
 def list_aliases() -> Dict[str, str]:
     """Return alias → canonical mapping."""
     return dict(_ALIASES)
+
+
+def autodiscover():
+    """Auto-discover and import all training setups."""
+    global _populated
+    if not _populated:
+        for m in pkgutil.walk_packages(__path__, prefix=__name__ + "."):
+            importlib.import_module(m.name)
+        _populated = True

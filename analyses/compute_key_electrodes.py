@@ -20,6 +20,7 @@ from model.custom_attention_modules import (
     BlockWithReturn,
     TransformerWithReturn,
 )
+from training_setup.registry import resolve
 
 from evaluation.neuroprobe.datasets import BrainTreebankSubjectTrialBenchmarkDataset
 import evaluation.neuroprobe.config as neuroprobe_config
@@ -104,8 +105,9 @@ for subject_id, trial_id in subject_trials:
     ### LOAD MODEL ###
     # Import the training setup class dynamically based on config
     try:
-        setup_module = __import__(f'training_setup.{config["training"]["setup_name"].lower()}', fromlist=[config["training"]["setup_name"]])
-        setup_class = getattr(setup_module, config["training"]["setup_name"])
+        training_setup_name = config["training"]["setup_name"] # Name in registry
+        training_setup = resolve(training_setup_name, all_subjects=all_subjects, config=config, verbose=True)
+
 
         # Create a custom analysis training setup that inherits from the original
         class KeyElectrodeAnalysisSetup(setup_class):

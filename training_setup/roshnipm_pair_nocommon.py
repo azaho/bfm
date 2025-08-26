@@ -182,7 +182,7 @@ class OriginalModel(BFModule):
 
 ### DEFINING THE TRAINING SETUP ###
 @register("roshnipm_pair_nocommon")
-class RoshnipmPairNocommon(TrainingSetup):
+class roshnipm_pair_nocommon(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)
 

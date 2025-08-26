@@ -65,7 +65,7 @@ class SimpleMSEAutoregressiveModel(BFModule):
 
 ### DEFINING THE TRAINING SETUP ###
 @register("mse_ar")
-class MseAR(TrainingSetup):
+class mse_ar(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)
 

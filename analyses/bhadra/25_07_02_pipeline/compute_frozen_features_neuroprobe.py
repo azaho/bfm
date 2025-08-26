@@ -12,6 +12,7 @@ from training_setup.training_config import log, update_dir_name, update_random_s
 from torch.optim.lr_scheduler import ChainedScheduler
 from training_setup.training_config import convert_dtypes, unconvert_dtypes, parse_subject_trials_from_config
 from torch.utils.data import DataLoader
+from training_setup.registry import register
 
 from evaluation.neuroprobe.datasets import BrainTreebankSubjectTrialBenchmarkDataset
 import evaluation.neuroprobe.config as neuroprobe_config
@@ -74,13 +75,9 @@ electrode_subset = neuroprobe_config.NEUROPROBE_LITE_ELECTRODES[f"btbank{subject
 ### LOAD MODEL ###
 
 # Import the training setup class dynamically based on config
-try:
-    setup_module = __import__(f'training_setup.{config["training"]["setup_name"].lower()}', fromlist=[config["training"]["setup_name"]])
-    setup_class = getattr(setup_module, config["training"]["setup_name"])
-    training_setup = setup_class(all_subjects, config, verbose=True)
-except (ImportError, AttributeError) as e:
-    print(f"Could not load training setup '{config['training']['setup_name']}'. Are you sure the filename and the class name are the same and correspond to the parameter? Error: {str(e)}")
-    exit()
+training_setup_name = config["training"]["setup_name"] # Name in registry
+training_setup = resolve(training_setup_name, all_subjects=all_subjects, config=config, verbose=True)
+
 
 log(f"Loading model...", priority=0)
 training_setup.initialize_model()

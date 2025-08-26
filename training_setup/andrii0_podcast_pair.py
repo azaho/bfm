@@ -2,31 +2,28 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, ConcatDataset
 
-from training_setup.training_setup import TrainingSetup
-from training_setup.training_config import log
 from training_setup.registry import register
-from subject.dataset import SubjectTrialDataset, SubjectBatchSampler, PreprocessCollator
+from training_setup.training_config import log
+from training_setup.training_setup import TrainingSetup
 
-from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
 from model.BFModule import BFModule
 from model.transformer_implementation import Transformer
-from model.electrode_embedding import (
-    ElectrodeEmbedding_Learned, 
-    ElectrodeEmbedding_NoisyCoordinate, 
-    ElectrodeEmbedding_Learned_CoordinateInit, 
-    ElectrodeEmbedding_Zero
-)
+from model.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
+from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
+
+from subject.podcast_pair import PodcastTrialPairDataset, PodcastBatchPairSampler, load_podcast_subjects
+from subject.podcast_pair import PreprocessCollatorPair
 
 # This file first defines the model components, then the training setup.
 
 ### 
 # Flow of data in this model:
-# The data starts out as (batch_size, n_electrodes, n_timesamples)
+# The data starts out as (batch_size, n_electrodes, n_timesamples) for two subjects
 # 1. (batch_size, n_electrodes, n_timesamples) -> FFT -> (batch_size, n_electrodes, n_timebins, max_frequency_bin)
 # 2. (batch_size, n_electrodes, n_timebins, max_frequency_bin) -> electrode transformer -> (batch_size, n_timebins, d_model)
 # 3. (batch_size, n_timebins, d_model) -> time transformer -> (batch_size, 1, n_timebins, d_model)
-# loss function: compare the output of the time transformer on half of electrodes 
-#   to the output of the electrode transformer on the other half on the next timestep, using a contrastive loss
+# loss function: compare the output of the time transformer on subject A 
+#   to the output of the electrode transformer on subject B at the same time point, using a contrastive loss
 ###
 
 
@@ -171,8 +168,8 @@ class OriginalModel(BFModule):
 
 
 ### DEFINING THE TRAINING SETUP ###
-@register("andrii0_podcast")
-class Andrii0Podcast(TrainingSetup):
+@register("andrii0_podcast_pair")
+class andrii0_podcast_pair(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)
 
@@ -196,7 +193,7 @@ class Andrii0Podcast(TrainingSetup):
             n_heads=config['model']['transformer']['n_heads'],
             dropout=config['training']['dropout']
         ).to(device, dtype=config['model']['dtype'])
-        config['model']['name'] = "AndriiOriginalModel"
+        config['model']['name'] = "AndriiOriginalPodcastPairModel"
 
         ### LOAD ELECTRODE EMBEDDINGS ###
 
@@ -229,12 +226,43 @@ class Andrii0Podcast(TrainingSetup):
             key = (subject_identifier, electrode_label)
             electrode_indices.append(self.electrode_embeddings.embeddings_map[key])
         batch['electrode_index'] = torch.tensor(electrode_indices, dtype=torch.long).unsqueeze(0).expand(batch['data'].shape[0], -1) # shape: (batch_size, n_electrodes)
+        
+        # Handle second subject
+        if 'data_b' in batch:
+            electrode_indices = []
+            subject_identifier = batch['metadata_b']['subject_identifier']
+            for electrode_label in batch['electrode_labels_b'][0]:
+                key = (subject_identifier, electrode_label)
+                electrode_indices.append(self.electrode_embeddings.embeddings_map[key])
+            batch['electrode_index_b'] = torch.tensor(electrode_indices, dtype=torch.long).unsqueeze(0).expand(batch['data_b'].shape[0], -1) # shape: (batch_size, n_electrodes)
+            
         return batch
+    
     def _preprocess_subset_electrodes(self, batch):
-        batch, selected_idx = super()._preprocess_subset_electrodes(batch, output_selected_idx=True)
         batch_size = batch['data'].shape[0]
+        n_electrodes = batch['data'].shape[1]
+        subset_n_electrodes = min(n_electrodes, self.config['training']['max_n_electrodes']) if self.config['training']['max_n_electrodes']>0 else n_electrodes
+        # Randomly subselect / permute electrodes
+        selected_idx = torch.randperm(n_electrodes)[:subset_n_electrodes]
+        batch['data'] = batch['data'][:, selected_idx]
+        if 'electrode_labels' in batch:
+            batch['electrode_labels'] = [[batch['electrode_labels'][0][i] for i in selected_idx]] * batch_size
         if 'electrode_index' in batch:
             batch['electrode_index'] = batch['electrode_index'][:, selected_idx]
+
+        # Handle second subject
+        if 'data_b' in batch:
+            batch_size = batch['data_b'].shape[0]
+            n_electrodes = batch['data_b'].shape[1]
+            subset_n_electrodes = min(n_electrodes, self.config['training']['max_n_electrodes']) if self.config['training']['max_n_electrodes']>0 else n_electrodes
+            # Randomly subselect / permute electrodes
+            selected_idx = torch.randperm(n_electrodes)[:subset_n_electrodes]
+            batch['data_b'] = batch['data_b'][:, selected_idx]
+            if 'electrode_labels_b' in batch:
+                batch['electrode_labels_b'] = [[batch['electrode_labels_b'][0][i] for i in selected_idx]] * batch_size
+            if 'electrode_index_b' in batch:
+                batch['electrode_index_b'] = batch['electrode_index_b'][:, selected_idx]
+
         return batch
     
     # All of these will be applied to the batch before it is passed to the model
@@ -251,26 +279,31 @@ class Andrii0Podcast(TrainingSetup):
 
     def calculate_pretrain_loss(self, batch, output_accuracy=True):
         # INPUT:
-        #   batch['data'] shape: (batch_size, n_electrodes, n_timesamples)
-        #   batch['electrode_index'] shape: (batch_size, n_electrodes)
-        #   batch['metadata']: dictionary containing metadata like the subject identifier and trial id, sampling rate, etc.
+        #   batch['data'] shape: (batch_size, n_electrodes, n_timesamples) for subject A
+        #   batch['data_b'] shape: (batch_size, n_electrodes, n_timesamples) for subject B
+        #   batch['electrode_index'] shape: (batch_size, n_electrodes) for subject A
+        #   batch['electrode_index_b'] shape: (batch_size, n_electrodes) for subject B
+        #   batch['metadata']: dictionary containing metadata for subject A
+        #   batch['metadata_b']: dictionary containing metadata for subject B
         # OUTPUT:
         #   This function will output a dictionary of losses, with the keys being the loss names and the values being the loss values.
         #   The final loss is the mean of all the losses. Accuracies are exempt and are just used for logging.
         batch['data'] = batch['data'].to(self.model.device, dtype=self.model.dtype, non_blocking=True)
         batch['electrode_index'] = batch['electrode_index'].to(self.model.device, non_blocking=True)
+        batch['data_b'] = batch['data_b'].to(self.model.device, dtype=self.model.dtype, non_blocking=True)
+        batch['electrode_index_b'] = batch['electrode_index_b'].to(self.model.device, non_blocking=True)
         
         losses = {}
         config = self.config
         def _add_to_loss_contrastive(losses, output, target, loss_suffix):
-            # output and target shape: (batch_size, n_electrodes, n_timebins-future_bin_idx, d_model)
+            # output and target shape: (batch_size, n_timebins-future_bin_idx, d_model) - now both are time transformer outputs
             if config['training']['normalize_features']:
                 output_ = output / (torch.norm(output, dim=-1, keepdim=True) + 0.001)
                 target_ = target / (torch.norm(target, dim=-1, keepdim=True) + 0.001)
-            similarity = output_.permute(1, 2, 0, 3) @ target_.permute(1, 2, 3, 0) # shape: (n_electrodes, n_timebins-future_bin_idx, batch_size, batch_size)
+            similarity = output_.permute(1, 0, 2) @ target_.permute(1, 2, 0) # shape: (n_timebins-future_bin_idx, batch_size, batch_size)
             if config['training']['use_temperature_param']:
                 similarity = similarity * torch.minimum(torch.exp(self.model.temperature_param), torch.tensor(config['training']['max_temperature_param'], device=self.model.device, dtype=self.model.dtype))
-            expanded_arange = torch.arange(batch_size).unsqueeze(0).unsqueeze(0).repeat(output.shape[1], output.shape[2], 1).to(self.model.device, dtype=torch.long).reshape(-1)
+            expanded_arange = torch.arange(batch_size).unsqueeze(0).repeat(output.shape[1], 1).to(self.model.device, dtype=torch.long).reshape(-1)
 
             loss = torch.nn.functional.cross_entropy(similarity.view(-1, batch_size), expanded_arange)
             losses[f'contrastive_{loss_suffix}'] = loss
@@ -280,19 +313,18 @@ class Andrii0Podcast(TrainingSetup):
             return losses
         future_bin_idx = config['training']['future_bin_idx']
 
-        # Note that due to the RandomELectrodeCollator in the dataset class, the electrodes are already shuffled and cut to max_n_electrodes
         batch_size, n_electrodes, n_samples = batch['data'].shape
         
-        # Split the batch into two halves, so that we can compute the contrastive loss on the two halves
+        # Create batches for both subjects
         batch_a = {
-            'data': batch['data'][:, :n_electrodes//2, :],
-            'electrode_index': batch['electrode_index'][:, :n_electrodes//2],
+            'data': batch['data'],
+            'electrode_index': batch['electrode_index'],
             'metadata': batch['metadata'],
         }
         batch_b = {
-            'data': batch['data'][:, n_electrodes//2:, :],
-            'electrode_index': batch['electrode_index'][:, n_electrodes//2:],
-            'metadata': batch['metadata'],
+            'data': batch['data_b'],
+            'electrode_index': batch['electrode_index_b'],
+            'metadata': batch['metadata_b'],
         }
 
         embeddings_a = self.electrode_embeddings(batch_a)
@@ -300,12 +332,24 @@ class Andrii0Podcast(TrainingSetup):
         electrode_transformed_data_a, time_transformed_data_a = self.model(batch_a, embeddings_a) # shape: (batch_size, n_electrodes + 1, n_timebins, d_model), (batch_size, 1, n_timebins, d_model)
         electrode_transformed_data_b, time_transformed_data_b = self.model(batch_b, embeddings_b) # shape: (batch_size, n_electrodes + 1, n_timebins, d_model), (batch_size, 1, n_timebins, d_model)
 
-        # add two symmetric loss components (for the electrode)
-        losses = _add_to_loss_contrastive(losses, time_transformed_data_a[:, :, :-future_bin_idx], electrode_transformed_data_b[:, :1, future_bin_idx:], 'a')
-        losses = _add_to_loss_contrastive(losses, time_transformed_data_b[:, :, :-future_bin_idx], electrode_transformed_data_a[:, :1, future_bin_idx:], 'b')
+        # Extract time transformer outputs (remove the extra dimension)
+        time_output_a = time_transformed_data_a.squeeze(1)  # shape: (batch_size, n_timebins, d_model)
+        time_output_b = time_transformed_data_b.squeeze(1)  # shape: (batch_size, n_timebins, d_model)
+
+        # NEW: Compare time transformer outputs instead of time vs electrode
+        # Person A's time transformer predicts Person B's time transformer output
+        if future_bin_idx == 0:
+            # When predicting current time bin, use all time bins for both tensors
+            losses = _add_to_loss_contrastive(losses, time_output_a, time_output_b, 'a')
+            # Person B's time transformer predicts Person A's time transformer output  
+            losses = _add_to_loss_contrastive(losses, time_output_b, time_output_a, 'b')
+        else:
+            # When predicting future time bins, use offset slicing
+            losses = _add_to_loss_contrastive(losses, time_output_a[:, :-future_bin_idx], time_output_b[:, future_bin_idx:], 'a')
+            # Person B's time transformer predicts Person A's time transformer output  
+            losses = _add_to_loss_contrastive(losses, time_output_b[:, :-future_bin_idx], time_output_a[:, future_bin_idx:], 'b')
 
         return losses
-
 
     def generate_frozen_features(self, batch):
         # INPUT:
@@ -329,42 +373,75 @@ class Andrii0Podcast(TrainingSetup):
 
     def load_dataloaders(self):
         """
-        Load dataloaders for single-subject podcast training.
+        Load dataloaders for paired podcast training.
         Uses temporal block splitting to avoid temporal contamination.
         """
         config = self.config
-
-        # Step 1: Load datasets
-        datasets = []
-        for subject_identifier, trial_id in config['training']['train_subject_trials']:
-            if self.verbose: log(f"loading dataset for {subject_identifier}_{trial_id}...", indent=1, priority=1)
-            datasets.append(
-                SubjectTrialDataset(
-                    self.all_subjects[subject_identifier], 
-                    trial_id, 
-                    int(config['model']['context_length'] * self.all_subjects[subject_identifier].get_sampling_rate(trial_id)), 
-                    dtype=config['training']['data_dtype'], 
-                    output_metadata=True,
-                    output_electrode_labels=True
-                )
-            )
-            if self.verbose: log(f"finished loading dataset for {subject_identifier}_{trial_id}", indent=1, priority=1)
-
-        # Step 2: TEMPORAL BLOCK SPLITTING (not random!)
+        
+        # Step 1: Generate all possible subject pairs
+        train_subject_trials = config['training']['train_subject_trials']
+        eval_subject_trials = config['training']['eval_subject_trials']
+        
+        # Create all possible non-self pairs
+        train_subject_pairs = []
+        for i, (subject_a_id, trial_a_id) in enumerate(train_subject_trials):
+            for j, (subject_b_id, trial_b_id) in enumerate(train_subject_trials):
+                if i < j:  # Avoid duplicates and self-pairs
+                    train_subject_pairs.append((subject_a_id, subject_b_id))
+        
+        eval_subject_pairs = []
+        for i, (subject_a_id, trial_a_id) in enumerate(eval_subject_trials):
+            for j, (subject_b_id, trial_b_id) in enumerate(eval_subject_trials):
+                if i < j:  # Avoid duplicates and self-pairs
+                    eval_subject_pairs.append((subject_a_id, subject_b_id))
+        
+        if self.verbose:
+            log(f"Generated {len(train_subject_pairs)} training pairs and {len(eval_subject_pairs)} evaluation pairs")
+        
+        # Step 2: Create paired datasets
         train_datasets = []
         test_datasets = []
-        for dataset in datasets:
-            train_size = int(len(dataset) * (1 - config['training']['p_test']))
-            # Use Subset for temporal splits (first 80% train, last 20% test)
-            train_dataset = torch.utils.data.Subset(dataset, range(train_size))
-            test_dataset = torch.utils.data.Subset(dataset, range(train_size, len(dataset)))
+        
+        for subject_a_id, subject_b_id in train_subject_pairs:
+            if self.verbose: 
+                log(f"Creating paired dataset: {subject_a_id} + {subject_b_id}", indent=1, priority=1)
+            
+            subject_a = self.all_subjects[subject_a_id]
+            subject_b = self.all_subjects[subject_b_id]
+            
+            # Calculate window size
+            window_size = int(config['model']['context_length'] * subject_a.get_sampling_rate())
+            
+            # Create paired dataset
+            dataset = PodcastTrialPairDataset(
+                subject_a, subject_b, window_size,
+                dtype=config['training']['data_dtype'],
+                output_metadata=True,
+                output_electrode_labels=True
+            )
+            
+            # TEMPORAL BLOCK SPLITTING (80/20 split)
+            # Split into contiguous train/test blocks to prevent temporal leakage
+            total_windows = len(dataset)
+            train_size = int(total_windows * (1 - config['training']['p_test']))
+            
+            # Create train indices (first 80% of windows)
+            train_indices = list(range(train_size))
+            # Create test indices (last 20% of windows) 
+            test_indices = list(range(train_size, total_windows))
+            
+            train_dataset = torch.utils.data.Subset(dataset, train_indices)
+            test_dataset = torch.utils.data.Subset(dataset, test_indices)
             
             train_datasets.append(train_dataset)
             test_datasets.append(test_dataset)
             
             if self.verbose:
-                log(f"Temporal split: train={len(train_dataset)} windows, test={len(test_dataset)} windows", indent=1, priority=1)
-        
+                log(f"Finished creating paired dataset: {len(dataset)} windows (train: {len(train_indices)}, test: {len(test_indices)})", indent=1, priority=1)
+
+        if not train_datasets:
+            raise ValueError("No valid paired datasets found. Make sure train_subject_pairs is properly configured.")
+
         train_dataset = ConcatDataset(train_datasets)
         test_dataset = ConcatDataset(test_datasets)
 
@@ -374,21 +451,21 @@ class Andrii0Podcast(TrainingSetup):
         
         train_dataloader = DataLoader(
             train_dataset,
-            batch_sampler=SubjectBatchSampler(
+            batch_sampler=PodcastBatchPairSampler(
                 [len(ds) for ds in train_datasets],
                 batch_size=config['training']['batch_size'],
                 shuffle=True
             ),
             num_workers=num_workers_dataloader_train,
-            pin_memory=True,  # Pin memory for faster GPU transfer
-            persistent_workers=True,  # Keep worker processes alive between iterations
+            pin_memory=True,  # pin memory for faster GPU transfer
+            persistent_workers=True,  # keep worker processes alive between iterations
             prefetch_factor=config['cluster']['prefetch_factor'],
-            collate_fn=PreprocessCollator(preprocess_functions=self.get_preprocess_functions(pretraining=True))
+            collate_fn=PreprocessCollatorPair(preprocess_functions=self.get_preprocess_functions(pretraining=True))
         )
         
         test_dataloader = DataLoader(
             test_dataset,
-            batch_sampler=SubjectBatchSampler(
+            batch_sampler=PodcastBatchPairSampler(
                 [len(ds) for ds in test_datasets],
                 batch_size=config['training']['batch_size'],
                 shuffle=False  # No shuffling for test set
@@ -397,11 +474,11 @@ class Andrii0Podcast(TrainingSetup):
             pin_memory=True,
             persistent_workers=True,
             prefetch_factor=config['cluster']['prefetch_factor'],
-            collate_fn=PreprocessCollator(preprocess_functions=self.get_preprocess_functions(pretraining=True))
+            collate_fn=PreprocessCollatorPair(preprocess_functions=self.get_preprocess_functions(pretraining=True))
         )
-
+        
         self.train_dataloader = train_dataloader
         self.test_dataloader = test_dataloader
         
         if self.verbose:
-            log(f"Created dataloaders: train={len(train_dataset)} samples, test={len(test_dataset)} samples")
+            log(f"Created dataloaders: train={len(train_dataset)} samples, test={len(test_dataset)} samples") 

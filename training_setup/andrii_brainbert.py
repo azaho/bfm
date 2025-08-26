@@ -212,7 +212,7 @@ class BrainBERT(BFModule):
 
 ### DEFINING THE TRAINING SETUP ###
 @register("andrii_brainbert")
-class AndriiBrainbert(TrainingSetup):
+class andrii_brainbert(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)
 

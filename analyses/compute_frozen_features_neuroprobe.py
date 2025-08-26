@@ -24,6 +24,7 @@ from training_setup.training_config import (
     update_dir_name,
     update_random_seed,
 )
+from training_setup.registry import resolve
 from utils.muon_optimizer import Muon
 
 
@@ -87,13 +88,8 @@ electrode_subset = neuroprobe_config.NEUROPROBE_LITE_ELECTRODES[f"btbank{subject
 ### LOAD MODEL ###
 
 # Import the training setup class dynamically based on config
-try:
-    setup_module = __import__(f'training_setup.{config["training"]["setup_name"].lower()}', fromlist=[config["training"]["setup_name"]])
-    setup_class = getattr(setup_module, config["training"]["setup_name"])
-    training_setup = setup_class(all_subjects, config, verbose=True)
-except (ImportError, AttributeError) as e:
-    print(f"Could not load training setup '{config['training']['setup_name']}'. Are you sure the filename and the class name are the same and correspond to the parameter? Error: {str(e)}")
-    exit()
+training_setup_name = config["training"]["setup_name"] # Name in registry
+training_setup = resolve(training_setup_name, all_subjects=all_subjects, config=config, verbose=True)
 
 log(f"Loading model...", priority=0)
 training_setup.initialize_model()
