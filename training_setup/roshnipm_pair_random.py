@@ -181,7 +181,7 @@ class OriginalModel(BFModule):
 
 ### DEFINING THE TRAINING SETUP ###
 
-class roshnipm_pair_nocommon(TrainingSetup):
+class roshnipm_pair_random(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)
 
@@ -513,21 +513,14 @@ class roshnipm_pair_nocommon(TrainingSetup):
         if not paired_datasets:
             raise ValueError("No valid paired datasets found. Make sure subjects in train_subject_trials watch the same movies.")
 
-        # Step 2: TEMPORAL BLOCK SPLITTING (not random!)
+        # Step 2: Randomly split into train and test
         train_datasets = []
         test_datasets = []
         for dataset in paired_datasets:
             train_size = int(len(dataset) * (1 - config['training']['p_test']))
-            # Use Subset for temporal splits (first 80% train, last 20% test)
-            train_dataset = torch.utils.data.Subset(dataset, range(train_size))
-            test_dataset = torch.utils.data.Subset(dataset, range(train_size, len(dataset)))
-            
+            train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, len(dataset) - train_size])
             train_datasets.append(train_dataset)
             test_datasets.append(test_dataset)
-            
-            if self.verbose:
-                log(f"Temporal split: train={len(train_dataset)} windows, test={len(test_dataset)} windows", indent=1, priority=1)
-        
         train_dataset = ConcatDataset(train_datasets)
         test_dataset = ConcatDataset(test_datasets)
 

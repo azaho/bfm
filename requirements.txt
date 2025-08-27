@@ -19,3 +19,6 @@ torchvision
 torchaudio
 wandb
 ipykernel
+h5py
+mne
+mne_bids
