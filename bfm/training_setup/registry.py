@@ -80,7 +80,9 @@ def list_aliases() -> Dict[str, str]:
 def autodiscover():
     """Auto-discover and import all training setups."""
     global _populated
+    pkg_name = str(__package__)
+    pkg = importlib.import_module(pkg_name)
     if not _populated:
-        for m in pkgutil.walk_packages(__path__, prefix=__name__ + "."):
+        for m in pkgutil.walk_packages(pkg.__path__, prefix=pkg.__name__ + "."):
             importlib.import_module(m.name)
         _populated = True

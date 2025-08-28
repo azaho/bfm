@@ -30,7 +30,7 @@ from training_setup.training_config import (
 ### LOADING CONFIGS ###
 
 RUNS_DIR='runs'
-TRAINING_SETUP_DIR='training_setup'
+TRAINING_SETUP_DIR='bfm/training_setup'
 TRAINING_SETUP_IMPORT='training_setup'
 
 config = get_default_config(random_string="TEMP", wandb_project="") # Outputs a dictionary, see utils/training_config.py for how it looks like

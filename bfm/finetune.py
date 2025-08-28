@@ -175,7 +175,7 @@ training_setup = resolve(training_setup_name, all_subjects=all_subjects, config=
 
 # Save a copy of the training setup file for reproducibility
 import shutil
-setup_file = f'training_setup/{training_setup_name}.py'
+setup_file = f'bfm/training_setup/{training_setup_name}.py'
 training_setup_dir = os.path.join('runs/data', full_dir_name, 'training_setup')
 os.makedirs(training_setup_dir, exist_ok=True)
 shutil.copy2(setup_file, training_setup_dir)    
