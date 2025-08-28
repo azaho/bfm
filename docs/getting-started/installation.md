@@ -27,8 +27,9 @@ cd bfm
 python -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
-pip install -r requirements.txt
+pip install -e .[dev]
 ```
+
 3. Copy over the contents of `.env.example` to `.env`.
 4. If you're not on Openmind, you'll need to download the [BrainTreebank](https://braintreebank.dev/) dataset (~130 GB). If you're on Openmind, you are all set! The dataset is already available in the `/om2/user/<your_username>/braintreebank` directory.
     - Download this script: [braintreebank_download_extract.py](https://github.com/azaho/neuroprobe/blob/main/braintreebank_download_extract.py) from the [Neuroprobe](https://github.com/azaho/neuroprobe) repository.

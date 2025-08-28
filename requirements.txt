@@ -1,8 +1,0 @@
--e . # Download bfm in editable mode
-beautifulsoup4
-mkdocs
-mkdocs-material
-mkdocs-jupyter
-networkx
-ipykernel
-jupyter
