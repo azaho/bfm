@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from model.BFModule import BFModule
-from training_setup.training_config import get_default_config
+from training.training_config import get_default_config
 
 class SpectrogramPreprocessor(BFModule):
     def __init__(self, spectrogram_parameters=None, output_dim=-1):
@@ -33,13 +33,14 @@ class SpectrogramPreprocessor(BFModule):
         self.output_transform = nn.Identity() if self.output_dim == -1 else nn.Linear(self.max_frequency_bin, self.output_dim)
 
         if self.spectrogram_parameters['remove_line_noise']:
-            self.line_noise_freqs = [50, 60]
-            self.line_noise_margin = 2.0
-            self.line_noise_mask = self.line_noise_mask(self.line_noise_freqs, self.line_noise_margin)
+            example_sampling_rate = 2048
+            nperseg = round(self.spectrogram_parameters['tperseg'] * example_sampling_rate)
+            freq_bins = torch.fft.rfftfreq(nperseg, d=1.0/example_sampling_rate) # Calculate frequency bins (in Hz)
+            self.line_noise_mask = self.compute_line_noise_mask(freq_bins=freq_bins, line_noise_freqs=[50,60], margin=2.0)
         else:
             self.line_noise_mask = None
 
-    def line_noise_mask(self, freq_bins, line_noise_freqs=[50, 60], margin=2.0):
+    def compute_line_noise_mask(self, freq_bins, line_noise_freqs=[50, 60], margin=2.0):
         # 60 Hz and its harmonics
         line_noise_mask = torch.zeros(freq_bins.shape[0], device=freq_bins.device, dtype=torch.bool)
         for freq in line_noise_freqs:
@@ -103,6 +104,7 @@ class SpectrogramPreprocessor(BFModule):
             x = x / (x.std(dim=[0, 2], keepdim=True) + 1e-5)
 
         if self.line_noise_mask is not None: # If removing line noise, set line noise to 0
+            self.line_noise_mask = self.line_noise_mask.to(x.device)
             x = x.masked_fill(self.line_noise_mask, 0)
 
         # Transform to match expected output dimension
