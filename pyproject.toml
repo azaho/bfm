@@ -1,44 +1,49 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "bfm"
 version = "0.1.0"
-description = "Brain Foundation Models"
+description = "Tools for Brain Foundation Models"
 authors = [
     { name = "Andrii Zahorodnii", email = "zaho@mit.edu" }
 ]
 license = { file = "LICENSE" }
 readme = "README.md"
-requires-python = ">=3.13"
 
 dependencies = [
-    "clip>=0.2.0",
-    "mne>=1.10.1",
-    "moviepy>=2.2.1",
-    "numpy>=2.3.2",
-    "opencv-python>=4.11.0.86",
-    "pillow>=11.3.0",
-    "psutil>=7.0.0",
-    "pynwb>=3.1.2",
-    "python-dotenv>=1.1.1",
-    "scikit-learn>=1.7.1",
-    "torch>=2.8.0",
-    "torchaudio>=2.8.0",
-    "tqdm>=4.67.1",
-    "transformers>=4.55.4",
-    "wandb>=0.21.1",
+    "h5py",
+    "joblib",
+    "librosa",
+    "matplotlib",
+    "numpy",
+    "pandas",
+    "psutil",
+    "python-dotenv",
+    "scikit-learn",
+    "scipy",
+    "seaborn",
+    "torch",
+    "torchvision",
+    "torchaudio",
+    "wandb",
+    "mne",
+    "tqdm",
+    "mne_bids"
 ]
 
 [project.optional-dependencies]
 dev = [
-    "ipykernel>=6.30.1",
-    "mkdocs>=1.6.1",
-    "mkdocs-jupyter>=0.25.1",
-    "mkdocs-material>=9.6.18",
-    "pytest>=8.4.1",
-    "ruff>=0.12.10",
+    "requests",
+    "beautifulsoup4",
+    "ipykernel",
+    "jupyter",
+    "mkdocs",
+    "mkdocs-jupyter",
+    "mkdocs-material", 
+    "pytest",
+    "ruff",
 ]
 
 [tool.setuptools.packages.find]
