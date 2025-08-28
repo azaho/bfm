@@ -9,7 +9,8 @@ description = "Tools for Brain Foundation Models"
 authors = [
     { name = "Andrii Zahorodnii", email = "zaho@mit.edu" }
 ]
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 readme = "README.md"
 
 dependencies = [
@@ -47,4 +48,4 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-where = ["bfm"]
+where = ["."]
