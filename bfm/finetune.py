@@ -10,7 +10,7 @@ import torch
 from torch.amp import autocast
 from torch.optim.lr_scheduler import ChainedScheduler
 
-from optim.builders import build_optimizers, build_schedulers
+from optim import build_optimizers, build_schedulers
 from subject.dataset import load_subjects
 from evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
 from training_setup.registry import resolve
@@ -170,12 +170,12 @@ all_subjects = load_subjects(config['training']['train_subject_trials'],
 ### LOADING TRAINING SETUP ###
 
 # Import the training setup class dynamically based on config
-training_setup_name = config["training"]["setup_name"] # Name in registry
-training_setup = resolve(training_setup_name, all_subjects=all_subjects, config=config, verbose=True)
+setup_name = config["training"]["setup_name"] # Name in registry
+training_setup = resolve(setup_name, all_subjects=all_subjects, config=config, verbose=True)
 
 # Save a copy of the training setup file for reproducibility
 import shutil
-setup_file = f'bfm/training_setup/{training_setup_name}.py'
+setup_file = f'bfm/training_setup/{setup_name}.py'
 training_setup_dir = os.path.join('runs/data', full_dir_name, 'training_setup')
 os.makedirs(training_setup_dir, exist_ok=True)
 shutil.copy2(setup_file, training_setup_dir)    

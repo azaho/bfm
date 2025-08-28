@@ -25,7 +25,7 @@ from training_setup.training_config import (
     update_random_seed,
 )
 from training_setup.registry import resolve
-from optim.muon import Muon
+from optim import Muon
 
 
 RUNS_DIR='runs/data'

@@ -24,6 +24,16 @@ def _zeroth_power_via_newtonschulz5(
 
 
 def orthogonalize(G: torch.Tensor) -> torch.Tensor:
+    """
+    Orthogonalize G using the Newton-Schulz zeroth-power iteration
+    (iterative inverse square root method).
+    
+    Args:
+        G (torch.Tensor): Input tensor to orthogonalize.
+
+    Returns:
+        torch.Tensor: Orthogonalized tensor, ≈ G (GᵀG)^(-1/2).
+    """
     return _zeroth_power_via_newtonschulz5(G, steps=10, eps=1e-8, abc=(3, -3.2, 1.2))
 
 
