@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, ConcatDataset
 
-from training_setup.registry import register
-from training_setup.training_config import log
-from training_setup.training_setup import TrainingSetup
+from training.setup_registry import register
+from training.training_config import log
+from training.training_setup import TrainingSetup
 
 from model.BFModule import BFModule
 from model.transformer_implementation import Transformer

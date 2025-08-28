@@ -14,7 +14,7 @@ from evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
 from subject.dataset import load_subjects
 from torch.optim.lr_scheduler import ChainedScheduler
 from torch.utils.data import DataLoader
-from training_setup.training_config import (
+from training.training_config import (
     convert_dtypes,
     get_default_config,
     log,
@@ -24,8 +24,8 @@ from training_setup.training_config import (
     update_dir_name,
     update_random_seed,
 )
-from training_setup.registry import resolve
-from optim import Muon
+from training.setup_registry import resolve
+from training.optimizer.builders import build_optimizers, build_schedulers
 
 
 RUNS_DIR='runs/data'

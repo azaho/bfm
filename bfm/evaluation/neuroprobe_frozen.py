@@ -12,7 +12,7 @@ import torch
 import torch.cuda
 from torch.utils.data import DataLoader
 
-from training_setup.training_config import log
+from training.training_config import log
 from evaluation.neuroprobe.train_test_splits import generate_splits_SS_SM
 import evaluation.neuroprobe.config as neuroprobe_config
 from evaluation.neuroprobe.datasets import BrainTreebankSubjectTrialBenchmarkDataset

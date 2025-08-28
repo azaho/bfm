@@ -12,7 +12,7 @@ import torch
 from torch.utils.data import DataLoader, ConcatDataset
 
 from subject.dataset import SubjectTrialDataset, PreprocessCollator, SubjectBatchSampler
-from training_setup.training_config import log, convert_dtypes
+from training.training_config import log, convert_dtypes
 from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
 from model.electrode_embedding import (
     ElectrodeEmbedding_Learned,

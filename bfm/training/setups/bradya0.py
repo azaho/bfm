@@ -8,8 +8,8 @@ import torch
 import torch.nn as nn
 
 from model.BFModule import BFModule
-from training_setup.training_setup import TrainingSetup
-from training_setup.registry import register
+from training.training_setup import TrainingSetup
+from training.setup_registry import register
 
 """
 Flow of data in this model:

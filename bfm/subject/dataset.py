@@ -8,7 +8,7 @@ from torch.utils.data import Dataset, ConcatDataset, DataLoader
 from subject.braintreebank import BrainTreebankSubject
 from subject.mgh2024 import MGH2024Subject
 from subject.podcast import PodcastSubject
-from training_setup.training_config import log
+from training.training_config import log
 
 
 class SubjectTrialDataset(Dataset):
