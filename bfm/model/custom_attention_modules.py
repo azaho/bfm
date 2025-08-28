@@ -2,7 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from utils.muon_optimizer import orthogonalize
+from op.muon_optimizer import orthogonalize
 from model.BFModule import BFModule
 from model.transformer_implementation import apply_rotary_emb, CausalSelfAttention, Block, Transformer, Rotary
 
