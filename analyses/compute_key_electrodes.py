@@ -7,7 +7,7 @@ import gc
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from utils.muon_optimizer import Muon
+from optim.muon import Muon
 from subject.dataset import load_subjects
 from evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
 from training_setup.training_config import log, update_dir_name, update_random_seed, parse_config_from_args, get_default_config, parse_subject_trials_from_config, convert_dtypes
