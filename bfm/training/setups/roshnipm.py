@@ -10,8 +10,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from training_setup.registry import register
-from training_setup.training_setup import TrainingSetup
+from training.setup_registry import register
+from training.training_setup import TrainingSetup
 from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
 
 class LinearModel(nn.Module):

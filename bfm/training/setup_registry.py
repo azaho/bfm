@@ -3,7 +3,7 @@ Registry for training configs.
 
 Lets you register a method under a string key and resolve it later:
 ```python
-    from training_setup.registry import register, resolve
+    from training.setup_registry import register, resolve
 
     @register("sample", "default")
     class SampleSetup(TrainingSetup):
@@ -16,7 +16,7 @@ import importlib
 import pkgutil
 from functools import cache
 from typing import Callable, List, Dict
-from training_setup.training_setup import TrainingSetup
+from training.training_setup import TrainingSetup
 
 Factory = Callable[..., TrainingSetup]
 

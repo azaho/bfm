@@ -11,9 +11,9 @@ import gc
 
 from eval_utils import *
 
-from training_setup.training_config import log, parse_subject_trials_from_config, unconvert_dtypes, convert_dtypes
+from training.training_config import log, parse_subject_trials_from_config, unconvert_dtypes, convert_dtypes
 from subject.dataset import load_subjects
-from training_setup.registry import resolve
+from training.setup_registry import resolve
 
 splits_options = [
     'SS_SM', # same subject, same trial

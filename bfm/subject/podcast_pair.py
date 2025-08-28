@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import Dataset
 from subject.podcast import PodcastSubject
 from subject.dataset import SubjectTrialDataset
-from training_setup.training_config import log
+from training.training_config import log
 import random
 import numpy as np
 
