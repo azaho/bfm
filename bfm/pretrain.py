@@ -3,6 +3,7 @@ import json
 import time
 import gc
 import shutil
+import inspect
 
 import numpy as np
 import torch
@@ -68,11 +69,10 @@ setup_name = config["training"]["setup_name"] # Name in registry
 training_setup = resolve(setup_name, all_subjects=all_subjects, config=config, verbose=True)
 
 # Save a copy of the training setup file for reproducibility
-
-setup_file = f'{TRAINING_SETUP_DIR}/{setup_name}.py'
+setup_file = str(inspect.getsourcefile(training_setup.__class__)) 
 training_setup_copy_dir = os.path.join(RUNS_DIR, 'data', dir_name, 'training_setup')
 os.makedirs(training_setup_copy_dir, exist_ok=True)
-shutil.copy2(setup_file, training_setup_copy_dir)
+shutil.copy2(setup_file, training_setup_copy_dir) 
 
 ### LOAD MODEL ###
 
