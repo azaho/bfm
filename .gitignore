@@ -4,9 +4,11 @@ __pycache__/
 **/__pycache__/
 .env
 
+# Not committing any error or output files or figures
 *.err
 *.out
 *.pdf
+*.png
 
 runs/data/
 runs/logs/
@@ -20,8 +22,6 @@ _*/
 # MkDocs build output
 site/
 
-# Not committing any figures
-# **/*.pdf
-# **/*.png
-
+# Not committing any package build files
 *.egg-info/
+**/*.egg-info/
