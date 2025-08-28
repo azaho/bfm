@@ -24,12 +24,12 @@ Please see the video at this link for onboarding (requires an MIT zoom log in):
 
 ## Setup instructions
 
-1. First, create a virtual environment and install the packages:
+1. First, create a virtual environment and install the package:
 ```sh
 python -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
-pip install -r requirements.txt
+pip install -e .[dev]
 ```
 
 2. Copy over the contents of `.env.example` to `.env` and correct all variables like `DATASET_ROOT_DIR` to point to the root directories of the datasets on your machine. To start, you will only need the BrainTreebank dataset. If you need, follow the [Neuroprobe repository's](https://github.com/azaho/neuroprobe) instructions for how to download the BrainTreebank dataset and correct the `.env` variable `BRAIN_TREEBANK_ROOT_DIR` to point to the root directory of the BrainTreebank dataset on your machine. 
