@@ -14,7 +14,7 @@ import wandb
 from dotenv import load_dotenv
 load_dotenv() # Load environment variables from .env file
 
-from utils.muon_optimizer import Muon
+from optim.builders import build_optimizers, build_schedulers
 from subject.dataset import load_subjects
 from evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
 from training_setup.registry import resolve
@@ -84,30 +84,9 @@ training_setup.load_dataloaders()
 
 ### LOAD OPTIMIZER AND LEARNING RATE SCHEDULER ###
 
-all_params = training_setup.model_parameters(verbose=True)
-
-optimizers = []
-if config['training']['optimizer'] == 'Muon': # Muon is like the newest and coolest optimizer that works better than Adam
-    # Muon only supports matrix parameters, so we use adam for the other parameters
-    matrix_params = [p for p in all_params if p.ndim == 2] 
-    other_params = [p for p in all_params if p.ndim != 2]
-    optimizers.append(Muon(matrix_params, lr=config['training']['learning_rate'], momentum=0.95, nesterov=True, backend='newtonschulz5', backend_steps=5, weight_decay=config['training']['weight_decay']))
-    if len(other_params) > 0:
-        optimizers.append(torch.optim.AdamW(other_params, lr=config['training']['learning_rate'], weight_decay=config['training']['weight_decay'], betas=(0.9, 0.95)))
-else:
-    optimizers = [torch.optim.AdamW(all_params, lr=config['training']['learning_rate'], weight_decay=config['training']['weight_decay'], betas=(0.9, 0.95))]
-
-schedulers = [] # Learning rate scheduling (warmup and falloff, both optional)
-for optimizer in optimizers:
-    total_steps = config['training']['n_epochs'] * len(training_setup.train_dataloader)
-    warmup = (torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1e-5, end_factor=1.0, total_iters=config['training']['warmup_steps']) if config['training']['warmup_steps'] > 0
-             else None)
-    main = (torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1, end_factor=1e-5, total_iters=total_steps) if config['training']['lr_schedule'] == 'linear' 
-        else torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps) if config['training']['lr_schedule'] == 'cosine'
-        else None)
-    if warmup is not None and main is not None: schedulers.append(ChainedScheduler([warmup, main]))
-    elif warmup is not None: schedulers.append(warmup)
-    elif main is not None: schedulers.append(main)
+model_params = training_setup.model_parameters(verbose=True)
+optimizers = build_optimizers(model_params, config)
+schedulers = build_schedulers(optimizers, config, training_setup)
 
 # Below for all the tasks in Neuroprobe
 # eval_tasks = ['frame_brightness', 'global_flow', 'local_flow', 'global_flow_angle', 'local_flow_angle', 'face_num', 'volume', 'pitch', 'delta_volume', 
