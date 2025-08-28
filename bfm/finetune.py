@@ -2,7 +2,8 @@ import gc
 import argparse
 import time
 import os
-import json
+import inspect
+import shutil
 
 import wandb
 import numpy as np
@@ -174,8 +175,7 @@ setup_name = config["training"]["setup_name"] # Name in registry
 training_setup = resolve(setup_name, all_subjects=all_subjects, config=config, verbose=True)
 
 # Save a copy of the training setup file for reproducibility
-import shutil
-setup_file = f'bfm/training_setup/{setup_name}.py'
+setup_file = str(inspect.getsourcefile(training_setup.__class__)) 
 training_setup_dir = os.path.join('runs/data', full_dir_name, 'training_setup')
 os.makedirs(training_setup_dir, exist_ok=True)
 shutil.copy2(setup_file, training_setup_dir)    
