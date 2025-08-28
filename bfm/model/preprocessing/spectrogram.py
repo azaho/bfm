@@ -35,7 +35,7 @@ class SpectrogramPreprocessor(BFModule):
         if self.spectrogram_parameters['remove_line_noise']:
             example_sampling_rate = 2048
             nperseg = round(self.spectrogram_parameters['tperseg'] * example_sampling_rate)
-            freq_bins = torch.fft.rfftfreq(nperseg, d=1.0/example_sampling_rate) # Calculate frequency bins (in Hz)
+            freq_bins = torch.fft.rfftfreq(nperseg, d=1.0/example_sampling_rate)[:self.max_frequency_bin] # Calculate frequency bins (in Hz)
             self.line_noise_mask = self.compute_line_noise_mask(freq_bins=freq_bins, line_noise_freqs=[50,60], margin=2.0)
         else:
             self.line_noise_mask = None
@@ -105,7 +105,7 @@ class SpectrogramPreprocessor(BFModule):
 
         if self.line_noise_mask is not None: # If removing line noise, set line noise to 0
             self.line_noise_mask = self.line_noise_mask.to(x.device)
-            x = x.masked_fill(self.line_noise_mask, 0)
+            x = x.masked_fill(self.line_noise_mask.view(1, 1, 1, -1), 0)
 
         # Transform to match expected output dimension
         x = self.output_transform(x)  # shape: (batch_size, n_electrodes, n_timebins, output_dim)
