@@ -7,7 +7,7 @@ import torch
 
 from bfm.training.setup_registry import setups
 from bfm.training.training_setup import TrainingSetup
-from model.encoders.convolution import ConvolutionPreprocessor
+from bfm.model.encoders.convolution import ConvolutionPreprocessor
 
 @setups.register("brainwave")
 class BrainWave(TrainingSetup):

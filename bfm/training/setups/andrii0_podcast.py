@@ -7,10 +7,10 @@ from bfm.training.training_config import log
 from bfm.training.setup_registry import setups
 from bfm.subject.datasets.dataset import SubjectTrialDataset, SubjectBatchSampler, PreprocessCollator
 
-from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
-from model.base import BFModule
-from model.modules.transformer_implementation import Transformer
-from model.encoders.electrode_embedding import (
+from bfm.model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
+from bfm.model.base import BFModule
+from bfm.model.modules.transformer_implementation import Transformer
+from bfm.model.encoders.electrode_embedding import (
     ElectrodeEmbedding_Learned, 
     ElectrodeEmbedding_NoisyCoordinate, 
     ElectrodeEmbedding_Learned_CoordinateInit, 
@@ -181,7 +181,7 @@ class andrii0_podcast(TrainingSetup):
             This function initializes the model.
 
             It must set the self.model_components dictionary to a dictionary of the model components, like
-            {"model": model, "electrode_embeddings": electrode_embeddings}, where model and electrode_embeddings are PyTorch modules (those classes must inherit from model.base)
+            {"model": model, "electrode_embeddings": electrode_embeddings}, where model and electrode_embeddings are PyTorch modules (those classes must inherit from bfm.model.base)
         """
         config = self.config
         device = config['device']

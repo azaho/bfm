@@ -147,7 +147,7 @@ def get_features(x, fs=2048, max_batch_size=12):
     idx_start = 0        # pointer into out_array
 
     if laplacian_rereferencing:
-        from models.preprocessing.laplacian_rereferencing import laplacian_rereference_neural_data
+        from bfm.models.preprocessing.laplacian_rereferencing import laplacian_rereference_neural_data
         log("Laplacian rereferencing...", priority=3, indent=2)
         x_torch = torch.FloatTensor(x)
         x_torch, _ = laplacian_rereference_neural_data(x_torch, subject.electrode_labels, remove_non_laplacian=False)

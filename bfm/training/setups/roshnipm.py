@@ -12,7 +12,7 @@ import torch.nn.functional as F
 
 from bfm.training.setup_registry import setups
 from bfm.training.training_setup import TrainingSetup
-from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
+from bfm.model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
 
 class LinearModel(nn.Module):
     def __init__(self, bin_size, d_bin):

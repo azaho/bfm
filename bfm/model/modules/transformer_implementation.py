@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from bfm.training.optimizer.muon import orthogonalize
-from model.base import BFModule
+from bfm.model.base import BFModule
 
 # XXX remove hard coded data type
 

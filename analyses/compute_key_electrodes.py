@@ -15,7 +15,7 @@ from torch.optim.lr_scheduler import ChainedScheduler
 from bfm.training.training_config import convert_dtypes, unconvert_dtypes, parse_subject_trials_from_config
 from torch.utils.data import DataLoader
 from bfm.training.training_setup import TrainingSetup
-from model.modules.custom_attention_modules import (
+from bfm.model.modules.custom_attention_modules import (
     CausalSelfAttentionWithReturn,
     BlockWithReturn,
     TransformerWithReturn,
