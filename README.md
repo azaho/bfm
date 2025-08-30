@@ -36,7 +36,7 @@ pip install -e .[dev]
 
 3. Now you can try pretraining a model! Will require an A100 GPU (see the [openmind.mit.edu](https://openmind.mit.edu) instructions and FAQ for how to request a node with one).
 ```sh
-python bfm/pretrain.py --training.setup_name andrii0 --cluster.cache_subjects 0 --cluster.eval_at_beginning 0
+python -m bfm.pretrain --training.setup_name andrii0 --cluster.cache_subjects 0 --cluster.eval_at_beginning 0
 ```
 
 P.S. For requesting an A100 node with enough RAM on Engaging, you might want to run
