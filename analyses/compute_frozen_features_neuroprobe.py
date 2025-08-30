@@ -17,16 +17,15 @@ from torch.utils.data import DataLoader
 from bfm.training.training_config import (
     convert_dtypes,
     get_default_config,
-    log,
     parse_config_from_args,
     parse_subject_trials_from_config,
     unconvert_dtypes,
     update_dir_name,
     update_random_seed,
 )
-from bfm.training.setup_registry import resolve
+from bfm.training.setup_registry import setups
 from bfm.training.optimizer import Muon
-
+from bfm.core.logging import log
 
 RUNS_DIR='runs/data'
 
@@ -89,7 +88,7 @@ electrode_subset = neuroprobe_config.NEUROPROBE_LITE_ELECTRODES[f"btbank{subject
 
 # Import the training setup class dynamically based on config
 training_setup_name = config["training"]["setup_name"] # Name in registry
-training_setup = resolve(training_setup_name, all_subjects=all_subjects, config=config, verbose=True)
+training_setup = setups.resolve(training_setup_name, all_subjects=all_subjects, config=config, verbose=True)
 
 log(f"Loading model...", priority=0)
 training_setup.initialize_model()

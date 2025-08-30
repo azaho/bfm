@@ -13,7 +13,7 @@ from eval_utils import *
 
 from bfm.training.training_config import log, parse_subject_trials_from_config, unconvert_dtypes, convert_dtypes
 from bfm.subject.dataset import load_subjects
-from bfm.training.setup_registry import resolve
+from bfm.training.setup_registry import setups
 
 splits_options = [
     'SS_SM', # same subject, same trial
@@ -110,7 +110,7 @@ subject = all_subjects[f"btbank{subject_id}"] # we only really have one subject,
 
 # Import the training setup class dynamically based on config
 training_setup_name = config["training"]["setup_name"] # Name in registry
-training_setup = resolve(training_setup_name, all_subjects=all_subjects, config=config, verbose=True)
+training_setup = setups.resolve(training_setup_name, all_subjects=all_subjects, config=config, verbose=True)
 
 if verbose:
     log(f"Loading model...", priority=0)
