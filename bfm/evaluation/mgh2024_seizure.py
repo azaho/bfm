@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from subject.mgh2024 import MGH2024Subject
+from bfm.subject.subjects.mgh2024 import MGH2024Subject
 
 
 class MGHSeizureDataset(torch.utils.data.Dataset):
@@ -113,7 +113,7 @@ class FrozenModelSeizureEvaluation:
 
         # Initialize evaluation datasets
         self.evaluation_datasets = {}
-        from evaluation.mgh2024_seizure import MGHSeizureDataset
+        from bfm.evaluation.mgh2024_seizure import MGHSeizureDataset
         for subject in self.subjects:
             for session_id in self.session_ids:
                 try:

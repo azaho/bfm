@@ -1,6 +1,6 @@
 import evaluation.neuroprobe.train_test_splits as neuroprobe_train_test_splits
 import evaluation.neuroprobe.config as neuroprobe_config
-from evaluation.neuroprobe.braintreebank_subject import BrainTreebankSubject
+from bfm.evaluation.neuroprobe.braintreebank_subject import BrainTreebankSubject
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
@@ -11,9 +11,9 @@ import gc
 
 from eval_utils import *
 
-from training.training_config import log, parse_subject_trials_from_config, unconvert_dtypes, convert_dtypes
-from subject.dataset import load_subjects
-from training.setup_registry import resolve
+from bfm.training.training_config import log, parse_subject_trials_from_config, unconvert_dtypes, convert_dtypes
+from bfm.subject.dataset import load_subjects
+from bfm.training.setup_registry import resolve
 
 splits_options = [
     'SS_SM', # same subject, same trial

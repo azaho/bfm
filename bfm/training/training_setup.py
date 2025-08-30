@@ -11,10 +11,10 @@ import json
 import torch
 from torch.utils.data import DataLoader, ConcatDataset
 
-from subject.dataset import SubjectTrialDataset, PreprocessCollator, SubjectBatchSampler
-from training.training_config import log, convert_dtypes
-from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
-from model.encoders.electrode_embedding import (
+from bfm.subject.datasets.dataset import SubjectTrialDataset, PreprocessCollator, SubjectBatchSampler
+from bfm.training.training_config import log, convert_dtypes
+from bfm.model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
+from bfm.model.encoders.electrode_embedding import (
     ElectrodeEmbedding_Learned,
     ElectrodeEmbedding_NoisyCoordinate,
     ElectrodeEmbedding_Learned_CoordinateInit,

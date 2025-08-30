@@ -106,7 +106,7 @@ def laplacian_rereference_batch(batch, remove_non_laplacian=True, inplace=False)
 
 
 if __name__ == "__main__":
-    from subject.braintreebank import BrainTreebankSubject
+    from bfm.subject.subjects.braintreebank import BrainTreebankSubject
     subject = BrainTreebankSubject(1, cache=False)
     print(f"Subject electrode labels (length: {len(subject.get_electrode_labels())}): ", subject.get_electrode_labels())
 
