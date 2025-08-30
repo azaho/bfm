@@ -2,7 +2,9 @@ import sys
 import importlib
 import textwrap
 
+import pytest
 
+@pytest.mark.needs_autodiscover
 def test_autodiscover_relative_default(mkpkg):
     src_registry = textwrap.dedent("""\
         from bfm.core.registry import Registry
@@ -38,6 +40,7 @@ def test_autodiscover_relative_default(mkpkg):
     assert obj1.c == 32 and obj2.c == 16
 
 
+@pytest.mark.needs_autodiscover
 def test_autodiscover_absolute(mkpkg):
     # Create a temp package pkgx.training.losses with a registered loss
     src_registry = """
@@ -68,6 +71,7 @@ def test_autodiscover_absolute(mkpkg):
     cfg = losses.resolve("focal_loss", gamma=3.3)
     assert cfg == {"gamma": 3.3}
 
+@pytest.mark.needs_autodiscover
 def test_autodiscover_is_cached(mkpkg, monkeypatch):
     """
     Count how many times importlib.import_module is called for our base package.

@@ -52,3 +52,6 @@ where = ["."]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "needs_autodiscover: marks tests that require registry autodiscovery"
+]
