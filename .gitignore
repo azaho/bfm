@@ -1,8 +1,13 @@
-*.ipynb_checkpoints/
+# Virtual environments
+venv
 .venv/
-__pycache__/
-**/__pycache__/
+
+# Environment variables
 .env
+
+# IDE
+.vscode/
+.idea/
 
 # Not committing any error or output files or figures
 *.err
@@ -10,18 +15,22 @@ __pycache__/
 *.pdf
 *.png
 
+# Output directories
 runs/data/
 runs/logs/
 runs/wandb/
 runs/scripts/*
 runs/analyses
 
-# Not committing any personal working directories
+# Personal working directories
 _*/
 
 # MkDocs build output
 site/
 
-# Not committing any package build files
+# Python cache directories
+__pycache__/
+**/__pycache__/
 *.egg-info/
 **/*.egg-info/
+*.ipynb_checkpoints/
