@@ -1,8 +1,8 @@
 from model.encoders.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
 from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
-from training.training_config import log
+from bfm.training.training_config import log
 import torch
-from training.training_setup import TrainingSetup
+from bfm.training.training_setup import TrainingSetup
 from model.base import BFModule
 from model.modules.transformer_implementation import Transformer
 import torch.nn as nn

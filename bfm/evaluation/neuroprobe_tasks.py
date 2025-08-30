@@ -9,9 +9,9 @@ import torch
 import torch.cuda
 from torch.utils.data import DataLoader
 
-from training.training_config import log
-from evaluation.neuroprobe.train_test_splits import generate_splits_SS_SM
-from evaluation.neuroprobe.config import NEUROPROBE_LITE_ELECTRODES
+from bfm.training.training_config import log
+from bfm.evaluation.neuroprobe.train_test_splits import generate_splits_SS_SM
+from bfm.evaluation.neuroprobe.config import NEUROPROBE_LITE_ELECTRODES
 
 
 # Evaluation class for Same Subject Same Movie (SS-SM), on neuroprobe evals

@@ -177,7 +177,7 @@ def compute_spectrogram_normalization_parameters(subject, trial_id, time_from_se
     return mean, std
 
 def braintreebank_movie_times_to_neural_index(subject, trial_id, movie_times):
-    from evaluation.neuroprobe.config import ROOT_DIR, SAMPLING_RATE
+    from bfm.evaluation.neuroprobe.config import ROOT_DIR, SAMPLING_RATE
 
     if isinstance(movie_times, float) or isinstance(movie_times, int):
         movie_times_np = np.array([movie_times])

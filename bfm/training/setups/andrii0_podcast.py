@@ -2,10 +2,10 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, ConcatDataset
 
-from training.training_setup import TrainingSetup
-from training.training_config import log
-from training.setup_registry import setups
-from subject.dataset import SubjectTrialDataset, SubjectBatchSampler, PreprocessCollator
+from bfm.training.training_setup import TrainingSetup
+from bfm.training.training_config import log
+from bfm.training.setup_registry import setups
+from bfm.subject.datasets.dataset import SubjectTrialDataset, SubjectBatchSampler, PreprocessCollator
 
 from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
 from model.base import BFModule

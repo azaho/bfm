@@ -8,13 +8,13 @@ import torch
 import wandb
 from torch.amp import autocast
 
-from evaluation.neuroprobe import config as neuroprobe_config
-from evaluation.neuroprobe.datasets import BrainTreebankSubjectTrialBenchmarkDataset
-from evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
-from subject.dataset import load_subjects
+from bfm.evaluation.neuroprobe import config as neuroprobe_config
+from bfm.evaluation.neuroprobe.datasets import BrainTreebankSubjectTrialBenchmarkDataset
+from bfm.evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
+from bfm.subject.dataset import load_subjects
 from torch.optim.lr_scheduler import ChainedScheduler
 from torch.utils.data import DataLoader
-from training.training_config import (
+from bfm.training.training_config import (
     convert_dtypes,
     get_default_config,
     log,
@@ -24,8 +24,8 @@ from training.training_config import (
     update_dir_name,
     update_random_seed,
 )
-from training.setup_registry import resolve
-from training.optimizer.builders import build_optimizers, build_schedulers
+from bfm.training.setup_registry import resolve
+from bfm.training.optimizer.builders import build_optimizers, build_schedulers
 
 
 RUNS_DIR='runs/data'

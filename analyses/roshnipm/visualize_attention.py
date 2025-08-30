@@ -14,8 +14,8 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.colors import Normalize
 import torch
 import pandas as pd
-from evaluation.neuroprobe.config import *
-from subject.braintreebank import BrainTreebankSubject as Subject
+from bfm.evaluation.neuroprobe.config import *
+from bfm.subject.braintreebank import BrainTreebankSubject as Subject
 import matplotlib.font_manager as fm
 
 # Set up fonts

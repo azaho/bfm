@@ -5,7 +5,7 @@ import json
 import os
 import glob, math
 import pandas as pd
-# from evaluation.neuroprobe import config as neuroprobe_config
+# from bfm.evaluation.neuroprobe import config as neuroprobe_config
 
 ### PARSE ARGUMENTS ###
 

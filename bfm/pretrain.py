@@ -15,11 +15,11 @@ import wandb
 from dotenv import load_dotenv
 load_dotenv() # Load environment variables from .env file
 
-from training.optimizer.builders import build_optimizers, build_schedulers
-from subject.dataset import load_subjects
-from evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
-from training.setup_registry import setups
-from training.training_config import (
+from bfm.training.optimizer.builders import build_optimizers, build_schedulers
+from bfm.subject.datasets.dataset import load_subjects
+from bfm.evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
+from bfm.training.setup_registry import setups
+from bfm.training.training_config import (
     log,
     update_dir_name,
     update_random_seed,

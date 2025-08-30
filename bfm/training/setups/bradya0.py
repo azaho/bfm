@@ -26,8 +26,8 @@ import torch
 import torch.nn as nn
 
 from model.base import BFModule
-from training.training_setup import TrainingSetup
-from training.setup_registry import setups
+from bfm.training.training_setup import TrainingSetup
+from bfm.training.setup_registry import setups
 
 ### DEFINING THE MODEL COMPONENTS ###
 

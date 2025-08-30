@@ -2,17 +2,18 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, ConcatDataset
 
-from training.setup_registry import setups
-from training.training_config import log
-from training.training_setup import TrainingSetup
+from bfm.training.setup_registry import setups
+from bfm.training.training_config import log
+from bfm.training.training_setup import TrainingSetup
 
 from model.base import BFModule
-from model.modules.transformer_implementation import Transformer
+from 
+import Transformer
 from model.encoders.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
 from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
 
-from subject.podcast_pair import PodcastTrialPairDataset, PodcastBatchPairSampler, load_podcast_subjects
-from subject.podcast_pair import PreprocessCollatorPair
+from bfm.subject.datasets.podcast_pair import PodcastTrialPairDataset, PodcastBatchPairSampler, load_podcast_subjects
+from bfm.subject.datasets.podcast_pair import PreprocessCollatorPair
 
 # This file first defines the model components, then the training setup.
 

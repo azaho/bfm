@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from training.training_config import log
-from training.setup_registry import setups
-from training.training_setup import TrainingSetup
+from bfm.training.training_config import log
+from bfm.training.setup_registry import setups
+from bfm.training.training_setup import TrainingSetup
 
 from model.base import BFModule
 from model.modules.transformer_implementation import Transformer

@@ -15,7 +15,7 @@ class ElectrodeEmbedding(BFModule):
         
         self.d_model = d_model
         self._initialize_embeddings(initial_capacity)
-        self.embeddings_map = {} # map from subject / electrode labels to embedding indices
+        self.embeddings_map = {} # map from bfm.subject / electrode labels to embedding indices
 
         # For compatibility
         self.add_embedding = lambda subject, embedding_init: self.add_raw(subject.subject_identifier, subject.get_electrode_labels())

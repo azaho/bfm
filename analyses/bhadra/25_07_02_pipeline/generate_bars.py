@@ -7,7 +7,7 @@ import seaborn as sns
 import pandas as pd
 import math
 from collections import defaultdict
-from evaluation.neuroprobe import config as neuroprobe_config
+from bfm.evaluation.neuroprobe import config as neuroprobe_config
 
 
 # Argument parsing

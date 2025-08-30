@@ -5,8 +5,8 @@ from typing import Dict, Any
 
 import torch
 
-from training.setup_registry import setups
-from training.training_setup import TrainingSetup
+from bfm.training.setup_registry import setups
+from bfm.training.training_setup import TrainingSetup
 from model.encoders.convolution import ConvolutionPreprocessor
 
 @setups.register("brainwave")
