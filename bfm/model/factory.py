@@ -22,5 +22,4 @@ def build_model(cfg) -> Tuple[BFModule, BFModule]:
 
     encoder.to(cfg.device, cfg.model.dtype)
     backbone.to(cfg.device, cfg.model.dtype)
-    
     return encoder, backbone
