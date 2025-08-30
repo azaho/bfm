@@ -17,7 +17,6 @@ from torch.utils.data import DataLoader
 from bfm.training.training_config import (
     convert_dtypes,
     get_default_config,
-    log,
     parse_config_from_args,
     parse_subject_trials_from_config,
     unconvert_dtypes,
@@ -26,6 +25,7 @@ from bfm.training.training_config import (
 )
 from bfm.training.setup_registry import setups
 from bfm.training.optimizer.builders import build_optimizers, build_schedulers
+from bfm.core.logging import log
 
 
 RUNS_DIR='runs/data'

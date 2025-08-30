@@ -222,16 +222,6 @@ def update_dir_name(config):
     config['cluster']['dir_name'] = dir_name
     return dir_name
 
-max_log_priority = 1
-def log(message, priority=0, indent=0):
-    if priority > max_log_priority: return
-
-    current_time = time.strftime("%H:%M:%S")
-    gpu_memory_reserved = torch.cuda.memory_reserved() / 1024**3 if torch.cuda.is_available() else 0
-    process = psutil.Process()
-    ram_usage = process.memory_info().rss / 1024**3
-    print(f"[{current_time} gpu {gpu_memory_reserved:.1f}G ram {ram_usage:.1f}G] {' '*4*indent}{message}")
-
 def update_random_seed(config):
     random_seed = hash(config['training']['random_string']) % (2**32)
     config['training']['random_seed'] = random_seed
