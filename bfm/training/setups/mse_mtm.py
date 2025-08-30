@@ -1,6 +1,6 @@
 from bfm.model.encoders.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
 from bfm.model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
-from bfm.training.training_config import log
+from bfm.core.logging import log
 import torch
 from bfm.training.training_setup import TrainingSetup
 from bfm.model.base import BFModule

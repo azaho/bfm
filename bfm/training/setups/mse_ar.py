@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from bfm.training.setup_registry import setups
 from bfm.training.training_setup import TrainingSetup
-from bfm.training.training_config import log
+from bfm.core.logging import log
 
 from bfm.model.base import BFModule
 from bfm.model.modules.transformer_implementation import Transformer

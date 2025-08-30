@@ -8,11 +8,12 @@ import gc
 from bfm.training.optimizer import Muon
 from bfm.subject.dataset import load_subjects
 from bfm.evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
-from bfm.training.training_config import log, update_dir_name, update_random_seed, parse_config_from_args, get_default_config, parse_subject_trials_from_config, convert_dtypes
+from bfm.training.training_config import update_dir_name, update_random_seed, parse_config_from_args, get_default_config, parse_subject_trials_from_config, convert_dtypes
 from torch.optim.lr_scheduler import ChainedScheduler
 from bfm.training.training_config import convert_dtypes, unconvert_dtypes, parse_subject_trials_from_config
 from torch.utils.data import DataLoader
 from bfm.training.setup_registry import setups
+from bfm.core.logging import log
 
 from bfm.evaluation.neuroprobe.datasets import BrainTreebankSubjectTrialBenchmarkDataset
 import evaluation.neuroprobe.config as neuroprobe_config
