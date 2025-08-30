@@ -1,13 +1,42 @@
-'''
-Implementation of BrainWave (https://arxiv.org/abs/2402.10251)
-'''
+'''Implementation of BrainWave (https://arxiv.org/abs/2402.10251)'''
 from typing import Dict, Any
-
 import torch
 
 from bfm.training.setup_registry import setups
 from bfm.training.training_setup import TrainingSetup
-from bfm.model.encoders.convolution import ConvolutionPreprocessor
+from bfm.model.factory import build_model
+from bfm.model.registry import backbones
+
+
+CONFIG = {
+    'device': 'cuda',
+    'model': {
+        'dtype': 'float32',
+    },
+    'encoder': {
+        'name': 'convolution',
+        'kwargs': {
+            'patch_length': 60,
+            'n_freqbins': 64,  # TODO: Get this
+            'output_dim': 768,
+            'out_channels': 8,
+            'kernel_size': 1 / 4,
+            'stride': 1 / 8,
+            'padding': 0,
+        }
+    },
+    'backbone': {
+        'name': 'brainwave',
+        'kwargs': {
+            'hidden_size': 768,
+            'n_layer': 10,
+            'n_heads': 16,
+            'ffn_dim': 2048,
+            'max_len': 61,  # 60 signal patches + [CLS]
+        },
+    }
+}
+
 
 @setups.register("brainwave")
 class BrainWave(TrainingSetup):
@@ -24,18 +53,33 @@ class BrainWave(TrainingSetup):
     
     
     def initialize_model(self):
-        self.conv = ConvolutionPreprocessor(
-            patch_length=self.config['model']['patch_length'],
-            n_freqbins=self.config['model']['n_freqbins'],
-            output_dim=self.config['model']['signal_preprocessing']['convolution_output_dim'],
-            out_channels=self.config['model']['signal_preprocessing']['convolution_out_channels']            
+        encoder, backbone = build_model(CONFIG)
+        self.model_components["encoder"] = encoder
+        self.model_components["backbone"] = backbone
+        self.model_components["channel_attention"] = backbones.resolve("brainwave")(
+            **CONFIG["backbone"]["kwargs"]
         )
-        
-    
-    def forward(self, x: torch.Tensor):
-        e = self.conv(x) # embeddings of shape [batch_size, n_electrodes, n_patches, output_dim]
-        return e
 
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x (torch.Tensor): Input tensor of shape [batch_size, n_electrodes, n_timesamples]
+        
+        Returns:
+            torch.Tensor: Output tensor of shape [batch_size, n_electrodes, n_patches, output_dim]
+        """
+        emb = self.model_components["encoder"](x)      # [B, N, P, D]
+        B, N, P, D = emb.shape
+
+        tok = emb.reshape(B * N, P, D)                 # merge batch & channel
+        tok = self.model_components["backbone"](tok)   # -> [B * N, P, D2]
+        tok = tok.reshape(B, N, P, -1)                 # [B, N, P, D2]
+
+        out = self.model_components["channel_attention"](tok)
+        return out
+    
+    
     def calculate_pretrain_loss(self, batch: Dict[str, Any], output_accuracy: bool = False) -> Dict[str, torch.Tensor]:
         '''
         Calculate the L2 loss between the predicted future bins and the actual next bins.
@@ -55,4 +99,8 @@ class BrainWave(TrainingSetup):
     
     
     def generate_frozen_features(self, batch: Dict):
-        raise NotImplementedError("This function is not (yet) implemented for this training setup.")
+        """Generate frozen features for the given batch."""
+        with torch.no_grad():
+            x = batch["data"]
+            frozen_features = self.forward(x)
+        return frozen_features.detach()
