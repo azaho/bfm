@@ -6,7 +6,8 @@ import pandas as pd
 import numpy as np
 import torch
 
-from subject.subject import Subject
+from bfm.subject.base import Subject
+from bfm.subject.registry import subjects
 
 from dotenv import load_dotenv
 load_dotenv()  # Load environment variables from .env file
@@ -14,6 +15,7 @@ load_dotenv()  # Load environment variables from .env file
 BRAINTREEBANK_ROOT_DIR = os.environ["BRAIN_TREEBANK_ROOT_DIR"]
 os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE" # Disable file locking for HDF5 files. This is helpful for parallel processing.
 
+@subjects.register("braintreebank")
 class BrainTreebankSubject(Subject):
     """ 
         This class is used to load the neural data for a given subject and trial.

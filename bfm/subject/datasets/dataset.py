@@ -5,10 +5,10 @@ import torch.multiprocessing as mp
 import torch
 from torch.utils.data import Dataset, ConcatDataset, DataLoader
 
-from subject.braintreebank import BrainTreebankSubject
-from subject.mgh2024 import MGH2024Subject
-from subject.podcast import PodcastSubject
-from training.training_config import log
+from bfm.subject.subjects.braintreebank import BrainTreebankSubject
+from bfm.subject.subjects.mgh2024 import MGH2024Subject
+from bfm.subject.subjects.podcast import PodcastSubject
+from bfm.training.training_config import log
 
 
 class SubjectTrialDataset(Dataset):

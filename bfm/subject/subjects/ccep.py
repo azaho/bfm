@@ -11,13 +11,15 @@ import torch
 import mne
 from mne_bids import BIDSPath, read_raw_bids
 
-from subject.subject import Subject
+from bfm.subject.base import Subject
+from bfm.subject.registry import subjects
 
 from dotenv import load_dotenv
 load_dotenv()  # Load environment variables from .env file
 
 CCEP_ROOT_DIR = os.getenv("CCEP_ROOT_DIR")  # Root directory for the CCEP OpenNeuro data
 
+@subjects.register("ccep")
 class CCEPSubject(Subject):
     """ 
     This class is used to load the neural data for a given CCEP subject from the OpenNeuro BIDS dataset.
