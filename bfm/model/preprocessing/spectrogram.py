@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from model.BFModule import BFModule
+from model.base import BFModule
 from training.training_config import get_default_config
 
 class SpectrogramPreprocessor(BFModule):

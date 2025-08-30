@@ -1,20 +1,18 @@
 '''
 Implementation of BrainWave (https://arxiv.org/abs/2402.10251)
 '''
-from typing import Callable, Dict, Any, Sequence
+from typing import Dict, Any
 
 import torch
-import torch.nn as nn
 
-from model.BFModule import BFModule
-from model.preprocessing.convolution import ConvolutionPreprocessor
-from training.setup_registry import register
+from training.setup_registry import setups
 from training.training_setup import TrainingSetup
+from model.encoders.convolution import ConvolutionPreprocessor
 
-@register("brainwave")
+@setups.register("brainwave")
 class BrainWave(TrainingSetup):
     """
-    BrainWave model trainer.
+    BrainWave model trainer. 
     
     Args:
         all_subjects: List of all subjects in the dataset.
@@ -32,9 +30,11 @@ class BrainWave(TrainingSetup):
             output_dim=self.config['model']['signal_preprocessing']['convolution_output_dim'],
             out_channels=self.config['model']['signal_preprocessing']['convolution_out_channels']            
         )
-
-    def get_preprocess_functions(self, pretraining: bool = False) -> Sequence[Callable[[torch.Tensor], torch.Tensor]]:
-        return [self.conv.forward]
+        
+    
+    def forward(self, x: torch.Tensor):
+        e = self.conv(x) # embeddings of shape [batch_size, n_electrodes, n_patches, output_dim]
+        return e
 
     def calculate_pretrain_loss(self, batch: Dict[str, Any], output_accuracy: bool = False) -> Dict[str, torch.Tensor]:
         '''
@@ -54,5 +54,5 @@ class BrainWave(TrainingSetup):
         return {}
     
     
-    def generate_frozen_features(self, batch):
+    def generate_frozen_features(self, batch: Dict):
         raise NotImplementedError("This function is not (yet) implemented for this training setup.")

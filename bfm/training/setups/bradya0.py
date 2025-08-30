@@ -1,17 +1,7 @@
 '''
 This file defines the model components and the training setup 
 for the bradya0 model, which is a simple linear model for the onboarding task.
-'''
-from typing import Dict, Any
 
-import torch
-import torch.nn as nn
-
-from model.BFModule import BFModule
-from training.training_setup import TrainingSetup
-from training.setup_registry import register
-
-"""
 Flow of data in this model:
 The data starts out as (batch_size, n_electrodes, n_timesamples)
 
@@ -29,7 +19,15 @@ The data starts out as (batch_size, n_electrodes, n_timesamples)
 
 Loss function: compare the output of the time transformer on half of electrodes 
 to the output of the electrode transformer on the other half on the next timestep, using a contrastive loss.
-"""
+'''
+from typing import Dict, Any
+
+import torch
+import torch.nn as nn
+
+from model.base import BFModule
+from training.training_setup import TrainingSetup
+from training.setup_registry import setups
 
 ### DEFINING THE MODEL COMPONENTS ###
 
@@ -78,11 +76,11 @@ class LinearModel(BFModule):
     
 
 ### DEFINING THE TRAINING SETUP ###
-@register("bradya0")
+@setups.register("bradya0")
 class Bradya0(TrainingSetup):
     '''Simple Linear Model for Onboarding Task'''
     
-    def __init__(self, all_subjects, config, verbose=True):
+    def __init__(self, all_subjects, config: Dict, verbose: bool = True):
         super().__init__(all_subjects, config, verbose)
 
     def initialize_model(self):
@@ -124,13 +122,19 @@ class Bradya0(TrainingSetup):
                 
         return { 'l2_loss': loss }
 
-    def generate_frozen_features(self, batch):
-        # INPUT:
-        #   batch['data'] shape: (batch_size, n_electrodes, n_timesamples)
-        #   batch['electrode_labels'] shape: list of length 1 (since it's the same across the batch), each element is a list of electrode labels
-        #   batch['metadata']: dictionary containing metadata like the subject identifier and trial id, sampling rate, etc.
-        # OUTPUT:
-        #   features shape: (batch_size, *) where * can be arbitrary (and will be concatenated for regression)
+    def generate_frozen_features(self, batch: Dict[str, Any]):
+        """
+        Generate frozen features from the input batch for downstream tasks.
+        
+        Args:
+            batch (dict): Dictionary containing:
+                - 'data' (Tensor): Shape (batch_size, n_electrodes, n_timesamples).
+                - 'electrode_labels' (Tensor): Shape (batch_size, n_electrodes).
+                - 'metadata' (dict): Contains subject identifier, trial ID, sampling rate, etc.
+                
+        Returns:
+            torch.Tensor: Frozen features for downstream tasks. [batch_size, feature_dim]
+        """
         batch['data'] = batch['data'].to(self.model.device, dtype=self.model.dtype, non_blocking=True)
 
         features, _ = self.model(batch)  # shape: (batch_size, n_bins - 1, bin_size)

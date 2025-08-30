@@ -1,0 +1,1 @@
+"""Training setups in this directory are discoverable from `bfm.training.setup_registry.setups`."""

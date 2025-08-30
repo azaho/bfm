@@ -1,12 +1,12 @@
-from model.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
+from model.encoders.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
 from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch, laplacian_rereference_neural_data
 from training.training_config import log
 import torch
 from training.training_setup import TrainingSetup
 # from subject.dataset import SubjectTrialDataset, PreprocessCollator, SubjectBatchSampler
 from subject.dataset_pair_nocommon import SubjectTrialPairDataset, PreprocessCollatorPair, SubjectBatchPairSampler, load_subjects
-from model.BFModule import BFModule
-from model.transformer_implementation import Transformer
+from model.base import BFModule
+from model.modules.transformer_implementation import Transformer
 import torch.nn as nn
 from torch.utils.data import DataLoader, ConcatDataset
 import os
@@ -15,7 +15,7 @@ import numpy as np
 from evaluation.neuroprobe.config import ROOT_DIR, SAMPLING_RATE, BRAINTREEBANK_SUBJECT_TRIAL_MOVIE_NAME_MAPPING
 import pandas as pd
 from training.training_setup import TrainingSetup
-from training.setup_registry import register
+from training.setup_registry import setups
 
 # for main function
 from evaluation.neuroprobe.config import NEUROPROBE_FULL_SUBJECT_TRIALS
@@ -181,7 +181,7 @@ class OriginalModel(BFModule):
 
 
 ### DEFINING THE TRAINING SETUP ###
-@register("roshnipm_pair_nocommon")
+@setups.register("roshnipm_pair_nocommon")
 class roshnipm_pair_nocommon(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)

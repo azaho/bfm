@@ -18,7 +18,7 @@ load_dotenv() # Load environment variables from .env file
 from training.optimizer.builders import build_optimizers, build_schedulers
 from subject.dataset import load_subjects
 from evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
-from training.setup_registry import resolve
+from training.setup_registry import setups
 from training.training_config import (
     log,
     update_dir_name,
@@ -66,7 +66,7 @@ all_subjects = load_subjects(
 
 # Import the training setup class dynamically based on config
 setup_name = config["training"]["setup_name"] # Name in registry
-training_setup = resolve(setup_name, all_subjects=all_subjects, config=config, verbose=True)
+training_setup = setups.resolve(setup_name, all_subjects=all_subjects, config=config, verbose=True)
 
 # Save a copy of the training setup file for reproducibility
 setup_file = str(inspect.getsourcefile(training_setup.__class__)) 

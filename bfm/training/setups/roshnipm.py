@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from training.setup_registry import register
+from training.setup_registry import setups
 from training.training_setup import TrainingSetup
 from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
 
@@ -39,7 +39,7 @@ class LinearModel(nn.Module):
         pred = self.linear(x[:, :-1, :])  # (batch, n_bins-1, bin_size)
         return pred, x[:, 1:, :]  # returns (prediction, target)
 
-@register("roshnipm")
+@setups.register("roshnipm")
 class roshnipm(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)
