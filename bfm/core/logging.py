@@ -6,28 +6,27 @@ import torch
 class ResourceFormatter(logging.Formatter):
     """Formatter displaying time, GPU memory, and RAM usage."""
 
-    def format(self, record: logging.LogRecord) -> str:
-        # Time
-        current_time = time.strftime("%H:%M:%S")
+    def format(self, record: logging.LogRecord) -> str:    
+        t = time.strftime("%H:%M:%S")
+        lvl = record.levelname  # DEBUG, INFO, WARNING, ERROR, CRITICAL
 
-        # GPU memory
+        local = getattr(record, "local", False)
+        where = f"[{record.name}:{record.lineno}]" if not local else ""
+
         if torch.cuda.is_available():
-            gpu_mem = torch.cuda.memory_reserved() / 1024**3
+            d = torch.cuda.current_device()
+            a = torch.cuda.memory_allocated(d) / 2**30
+            rsv = torch.cuda.memory_reserved(d) / 2**30
+            gpu = f"cuda:{d} {a:.1f}/{rsv:.1f}G"
         else:
-            gpu_mem = 0.0
+            gpu = "cpu"
 
-        # RAM usage
-        process = psutil.Process()
-        ram_usage = process.memory_info().rss / 1024**3
+        ram = psutil.Process().memory_info().rss / 2**30
+        indent = " " * (4 * int(getattr(record, "indent", 0)))
+        msg = super().format(record)  # "%(message)s"
+        return f"[{t} {lvl}]{where}[{gpu}][RAM {ram:.1f}G] {indent}{msg}"
 
-        # Indent support (we store indent on the record if passed)
-        indent = getattr(record, "indent", 0)
-        indent_str = " " * 4 * indent
-
-        # Core message
-        base_msg = super().format(record)
-        return f"[{current_time} gpu {gpu_mem:.1f}G ram {ram_usage:.1f}G] {indent_str}{base_msg}"
-
+    
 
 def get_logger(name: str = __name__, level: int = logging.INFO) -> logging.Logger:
     """Create a logger with our custom resource formatter."""
@@ -54,5 +53,5 @@ def log(message: str, level: int = logging.INFO, indent: int = 0, priority: int 
     if priority > 1:
         return # Kept for backwards compatibility
     logger = get_logger()
-    extra = {"indent": indent}
+    extra = {"indent": indent, "local": True}
     logger.log(level, message, extra=extra)
