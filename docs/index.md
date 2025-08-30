@@ -21,19 +21,31 @@ date: 2025-08-07
     </a>
 </p>
 
-<p align="center"><strong>Brain Foundation Models</strong></p>
-
-This is a dummy page for the documentation site powered by [MkDocs](https://www.mkdocs.org/). The theme used is [Material for MkDocs](https://squidfunk.github.io/mkdocs-material/).
-
-## Commands
-
-* `mkdocs serve` - Start the live-reloading docs server.
-* `mkdocs build` - Build the documentation site.
-* `mkdocs -h` - Print help message and exit.
+Welcome to the Brain Foundation Models (BFM) documentation. This site is a work in progress.
 
 ## Project layout
-
-    mkdocs.yml    # The configuration file.
+```
     docs/
-        index.md  # The documentation homepage.
-        ...       # Other markdown pages, images and other files.
+        index.md            # The documentation homepage.
+        ...                 # Other markdown pages, images and other files.
+    analyses/               # Analysis scripts and notebooks.
+    bfm/
+        training/
+            setups/             # Training setup configurations.
+            optimizers/         # Custom optimizers.
+        subject/
+            datasets/           # Implementation for various datasets
+            subjects/           # Implementation for subjects of datasets
+        model/
+            backbones/          # Model architectures
+            encoders/           # Input embedders
+            modules/            # Reusable modules
+            preprocessing/      # Custom preprocessing functions
+        evaluation/
+            neuroprobe/         # Neuroprobe benchmark
+        core/                   # Core utilities and shared functions
+    runs/                  # Output files and logs
+    tests/                 # Unit tests and test data
+    mkdocs.yml             # Documentation configuration file.
+    pyproject.toml         # Python project configuration file.
+    quickstart.ipynb       # Quickstart notebook.

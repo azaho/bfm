@@ -76,5 +76,5 @@ Now, in the Weights and Biases dashboard, you can see your training runs under t
 
 Once you have set up the codebase and installed the required packages, you can start pretraining a model. This requires an A100 GPU. If you're on Openmind, you can request a node with an A100 GPU by following the instructions in the [Openmind documentation](https://openmind.mit.edu).
 ```sh
-python pretrain.py --training.setup_name andrii0 --cluster.cache_subjects 0 --cluster.eval_at_beginning 0
+python -m bfm.pretrain --training.setup_name andrii0 --cluster.cache_subjects 0 --cluster.eval_at_beginning 0
 ```
