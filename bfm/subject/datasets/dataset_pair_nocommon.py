@@ -1,16 +1,16 @@
 import torch
 from torch.utils.data import Dataset, ConcatDataset, DataLoader
-from subject.braintreebank import BrainTreebankSubject
-from subject.mgh2024 import MGH2024Subject
-from subject.dataset import SubjectTrialDataset # for testing purposes
-from training.training_config import log
+from bfm.subject.subjects.braintreebank import BrainTreebankSubject
+from bfm.subject.subjects.mgh2024 import MGH2024Subject
+from bfm.subject.datasets.dataset import SubjectTrialDataset # for testing purposes
+from bfm.training.training_config import log
 from multiprocessing import Pool
 import torch.multiprocessing as mp
 import random
 import numpy as np
 import pandas as pd
 import os
-from evaluation.neuroprobe.config import ROOT_DIR, SAMPLING_RATE
+from bfm.evaluation.neuroprobe.config import ROOT_DIR, SAMPLING_RATE
 
 class SubjectTrialPairDataset(Dataset):
     def __init__(self, subject, trial_id, window_size, dtype=torch.float32, output_metadata=False, output_electrode_labels=False,

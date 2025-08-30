@@ -7,13 +7,15 @@ import numpy as np
 import pandas as pd
 import torch
 
-from subject.subject import Subject
+from bfm.subject.base import Subject
+from bfm.subject.registry import subjects
 
 from dotenv import load_dotenv
 load_dotenv()  # Load environment variables from .env file
 
 MGH_ROOT_DIR = os.environ["MGH_ROOT_DIR"]  # Root directory for the MGH data
 
+@subjects.register("mgh2024")
 class MGH2024Subject(Subject):
     """ 
         This class is used to load the neural data for a given subject and session.
