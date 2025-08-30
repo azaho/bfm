@@ -2,14 +2,14 @@ import time
 import torch
 import torch.nn as nn
 
-from training.setup_registry import register
+from training.setup_registry import setups
 from training.training_config import log
 from training.training_setup import TrainingSetup
 
-from model.BFModule import BFModule
-from model.transformer_implementation import Transformer
+from model.base import BFModule
+from model.modules.transformer_implementation import Transformer
 from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
-from model.electrode_embedding import (
+from model.encoders.electrode_embedding import (
     ElectrodeEmbedding_Learned, 
     ElectrodeEmbedding_NoisyCoordinate, 
     ElectrodeEmbedding_Learned_CoordinateInit, 
@@ -111,7 +111,7 @@ class OriginalModel(BFModule):
 
 
 ### DEFINING THE TRAINING SETUP ###
-@register("andrii0")
+@setups.register("andrii0")
 class andrii0(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)
@@ -121,7 +121,7 @@ class andrii0(TrainingSetup):
             This function initializes the model.
 
             It must set the self.model_components dictionary to a dictionary of the model components, like
-            {"model": model, "electrode_embeddings": electrode_embeddings}, where model and electrode_embeddings are PyTorch modules (those classes must inherit from model.BFModule)
+            {"model": model, "electrode_embeddings": electrode_embeddings}, where model and electrode_embeddings are PyTorch modules (those classes must inherit from model.base)
         """
         config = self.config
         device = config['device']

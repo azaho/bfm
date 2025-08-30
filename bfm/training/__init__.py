@@ -1,3 +1,1 @@
-"""
-Defines model architectures and training paradigms for brain foundation models.
-"""
+"""Defines model architectures and training paradigms for brain foundation models."""

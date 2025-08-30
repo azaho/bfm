@@ -11,7 +11,7 @@ import gc
 
 from eval_utils import *
 
-from training.setup_registry import register
+from training.setup_registry import setups
 from training.training_config import log, parse_subject_trials_from_config, unconvert_dtypes, convert_dtypes
 from subject.dataset import load_subjects
 

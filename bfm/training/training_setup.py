@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader, ConcatDataset
 from subject.dataset import SubjectTrialDataset, PreprocessCollator, SubjectBatchSampler
 from training.training_config import log, convert_dtypes
 from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
-from model.electrode_embedding import (
+from model.encoders.electrode_embedding import (
     ElectrodeEmbedding_Learned,
     ElectrodeEmbedding_NoisyCoordinate,
     ElectrodeEmbedding_Learned_CoordinateInit,
@@ -44,7 +44,7 @@ class TrainingSetup:
             This function initializes the model.
 
             It must set the self.model_components dictionary to a dictionary of the model components, like
-            {"model": model, "electrode_embeddings": electrode_embeddings}, where model and electrode_embeddings are PyTorch modules (those classes must inherit from model.BFModule)
+            {"model": model, "electrode_embeddings": electrode_embeddings}, where model and electrode_embeddings are PyTorch modules (those classes must inherit from model.base)
         """
         raise NotImplementedError("This function is not (yet) implemented for this training setup.")
     

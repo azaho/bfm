@@ -4,13 +4,13 @@ from torch.utils.data import DataLoader, ConcatDataset
 
 from training.training_setup import TrainingSetup
 from training.training_config import log
-from training.setup_registry import register
+from training.setup_registry import setups
 from subject.dataset import SubjectTrialDataset, SubjectBatchSampler, PreprocessCollator
 
 from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
-from model.BFModule import BFModule
-from model.transformer_implementation import Transformer
-from model.electrode_embedding import (
+from model.base import BFModule
+from model.modules.transformer_implementation import Transformer
+from model.encoders.electrode_embedding import (
     ElectrodeEmbedding_Learned, 
     ElectrodeEmbedding_NoisyCoordinate, 
     ElectrodeEmbedding_Learned_CoordinateInit, 
@@ -171,7 +171,7 @@ class OriginalModel(BFModule):
 
 
 ### DEFINING THE TRAINING SETUP ###
-@register("andrii0_podcast")
+@setups.register("andrii0_podcast")
 class andrii0_podcast(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)
@@ -181,7 +181,7 @@ class andrii0_podcast(TrainingSetup):
             This function initializes the model.
 
             It must set the self.model_components dictionary to a dictionary of the model components, like
-            {"model": model, "electrode_embeddings": electrode_embeddings}, where model and electrode_embeddings are PyTorch modules (those classes must inherit from model.BFModule)
+            {"model": model, "electrode_embeddings": electrode_embeddings}, where model and electrode_embeddings are PyTorch modules (those classes must inherit from model.base)
         """
         config = self.config
         device = config['device']

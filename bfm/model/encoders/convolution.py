@@ -4,9 +4,11 @@ import torch
 import torch.nn as nn
 from typing import Union
 
-from model.BFModule import BFModule
+from bfm.model.base import BFModule
+from bfm.model.registry import encoders
 
 
+@encoders.register("convolution")
 class ConvolutionPreprocessor(BFModule):
     """
     Preprocessor that applies a 2D convolution across time axis + linear mapping.

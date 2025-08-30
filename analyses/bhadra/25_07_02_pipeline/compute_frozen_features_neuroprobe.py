@@ -12,7 +12,7 @@ from training.training_config import log, update_dir_name, update_random_seed, p
 from torch.optim.lr_scheduler import ChainedScheduler
 from training.training_config import convert_dtypes, unconvert_dtypes, parse_subject_trials_from_config
 from torch.utils.data import DataLoader
-from training.setup_registry import register
+from training.setup_registry import setups
 
 from evaluation.neuroprobe.datasets import BrainTreebankSubjectTrialBenchmarkDataset
 import evaluation.neuroprobe.config as neuroprobe_config
