@@ -31,6 +31,8 @@ def _make_autodiscover(base_pkg: str) -> Callable[[], None]:
     """Create a cached autodiscover() bound to a given package path."""
     @cache
     def _autodiscover():
+        if os.getenv("BFM_DISABLE_AUTODISCOVER") == "1":
+            return
         pkg = importlib.import_module(base_pkg)
         pkg_path = getattr(pkg, "__path__", None)
         if not pkg_path:  # not a package -> no-op
