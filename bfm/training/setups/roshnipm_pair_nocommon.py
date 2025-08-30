@@ -1,12 +1,12 @@
-from model.encoders.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
-from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch, laplacian_rereference_neural_data
+from bfm.model.encoders.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
+from bfm.model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch, laplacian_rereference_neural_data
 from bfm.training.training_config import log
 import torch
 from bfm.training.training_setup import TrainingSetup
 # from bfm.subject.dataset import SubjectTrialDataset, PreprocessCollator, SubjectBatchSampler
 from bfm.subject.datasets.dataset_pair_nocommon import SubjectTrialPairDataset, PreprocessCollatorPair, SubjectBatchPairSampler, load_subjects
-from model.base import BFModule
-from model.modules.transformer_implementation import Transformer
+from bfm.model.base import BFModule
+from bfm.model.modules.transformer_implementation import Transformer
 import torch.nn as nn
 from torch.utils.data import DataLoader, ConcatDataset
 import os
@@ -191,7 +191,7 @@ class roshnipm_pair_nocommon(TrainingSetup):
             This function initializes the model.
 
             It must set the self.model_components dictionary to a dictionary of the model components, like
-            {"model": model, "electrode_embeddings": electrode_embeddings}, where model and electrode_embeddings are PyTorch modules (those classes must inherit from model.BFModule)
+            {"model": model, "electrode_embeddings": electrode_embeddings}, where model and electrode_embeddings are PyTorch modules (those classes must inherit from bfm.model.BFModule)
         """
         config = self.config
         device = config['device']

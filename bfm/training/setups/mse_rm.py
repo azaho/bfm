@@ -5,10 +5,10 @@ from bfm.training.setup_registry import setups
 from bfm.training.training_config import log
 from bfm.training.training_setup import TrainingSetup
 
-from model.base import BFModule
-from model.modules.transformer_implementation import Transformer
-from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
-from model.encoders.electrode_embedding import (
+from bfm.model.base import BFModule
+from bfm.model.modules.transformer_implementation import Transformer
+from bfm.model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
+from bfm.model.encoders.electrode_embedding import (
     ElectrodeEmbedding_Learned, 
     ElectrodeEmbedding_NoisyCoordinate,
     ElectrodeEmbedding_Learned_CoordinateInit, 
@@ -28,7 +28,7 @@ from model.encoders.electrode_embedding import (
 
 ### DEFINING THE MODEL COMPONENTS ###
 
-from model.preprocessing.spectrogram import SpectrogramPreprocessor    
+from bfm.model.preprocessing.spectrogram import SpectrogramPreprocessor    
 
 def mask_random_electrodes_and_timebins(batch, p_electrodes=0.5, p_timebins=0.5, key='data'):
     """
@@ -100,7 +100,7 @@ class mse_rm(TrainingSetup):
             This function initializes the model.
 
             It must set the self.model_components dictionary to a dictionary of the model components, like
-            {"model": model, "electrode_embeddings": electrode_embeddings}, where model and electrode_embeddings are PyTorch modules (those classes must inherit from model.base)
+            {"model": model, "electrode_embeddings": electrode_embeddings}, where model and electrode_embeddings are PyTorch modules (those classes must inherit from bfm.model.base)
         """
         config = self.config
         device = config['device']

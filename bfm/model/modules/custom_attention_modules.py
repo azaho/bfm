@@ -3,8 +3,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from op.muon_optimizer import orthogonalize
-from model.base import BFModule
-from model.modules.transformer_implementation import apply_rotary_emb, CausalSelfAttention, Block, Transformer, Rotary
+from bfm.model.base import BFModule
+from bfm.model.modules.transformer_implementation import apply_rotary_emb, CausalSelfAttention, Block, Transformer, Rotary
 
 # Custom CausalSelfAttention that returns attention weights
 class CausalSelfAttentionWithReturn(CausalSelfAttention):

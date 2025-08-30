@@ -25,7 +25,7 @@ from typing import Dict, Any
 import torch
 import torch.nn as nn
 
-from model.base import BFModule
+from bfm.model.base import BFModule
 from bfm.training.training_setup import TrainingSetup
 from bfm.training.setup_registry import setups
 
