@@ -17,7 +17,7 @@
 
 ## Onboarding
 
-Please follow the instructions on [azaho.github.io/bfm/getting-started](https://azaho.github.io/bfm/getting-started/) for background knowledge, a brief overview and the onboarding task.
+Please follow the instructions on [azaho.github.io/bfm/getting-started](https://azaho.github.io/bfm/getting-started/) for background knowledge, a brief overview of the repository, and the onboarding task.
 
 ## Installation
 
