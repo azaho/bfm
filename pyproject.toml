@@ -41,6 +41,7 @@ dev = [
     "ipykernel",
     "jupyter",
     "pytest",
+    "pytest-cov",
     "ruff",
 ]
 
