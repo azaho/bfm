@@ -7,7 +7,6 @@ import cv2
 from PIL import Image
 from tqdm import tqdm
 import argparse
-import matplotlib.pyplot as plt
 from transformers import AutoImageProcessor, AutoModel
 
 def parse_args():
