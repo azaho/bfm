@@ -40,11 +40,15 @@ dev = [
     "beautifulsoup4",
     "ipykernel",
     "jupyter",
+    "pytest",
+    "ruff",
+]
+
+docs = [    
     "mkdocs",
     "mkdocs-jupyter",
     "mkdocs-material", 
-    "pytest",
-    "ruff",
+    "mkdocstrings[python]"
 ]
 
 [tool.setuptools.packages.find]
