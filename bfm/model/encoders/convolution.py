@@ -1,12 +1,15 @@
-import warnings
+import logging
 
 import torch
 import torch.nn as nn
 from typing import Union, Optional
 
+from bfm.core.logger import get_logger
 from bfm.model.base import BFModule
 from bfm.model.registry import encoders
 
+
+logger = get_logger(__name__, level=logging.DEBUG)
 
 @encoders.register("convolution")
 class ConvolutionPreprocessor(BFModule):
@@ -63,6 +66,7 @@ class ConvolutionPreprocessor(BFModule):
         s_f = _normalize_dim_arg(freq_stride, n_freqbins)
         if freq_padding is None:
             p_f = (k_f - 1) // 2  # SAME on freq (approx; exact SAME with stride > 1 is asymmetric)
+            logger.debug(f"Using SAME padding on freq: {p_f}")
         else:
             p_f = _normalize_dim_arg(freq_padding, n_freqbins, min_val=0)
 
@@ -89,6 +93,7 @@ class ConvolutionPreprocessor(BFModule):
 
         if H_out <= 0 or W_out <= 0:
             raise ValueError(f"Bad conv params: H_out={H_out}, W_out={W_out}")
+        logger.debug(f"ConvolutionPreprocessor output shape: [B, N, P, {H_out}, {W_out}]")
         
         self.fc = nn.Linear(out_channels * H_out * W_out, output_dim)
         
@@ -105,6 +110,7 @@ class ConvolutionPreprocessor(BFModule):
             ValueError: If the input tensor shape is invalid.
         """
         B, N, T, F = x.shape
+        logger.debug(f"ConvolutionPreprocessor input shape: {x.shape}")
         
         if F != self.n_freqbins:
             raise ValueError(
@@ -119,7 +125,7 @@ class ConvolutionPreprocessor(BFModule):
         if T % self.patch_length != 0:
             x = x.narrow(2, 0, T - (T % self.patch_length))
             if not self._trunc_warned:
-                warnings.warn(
+                logger.warning(
                     f"n_timebins {T} is not a multiple of patch_length {self.patch_length}. "
                     f"Truncating input tensor to shape {x.shape}..."
                 )

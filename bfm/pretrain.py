@@ -158,7 +158,8 @@ for epoch_i in range(config['training']['n_epochs']):
     for batch_idx, batch in enumerate(training_setup.train_dataloader):
         subject_identifier, trial_id = batch['subject_trial'][0]
 
-        for optimizer in optimizers: optimizer.zero_grad()
+        for optimizer in optimizers: 
+            optimizer.zero_grad()
 
         # Use autocast with specified dtype
         with autocast(device_type='cuda', dtype=config['model']['amp_dtype'], enabled=config['model']['use_mixed_precision']):
