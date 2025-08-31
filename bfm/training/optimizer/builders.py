@@ -1,17 +1,20 @@
-from typing import Mapping, List
+from collections.abc import Mapping
 
 import torch
 from torch import optim
 from torch.optim.lr_scheduler import (
-    LinearLR, CosineAnnealingLR, SequentialLR, _LRScheduler
+    CosineAnnealingLR,
+    LinearLR,
+    SequentialLR,
+    _LRScheduler,
 )
 
 from .muon import Muon
 
 
 def build_optimizers(
-    model_params: List[torch.nn.Parameter], config: Mapping
-) -> List[optim.Optimizer]:
+    model_params: list[torch.nn.Parameter], config: Mapping
+) -> list[optim.Optimizer]:
     """
     Build a list of optimizers based on the model parameters and configuration.
 
@@ -23,7 +26,7 @@ def build_optimizers(
         List[optim.Optimizer]: List of optimizers.
     """
     params = [p for p in model_params if p.requires_grad and p.is_floating_point()]
-    optimizers: List[optim.Optimizer] = []
+    optimizers: list[optim.Optimizer] = []
 
     use_muon = config["training"]["optimizer"] == "Muon"
     matrix_params = [p for p in params if p.ndim == 2] if use_muon else []
@@ -56,8 +59,8 @@ def build_optimizers(
 
 
 def build_schedulers(
-    optimizers: List[optim.Optimizer], config: Mapping, training_setup
-) -> List[_LRScheduler]:
+    optimizers: list[optim.Optimizer], config: Mapping, training_setup
+) -> list[_LRScheduler]:
     """
     Build learning rate schedulers for the given optimizers.
     Both warmup and falloff schedules are supported (both optional).
@@ -70,20 +73,18 @@ def build_schedulers(
     Returns:
         List[_LRScheduler]: List of learning rate schedulers.
     """
-    schedulers: List[_LRScheduler] = []
-    total_steps = config["training"]["n_epochs"] * len(
-        training_setup.train_dataloader
-    )
-    
+    schedulers: list[_LRScheduler] = []
+    total_steps = config["training"]["n_epochs"] * len(training_setup.train_dataloader)
+
     for optimizer in optimizers:
         # Warmup schedule
         if config["training"]["warmup_steps"] > 0:
             warmup = LinearLR(
-                        optimizer,
-                        start_factor=1e-5,
-                        end_factor=1.0,
-                        total_iters=config["training"]["warmup_steps"],
-                )
+                optimizer,
+                start_factor=1e-5,
+                end_factor=1.0,
+                total_iters=config["training"]["warmup_steps"],
+            )
         else:
             warmup = None
 
@@ -101,13 +102,13 @@ def build_schedulers(
             schedulers.append(
                 SequentialLR(
                     optimizer,
-                    [warmup, main], 
-                    milestones=[config["training"]["warmup_steps"]]
+                    [warmup, main],
+                    milestones=[config["training"]["warmup_steps"]],
                 )
             )
         elif warmup:
             schedulers.append(warmup)
         elif main:
             schedulers.append(main)
-            
+
     return schedulers

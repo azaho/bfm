@@ -1,9 +1,9 @@
-import torch
 import pytest
+import torch
 
-from bfm.model.factory import build_model
 from bfm.model.base import BFModule
-from bfm.model.registry import encoders, backbones
+from bfm.model.factory import build_model
+from bfm.model.registry import backbones, encoders
 
 
 @encoders.register("dummy_enc")
