@@ -8,7 +8,7 @@ from torch.utils.data import Dataset, ConcatDataset, DataLoader
 from bfm.subject.subjects.braintreebank import BrainTreebankSubject
 from bfm.subject.subjects.mgh2024 import MGH2024Subject
 from bfm.subject.subjects.podcast import PodcastSubject
-from bfm.core.logging import log
+from bfm.core.logger import log
 
 
 class SubjectTrialDataset(Dataset):

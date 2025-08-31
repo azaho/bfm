@@ -9,7 +9,7 @@ import torch
 import torch.cuda
 from torch.utils.data import DataLoader
 
-from bfm.core.logging import log
+from bfm.core.logger import log
 from bfm.evaluation.neuroprobe.train_test_splits import generate_splits_SS_SM
 from bfm.evaluation.neuroprobe.config import NEUROPROBE_LITE_ELECTRODES
 

@@ -3,7 +3,7 @@ from torch.utils.data import Dataset, ConcatDataset, DataLoader
 from bfm.subject.subjects.braintreebank import BrainTreebankSubject
 from bfm.subject.subjects.mgh2024 import MGH2024Subject
 from bfm.subject.datasets.dataset import SubjectTrialDataset # for testing purposes
-from bfm.core.logging import log
+from bfm.core.logger import log
 from multiprocessing import Pool
 import torch.multiprocessing as mp
 import random

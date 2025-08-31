@@ -21,7 +21,7 @@ from bfm.model.modules.custom_attention_modules import (
     TransformerWithReturn,
 )
 from bfm.training.setup_registry import setups
-from bfm.core.logging import log
+from bfm.core.logger import log
 
 from bfm.evaluation.neuroprobe.datasets import BrainTreebankSubjectTrialBenchmarkDataset
 import evaluation.neuroprobe.config as neuroprobe_config

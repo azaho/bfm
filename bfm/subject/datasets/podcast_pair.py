@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import Dataset
 from bfm.subject.subjects.podcast import PodcastSubject
 from bfm.subject.datasets.dataset import SubjectTrialDataset
-from bfm.core.logging import log
+from bfm.core.logger import log
 import random
 import numpy as np
 

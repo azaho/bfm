@@ -25,7 +25,7 @@ from bfm.training.training_config import (
 )
 from bfm.training.setup_registry import setups
 from bfm.training.optimizer import Muon
-from bfm.core.logging import log
+from bfm.core.logger import log
 
 RUNS_DIR='runs/data'
 

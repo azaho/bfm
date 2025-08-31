@@ -3,7 +3,7 @@ import logging
 import types
 
 import torch
-from bfm.core import logging as logger_mod
+from bfm.core import logger as logger_mod
 
 
 def make_captured_logger(name="test.logger", level=logging.INFO):

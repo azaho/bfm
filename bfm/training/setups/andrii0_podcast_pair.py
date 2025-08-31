@@ -3,7 +3,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, ConcatDataset
 
 from bfm.training.setup_registry import setups
-from bfm.core.logging import log
+from bfm.core.logger import log
 from bfm.training.training_setup import TrainingSetup
 
 from bfm.model.base import BFModule

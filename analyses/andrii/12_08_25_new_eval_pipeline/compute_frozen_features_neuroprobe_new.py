@@ -25,7 +25,7 @@ from bfm.training.training_config import (
 )
 from bfm.training.setup_registry import setups
 from bfm.training.optimizer.builders import build_optimizers, build_schedulers
-from bfm.core.logging import log
+from bfm.core.logger import log
 
 
 RUNS_DIR='runs/data'

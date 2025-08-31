@@ -14,7 +14,7 @@ from eval_utils import *
 from bfm.training.training_config import parse_subject_trials_from_config, unconvert_dtypes, convert_dtypes
 from bfm.subject.dataset import load_subjects
 from bfm.training.setup_registry import setups
-from bfm.core.logging import log
+from bfm.core.logger import log
 
 splits_options = [
     'SS_SM', # same subject, same trial
