@@ -19,7 +19,7 @@ class ResourceFormatter(logging.Formatter):
         lvl = record.levelname  # DEBUG, INFO, WARNING, ERROR, CRITICAL
 
         local = getattr(record, "local", False)
-        where = f"[{record.name}:{record.lineno}]" if not local else ""
+        where = f"{record.name}:{record.lineno} - " if not local else ""
 
         if torch.cuda.is_available():
             d = torch.cuda.current_device()
@@ -32,7 +32,7 @@ class ResourceFormatter(logging.Formatter):
         ram = psutil.Process().memory_info().rss / 2**30
         indent = " " * (4 * int(getattr(record, "indent", 0)))
         msg = super().format(record)  # "%(message)s"
-        return f"[{t} {lvl}]{where}[{gpu}][RAM {ram:.1f}G] {indent}{msg}"
+        return f"[{t} {lvl}][{gpu}][RAM {ram:.1f}G] {indent}{where} {msg}"
 
 
 def get_logger(name: str = __name__, level: int = logging.INFO) -> logging.Logger:
