@@ -1,10 +1,12 @@
 {% extends "base.html" %}
 {% block content %}
   {% if page.nb_url and config.repo_url %}
-    <a class="md-content__button md-icon"
-       href="https://colab.research.google.com/github/{{ config.repo_url.split('github.com/')[-1] }}/blob/{{ config.extra.repo_branch }}/{{ page.file.src_path }}"
-       title="Open in Colab">
-      {% include ".icons/material/export.svg" %}
+    <a href="https://colab.research.google.com/github/{{ config.repo_url.split('github.com/')[-1] }}/blob/{{ config.extra.repo_branch }}/{{ page.file.src_path }}"
+       target="_blank"
+       rel="noopener noreferrer">
+      <img 
+        src="https://img.shields.io/badge/Open%20in-Colab-blue?logo=googlecolab&logoColor=white" 
+        alt="Open in Colab">
     </a>
   {% endif %}
   {{ super() }}
