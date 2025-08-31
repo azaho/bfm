@@ -5,6 +5,7 @@ from bfm.model.factory import build_model
 from bfm.model.base import BFModule
 from bfm.model.registry import encoders, backbones
 
+
 @encoders.register("dummy_enc")
 class DummyEncoder(BFModule):
     def __init__(self, dim=10):
@@ -13,6 +14,7 @@ class DummyEncoder(BFModule):
 
     def forward(self, x):
         return self.linear(x)
+
 
 @backbones.register("dummy_backbone")
 class DummyBackbone(BFModule):
@@ -26,6 +28,7 @@ class DummyBackbone(BFModule):
 
 class DummyCfg:
     """Mimics Hydra/OmegaConf config tree with attributes."""
+
     class encoder:
         name = "dummy_enc"
         kwargs = {"dim": 8}
@@ -57,7 +60,7 @@ def test_modules_on_correct_device_and_dtype():
     p = next(enc.parameters())
     assert str(p.device) == cfg.device
     assert p.dtype == cfg.model.dtype
-    
+
     p = next(bbk.parameters())
     assert str(p.device) == cfg.device
     assert p.dtype == cfg.model.dtype
