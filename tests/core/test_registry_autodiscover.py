@@ -4,6 +4,7 @@ import textwrap
 
 import pytest
 
+
 @pytest.mark.needs_autodiscover
 def test_autodiscover_relative_default(mkpkg):
     src_registry = textwrap.dedent("""\
@@ -20,12 +21,15 @@ def test_autodiscover_relative_default(mkpkg):
                 self.c = c
     """)
 
-    mkpkg("pkgx", {
-        "__init__.py": "",
-        "registry.py": src_registry,
-        "module/__init__.py": "from .items import *",
-        "module/items.py": src_items,
-    })
+    mkpkg(
+        "pkgx",
+        {
+            "__init__.py": "",
+            "registry.py": src_registry,
+            "module/__init__.py": "from .items import *",
+            "module/items.py": src_items,
+        },
+    )
 
     reg_mod = importlib.import_module("pkgx.registry")
     reg = reg_mod.registry
@@ -55,13 +59,16 @@ def test_autodiscover_absolute(mkpkg):
         def focal_fn(gamma: float = 2.0): return {"gamma": gamma}
     """
 
-    mkpkg("pkgx", {
-        "__init__.py": "",
-        "training/__init__.py": "",
-        "training/registry.py": src_registry,
-        "training/losses/__init__.py": src_losses_init,
-        "training/losses/focal.py": src_focal
-    })
+    mkpkg(
+        "pkgx",
+        {
+            "__init__.py": "",
+            "training/__init__.py": "",
+            "training/registry.py": src_registry,
+            "training/losses/__init__.py": src_losses_init,
+            "training/losses/focal.py": src_focal,
+        },
+    )
 
     reg_mod = importlib.import_module("pkgx.training.registry")
     losses = reg_mod.losses
@@ -71,6 +78,7 @@ def test_autodiscover_absolute(mkpkg):
     cfg = losses.resolve("focal_loss", gamma=3.3)
     assert cfg == {"gamma": 3.3}
 
+
 @pytest.mark.needs_autodiscover
 def test_autodiscover_is_cached(mkpkg, monkeypatch):
     """
@@ -78,14 +86,17 @@ def test_autodiscover_is_cached(mkpkg, monkeypatch):
     The registry calls autodiscover() each time, but it's cached, so submodules
     should be imported only once.
     """
-    mkpkg("pkgx", {
-        "__init__.py": "",
-        "models/__init__.py": "",
-        "models/registry.py": "from bfm.core.registry import Registry\nitems = Registry('pkgx.models.items', relative=False)\n",
-        "models/items/__init__.py": "from . import a, b\n",
-        "models/items/a.py": "from pkgx.models.registry import items\n@items.register('a')\nclass A: pass\n",
-        "models/items/b.py": "from pkgx.models.registry import items\n@items.register('b')\nclass B: pass\n",
-    })
+    mkpkg(
+        "pkgx",
+        {
+            "__init__.py": "",
+            "models/__init__.py": "",
+            "models/registry.py": "from bfm.core.registry import Registry\nitems = Registry('pkgx.models.items', relative=False)\n",
+            "models/items/__init__.py": "from . import a, b\n",
+            "models/items/a.py": "from pkgx.models.registry import items\n@items.register('a')\nclass A: pass\n",
+            "models/items/b.py": "from pkgx.models.registry import items\n@items.register('b')\nclass B: pass\n",
+        },
+    )
 
     # Wrap import_module to count imports under 'pkgx.models.items'
     orig_import_module = importlib.import_module

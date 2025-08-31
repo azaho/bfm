@@ -5,12 +5,14 @@ from pathlib import Path
 
 import pytest
 
+
 @pytest.fixture(autouse=True)
 def no_autodiscover_env(monkeypatch, request):
     # Skip disabling when the test opts in with a marker
     if request.node.get_closest_marker("needs_autodiscover"):
         return
     monkeypatch.setenv("BFM_DISABLE_AUTODISCOVER", "1")
+
 
 @pytest.fixture
 def mkpkg(tmp_path, monkeypatch):
@@ -23,6 +25,7 @@ def mkpkg(tmp_path, monkeypatch):
             "a.py": "from pkgx.registry import items\n@items.register('a')\nclass A: pass\n",
         })
     """
+
     def _make(pkg_name: str, files: dict[str, str]) -> Path:
         base = tmp_path / pkg_name
         for rel, src in files.items():

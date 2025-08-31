@@ -66,13 +66,14 @@ def test_resourceformatter_cpu_path(monkeypatch):
 
     out = stream.getvalue()
     assert "msg via cpu path" in out
-    
+
+
 def test_resourceformatter_gpu_simulated(monkeypatch):
     # Fake cuda API
     monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
     monkeypatch.setattr(torch.cuda, "current_device", lambda: 0)
     monkeypatch.setattr(torch.cuda, "memory_allocated", lambda _: 1024**3)  # 1 GB
-    monkeypatch.setattr(torch.cuda, "memory_reserved", lambda _: 2*1024**3)  # 2 GB
+    monkeypatch.setattr(torch.cuda, "memory_reserved", lambda _: 2 * 1024**3)  # 2 GB
 
     lg, stream = make_captured_logger("test.gpu.sim", level=logging.INFO)
     lg.info("msg simulated gpu", extra={"local": True})
@@ -80,5 +81,5 @@ def test_resourceformatter_gpu_simulated(monkeypatch):
 
     assert "msg simulated gpu" in out
     assert "cuda:0" in out
-    assert "1.0" in out # Memory allocated
-    assert "2.0" in out # Memory reserved
+    assert "1.0" in out  # Memory allocated
+    assert "2.0" in out  # Memory reserved
