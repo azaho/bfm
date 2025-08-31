@@ -23,29 +23,5 @@ date: 2025-08-07
 
 Welcome to the Brain Foundation Models (BFM) documentation. This site is a work in progress.
 
-## Project layout
-```
-    docs/
-        index.md            # The documentation homepage.
-        ...                 # Other markdown pages, images and other files.
-    analyses/               # Analysis scripts and notebooks.
-    bfm/
-        training/
-            setups/             # Training setup configurations.
-            optimizers/         # Custom optimizers.
-        subject/
-            datasets/           # Implementation for various datasets
-            subjects/           # Implementation for subjects of datasets
-        model/
-            backbones/          # Model architectures
-            encoders/           # Input embedders
-            modules/            # Reusable modules
-            preprocessing/      # Custom preprocessing functions
-        evaluation/
-            neuroprobe/         # Neuroprobe benchmark
-        core/                   # Core utilities and shared functions
-    runs/                  # Output files and logs
-    tests/                 # Unit tests and test data
-    mkdocs.yml             # Documentation configuration file.
-    pyproject.toml         # Python project configuration file.
-    quickstart.ipynb       # Quickstart notebook.
+
+> This documentation site is a work in progress

@@ -9,4 +9,22 @@ date: 2025-07-15
 
 This section provides detailed documentation of the codebase. Use the navigation on the left to explore different components of the project.
 
-> This documentation site is a work in progress
+
+**Source Code Layout**
+```
+    bfm/
+        training/
+            setups/             # Training setup configurations.
+            optimizers/         # Custom optimizers.
+        subject/
+            datasets/           # Implementation for various datasets
+            subjects/           # Implementation for subjects of datasets
+        model/
+            encoders/           # Input embedders
+            backbones/          # Model architectures
+            modules/            # Reusable modules
+            preprocessing/      # Custom preprocessing functions
+        evaluation/
+            neuroprobe/         # Neuroprobe benchmark
+        core/                   # Core utilities and shared functions
+```
