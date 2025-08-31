@@ -4,6 +4,7 @@ class Subject:
     All subject-specific implementations (MGH, BrainTreebank, etc.) should inherit from this.
 
     The interface provides standardized methods to:
+    
     - Access electrode metadata (labels, coordinates, etc.)
     - Load and retrieve neural data for specific electrodes/trials/sessions
     - Manage data caching

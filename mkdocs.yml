@@ -5,9 +5,28 @@ repo_url: https://github.com/azaho/bfm
 
 nav:
   - Home: index.md
+  - Quickstart: quickstart.ipynb
   - Reference:
       - Overview: reference/index.md
-  - Quickstart: quickstart.ipynb
+      - Training: 
+        - Overview: reference/training/index.md
+        - Training Setup: reference/training/training_setup.md
+        - Setups: reference/training/setups.md
+        - Optimizer: reference/training/optimizer.md
+      - Model: 
+        - Overview: reference/model/index.md
+        - BFModule: reference/model/bfmodule.md
+        - Factory: reference/model/factory.md
+      - Subject: 
+        - Overview: reference/subject/index.md
+        - Base: reference/subject/base.md
+        - Subjects: reference/subject/subjects.md
+        - Datasets: reference/subject/datasets.md
+      - Evaluation: reference/evaluation.md
+      - Core:
+        - Overview: reference/core/index.md
+        - Registry: reference/core/registry.md
+        - Logger: reference/core/logger.md
   - Getting Started:
       - Overview: getting-started/index.md
       - Installation: getting-started/installation.md
@@ -58,3 +77,11 @@ plugins:
   - mkdocs-jupyter:
       execute: false
       include_source: true
+  - mkdocstrings:
+      default_handler: python
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: true
+            filters: ["!^_"]   # hide _private names

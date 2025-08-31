@@ -1,0 +1,1 @@
+::: bfm.model.base

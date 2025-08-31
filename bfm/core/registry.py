@@ -66,9 +66,9 @@ class Registry(Generic[T]):
     Create a registry for all items in a package.
 
     Args:
-        package (Optional[str], default = None): Dotted path of the package to scan for items
+        package (Optional[str]): Dotted path of the package to scan for items
             (modules under it should import and call @register). If no package is specified, the caller's package will be used.
-        relative (bool, default=True): If True, the package is treated as relative to the caller's package.
+        relative (bool): If True, the package is treated as relative to the caller's package.
     """
     def __init__(self, package: Optional[str] = None, relative: bool = True):
         if package is None:
