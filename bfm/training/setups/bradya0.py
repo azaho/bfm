@@ -20,14 +20,14 @@ The data starts out as (batch_size, n_electrodes, n_timesamples)
 Loss function: compare the output of the time transformer on half of electrodes 
 to the output of the electrode transformer on the other half on the next timestep, using a contrastive loss.
 '''
-from typing import Dict, Any
+from typing import Any
 
 import torch
 import torch.nn as nn
 
 from bfm.model.base import BFModule
-from bfm.training.training_setup import TrainingSetup
 from bfm.training.setup_registry import setups
+from bfm.training.training_setup import TrainingSetup
 
 ### DEFINING THE MODEL COMPONENTS ###
 
@@ -38,7 +38,7 @@ class LinearModel(BFModule):
         self.bin_size = bin_size
         self.linear = nn.Linear(bin_size, bin_size)
         
-    def forward(self, batch: Dict[str, Any]) -> torch.Tensor:
+    def forward(self, batch: dict[str, Any]) -> torch.Tensor:
         '''
         Args:
             batch (dict): Dictionary containing:
@@ -80,7 +80,7 @@ class LinearModel(BFModule):
 class Bradya0(TrainingSetup):
     '''Simple Linear Model for Onboarding Task'''
     
-    def __init__(self, all_subjects, config: Dict, verbose: bool = True):
+    def __init__(self, all_subjects, config: dict, verbose: bool = True):
         super().__init__(all_subjects, config, verbose)
 
     def initialize_model(self):
@@ -98,7 +98,7 @@ class Bradya0(TrainingSetup):
         self.model_components['model'] = self.model
 
 
-    def calculate_pretrain_loss(self, batch: Dict[str, Any], output_accuracy: bool = False) -> Dict[str, torch.Tensor]:
+    def calculate_pretrain_loss(self, batch: dict[str, Any], output_accuracy: bool = False) -> dict[str, torch.Tensor]:
         '''
         Calculate the L2 loss between the predicted future bins and the actual next bins.
         
@@ -122,7 +122,7 @@ class Bradya0(TrainingSetup):
                 
         return { 'l2_loss': loss }
 
-    def generate_frozen_features(self, batch: Dict[str, Any]):
+    def generate_frozen_features(self, batch: dict[str, Any]):
         """
         Generate frozen features from the input batch for downstream tasks.
         

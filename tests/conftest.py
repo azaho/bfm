@@ -1,5 +1,5 @@
-import sys
 import importlib
+import sys
 import textwrap
 from pathlib import Path
 

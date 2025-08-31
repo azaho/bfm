@@ -7,7 +7,7 @@ def _zeroth_power_via_newtonschulz5(
     G: torch.Tensor,
     steps: int = 5,
     eps: float = 1e-7,
-    abc: tuple = (3.4445, -4.7750, 2.0315)
+    abc: tuple = (3.4445, -4.7750, 2.0315),
 ) -> torch.Tensor:
     assert len(G.shape) == 2
     a, b, c = abc
@@ -27,7 +27,7 @@ def orthogonalize(G: torch.Tensor) -> torch.Tensor:
     """
     Orthogonalize G using the Newton-Schulz zeroth-power iteration
     (iterative inverse square root method).
-    
+
     Args:
         G (torch.Tensor): Input tensor to orthogonalize.
 
@@ -78,7 +78,7 @@ class Muon(torch.optim.Optimizer):
             momentum = group["momentum"]
             zeropower_backend = _zeroth_power_via_newtonschulz5
 
-            for i, p in enumerate(group["params"]):
+            for p in group["params"]:
                 g = p.grad
                 # assert g is not None
                 # print(f"Param {i} has shape {p.shape}, and grad % of nan values: {torch.sum(torch.isnan(g)).item() / g.numel() * 100:.2f}%, and % of zeros: {torch.sum(g == 0).item() / g.numel() * 100:.2f}%")

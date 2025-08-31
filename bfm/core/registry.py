@@ -17,11 +17,12 @@ my_item = items.resolve("my_item", number=4)
 ``` 
 """
 import importlib
+import inspect
 import os
 import pkgutil
-import inspect
+from collections.abc import Callable
 from functools import cache
-from typing import Callable, Dict, Generic, List, TypeVar, Optional
+from typing import Generic, TypeVar
 
 T = TypeVar("T")
 Factory = Callable[..., T]
@@ -70,7 +71,7 @@ class Registry(Generic[T]):
             (modules under it should import and call @register). If no package is specified, the caller's package will be used.
         relative (bool): If True, the package is treated as relative to the caller's package.
     """
-    def __init__(self, package: Optional[str] = None, relative: bool = True):
+    def __init__(self, package: str | None = None, relative: bool = True):
         if package is None:
             base_pkg = _caller_package()
         elif relative:
@@ -78,8 +79,8 @@ class Registry(Generic[T]):
         else:
             base_pkg = package
             
-        self._store: Dict[str, Factory] = {}
-        self._aliases: Dict[str, str] = {}
+        self._store: dict[str, Factory] = {}
+        self._aliases: dict[str, str] = {}
         self._autodiscover = _make_autodiscover(base_pkg)
 
     def register(self, name: str, *aliases: str) -> Callable[[Factory], Factory]:
@@ -103,10 +104,12 @@ class Registry(Generic[T]):
         key = name.strip().lower()
         key = self._aliases.get(key, key)
         try:
-            factory = self._store[key]
-        except KeyError:
-            raise KeyError(f"Unknown key {name!r}. Available: {self.list()}")
-        return factory
+            return self._store[key]
+        except KeyError as e:
+            raise KeyError(
+                f"Unknown key {name!r}. Available: {self.list()}"
+            ) from e
+
 
     def resolve(self, name: str, **kwargs) -> T:
         """Instantiate by name with kwargs."""
@@ -119,12 +122,12 @@ class Registry(Generic[T]):
         key = name.strip().lower()
         return key in self._store or key in self._aliases
 
-    def list(self) -> List[str]:
+    def list(self) -> list[str]:
         """Canonical keys (not aliases)."""
         self._autodiscover()
         return sorted(self._store.keys())
 
-    def list_aliases(self) -> Dict[str, str]:
+    def list_aliases(self) -> dict[str, str]:
         """alias → canonical mapping."""
         self._autodiscover()
         return self._aliases

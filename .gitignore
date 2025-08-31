@@ -1,3 +1,6 @@
+# Personal working directories
+_*/
+
 # Virtual environments
 venv
 .venv/
@@ -9,9 +12,14 @@ venv
 .vscode/
 .idea/
 
-# Not committing any error or output files or figures
+# Cache
+.*_cache/
+
+# Error/Output Files
 *.err
 *.out
+
+# Figures
 *.pdf
 *.png
 
@@ -21,9 +29,6 @@ runs/logs/
 runs/wandb/
 runs/scripts/*
 runs/analyses
-
-# Personal working directories
-_*/
 
 # MkDocs build output
 site/

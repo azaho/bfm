@@ -1,7 +1,9 @@
 import logging
 import time
+
 import psutil
 import torch
+
 
 class ResourceFormatter(logging.Formatter):
     """
@@ -11,7 +13,8 @@ class ResourceFormatter(logging.Formatter):
       - indent: int  (levels of 4 spaces)
       - local:  bool (if True, suppress [name:lineno])
     """
-    def format(self, record: logging.LogRecord) -> str:    
+
+    def format(self, record: logging.LogRecord) -> str:
         t = time.strftime("%H:%M:%S")
         lvl = record.levelname  # DEBUG, INFO, WARNING, ERROR, CRITICAL
 
@@ -31,7 +34,6 @@ class ResourceFormatter(logging.Formatter):
         msg = super().format(record)  # "%(message)s"
         return f"[{t} {lvl}]{where}[{gpu}][RAM {ram:.1f}G] {indent}{msg}"
 
-    
 
 def get_logger(name: str = __name__, level: int = logging.INFO) -> logging.Logger:
     """Create a logger with our custom resource formatter."""
@@ -48,7 +50,7 @@ def get_logger(name: str = __name__, level: int = logging.INFO) -> logging.Logge
 def log(message: str, level: int = logging.INFO, indent: int = 0, priority: int = 0):
     """
     Convenience wrapper for quick logging.
-    
+
     Args:
         message (str): Log message.
         level (int): Logging level (default INFO).
@@ -56,7 +58,7 @@ def log(message: str, level: int = logging.INFO, indent: int = 0, priority: int 
         priority (int): Logging priority (default 0). If greater than 1, don't log.
     """
     if priority > 1:
-        return # Kept for backwards compatibility
+        return  # Kept for backwards compatibility
     logger = get_logger()
     extra = {"indent": indent, "local": True}
     logger.log(level, message, extra=extra)

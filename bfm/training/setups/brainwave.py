@@ -1,12 +1,12 @@
 '''Implementation of BrainWave (https://arxiv.org/abs/2402.10251)'''
-from typing import Dict, Any
+from typing import Any
+
 import torch
 
-from bfm.training.setup_registry import setups
-from bfm.training.training_setup import TrainingSetup
 from bfm.model.factory import build_model
 from bfm.model.registry import backbones
-
+from bfm.training.setup_registry import setups
+from bfm.training.training_setup import TrainingSetup
 
 CONFIG = {
     'device': 'cuda',
@@ -80,7 +80,7 @@ class BrainWave(TrainingSetup):
         return out
     
     
-    def calculate_pretrain_loss(self, batch: Dict[str, Any], output_accuracy: bool = False) -> Dict[str, torch.Tensor]:
+    def calculate_pretrain_loss(self, batch: dict[str, Any], output_accuracy: bool = False) -> dict[str, torch.Tensor]:
         '''
         Calculate the L2 loss between the predicted future bins and the actual next bins.
         
@@ -98,7 +98,7 @@ class BrainWave(TrainingSetup):
         return {}
     
     
-    def generate_frozen_features(self, batch: Dict):
+    def generate_frozen_features(self, batch: dict):
         """Generate frozen features for the given batch."""
         with torch.no_grad():
             x = batch["data"]
