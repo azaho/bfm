@@ -27,7 +27,7 @@ from training_setup.training_config import (
     update_random_seed,
 )
 from utils.muon_optimizer import Muon
-
+# torch.set_float32_matmul_precision('high')
 
 RUNS_DIR='runs/data'
 
@@ -109,7 +109,8 @@ all_subjects = load_subjects(config['training']['train_subject_trials'],
 train_subject = all_subjects[f"btbank{train_subject_id}"]
 test_subject = all_subjects[f"btbank{test_subject_id}"]
 
-electrode_subset = neuroprobe_config.NEUROPROBE_LITE_ELECTRODES[f"btbank{train_subject_id}"]
+electrode_subset_train = neuroprobe_config.NEUROPROBE_LITE_ELECTRODES[f"btbank{train_subject_id}"]
+electrode_subset_test = neuroprobe_config.NEUROPROBE_LITE_ELECTRODES[f"btbank{test_subject_id}"]
 
 
 ### LOAD MODEL ###
@@ -239,7 +240,7 @@ for eval_name in eval_tasks:
         for batch_idx, (batch_input, batch_label) in enumerate(train_loader):
             batch = {
                 "data": batch_input.to(device, dtype=config['training']['data_dtype']),
-                "electrode_labels": [electrode_subset],
+                "electrode_labels": [electrode_subset_train],
                 "metadata": {
                     "subject_identifier": train_subject.subject_identifier,
                     "trial_id": train_trial_id,
@@ -300,7 +301,7 @@ for eval_name in eval_tasks:
             for batch_idx, (batch_input, batch_label) in enumerate(test_loader):
                 batch = {
                     "data": batch_input.to(device, dtype=config['training']['data_dtype']),
-                    "electrode_labels": [electrode_subset],
+                    "electrode_labels": [electrode_subset_test],
                     "metadata": {
                         "subject_identifier": test_subject.subject_identifier,
                         "trial_id": test_trial_id,
