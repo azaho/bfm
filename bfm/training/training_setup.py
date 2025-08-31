@@ -2,7 +2,7 @@
 Defines the TrainingSetup class, which is an interface for training setups.
 
 Functions that raise NotImplementedError are meant to be overridden.
-To create a custom training setup, define a new class in a separate file that 
+To create a custom training setup, define a new class in the `bfm.training.setups` folder that 
 inherits from `TrainingSetup` and implements the required methods.
 '''
 import os
@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader, ConcatDataset
 
 from bfm.subject.datasets.dataset import SubjectTrialDataset, PreprocessCollator, SubjectBatchSampler
 from bfm.training.training_config import convert_dtypes
-from bfm.core.logging import log
+from bfm.core.logger import log
 from bfm.model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
 from bfm.model.encoders.electrode_embedding import (
     ElectrodeEmbedding_Learned,

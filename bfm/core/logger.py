@@ -4,8 +4,13 @@ import psutil
 import torch
 
 class ResourceFormatter(logging.Formatter):
-    """Formatter displaying time, GPU memory, and RAM usage."""
+    """
+    Formatter showing timestamp, level, origin, GPU/RAM, indent, and message.
 
+    Custom record extras:
+      - indent: int  (levels of 4 spaces)
+      - local:  bool (if True, suppress [name:lineno])
+    """
     def format(self, record: logging.LogRecord) -> str:    
         t = time.strftime("%H:%M:%S")
         lvl = record.levelname  # DEBUG, INFO, WARNING, ERROR, CRITICAL

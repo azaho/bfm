@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from bfm.core.logging import log
+from bfm.core.logger import log
 from bfm.training.setup_registry import setups
 from bfm.training.training_setup import TrainingSetup
 
