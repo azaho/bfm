@@ -1,8 +1,13 @@
 import importlib
+import inspect
+import logging
 import sys
 import textwrap
+import types
 
 import pytest
+
+from bfm.core.registry import Registry, _caller_package
 
 
 @pytest.mark.needs_autodiscover
@@ -128,3 +133,48 @@ def test_autodiscover_is_cached(mkpkg, monkeypatch):
     items.list_aliases()
 
     assert calls["count"] == first_count  # no new imports
+
+
+@pytest.mark.needs_autodiscover
+def test_autodiscover_with_module_logs_warning(caplog):
+    with caplog.at_level(logging.WARNING):
+        math_registry = Registry("math", relative=False)
+        math_registry.list()
+
+    # Assert that at least one WARNING was logged
+    assert any(record.levelno == logging.WARNING for record in caplog.records)
+
+
+def test_caller_package_returns_package(monkeypatch):
+    """Simulate a caller module with a package set."""
+    fake_module = types.SimpleNamespace(__file__=__file__, __package__="fakepkg")
+
+    # Patch inspect.getmodule to always return our fake module
+    monkeypatch.setattr(inspect, "getmodule", lambda _: fake_module)
+
+    # Patch currentframe to produce a fake frame chain
+    class FakeFrame:
+        f_back = 1
+
+    monkeypatch.setattr(inspect, "currentframe", lambda: FakeFrame())
+
+    assert _caller_package() == "fakepkg"
+
+
+def test_caller_package_raises_when_no_frame(monkeypatch):
+    """Simulate no frame available."""
+    monkeypatch.setattr(inspect, "currentframe", lambda: None)
+    with pytest.raises(RuntimeError):
+        _caller_package()
+
+
+def test_caller_package_raises_when_no_frame_back(monkeypatch):
+    """Simulate no previous frame available."""
+
+    class FakeFrame:
+        f_back = None
+
+    monkeypatch.setattr(inspect, "currentframe", lambda: FakeFrame())
+
+    with pytest.raises(RuntimeError):
+        _caller_package()
