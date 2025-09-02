@@ -23,10 +23,12 @@ import pkgutil
 from collections.abc import Callable
 from functools import cache
 from typing import Generic, TypeVar
+from bfm.core.logger import get_logger
 
 T = TypeVar("T")
 Factory = Callable[..., T]
 
+logger = get_logger(__name__)
 
 def _make_autodiscover(base_pkg: str) -> Callable[[], None]:
     """Create a cached autodiscover() bound to a given package path."""
@@ -37,6 +39,7 @@ def _make_autodiscover(base_pkg: str) -> Callable[[], None]:
         pkg = importlib.import_module(base_pkg)
         pkg_path = getattr(pkg, "__path__", None)
         if not pkg_path:  # not a package -> no-op
+            logger.warning(f"Registry base package {base_pkg!r} is not a package, skipping autodiscovery")
             return
         for m in pkgutil.walk_packages(pkg_path, prefix=base_pkg + "."):
             importlib.import_module(m.name)
