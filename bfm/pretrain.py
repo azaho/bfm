@@ -115,14 +115,15 @@ else:
 ### WANDB SETUP ###
 
 if wandb: 
-    os.makedirs("runs/wandb", exist_ok=True)
+    wandb_dir = f"{RUNS_DIR}/wandb"
+    os.makedirs(wandb_dir, exist_ok=True)
     if len(config['cluster']['wandb_entity']) > 0:
         wandb.init(project=config['cluster']['wandb_project'], name=config['cluster']['wandb_name'], id=config['cluster']['wandb_name'],
                     entity=config['cluster']['wandb_entity'],
-                    config=config, settings=wandb.Settings(init_timeout=1000), dir="runs/wandb")
+                    config=config, settings=wandb.Settings(init_timeout=1000), dir=wandb_dir)
     else:
         wandb.init(project=config['cluster']['wandb_project'], name=config['cluster']['wandb_name'], id=config['cluster']['wandb_name'],
-                    config=config, settings=wandb.Settings(init_timeout=1000), dir="runs/wandb")
+                    config=config, settings=wandb.Settings(init_timeout=1000), dir=wandb_dir)
 
 ### EVALUATION OF THE MODEL BEFORE TRAINING ###
 
