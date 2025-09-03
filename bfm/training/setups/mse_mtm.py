@@ -144,6 +144,7 @@ class mse_mtm(TrainingSetup):
         config['model']['name'] = "SimpleTransformerModel"
 
         self.prompt_tokens = PromptTokens(config['model']['transformer']['d_model']).to(device, dtype=config['model']['dtype'])
+        self.mask_token = torch.nn.Parameter(torch.zeros(config['model']['transformer']['d_model'])).to(device, dtype=config['model']['dtype'])
 
         ### LOAD ELECTRODE EMBEDDINGS ###
 
@@ -171,6 +172,7 @@ class mse_mtm(TrainingSetup):
         self.model_components['fft_preprocessor'] = self.fft_preprocessor
         self.model_components['model'] = self.model
         self.model_components['prompt_tokens'] = self.prompt_tokens
+        self.model_components['mask_token'] = self.mask_token
         self.model_components['electrode_embeddings'] = self.electrode_embeddings
 
     def _preprocess_add_electrode_indices(self, batch):
@@ -236,6 +238,12 @@ class mse_mtm(TrainingSetup):
             batch, force_remove_indices = mask_intra_region(batch, self.electrode_locations, p_electrodes=self.p_mask_electrodes, key='preprocessed_data')
             # force_remove_indices = allowed_remove_indices
             token = self.prompt_tokens.prompt_intraregion
+
+        # signal the masked tokens with the mask token
+        if 'mask_electrodes' in batch:
+            batch['preprocessed_data'][:, batch['mask_electrodes'].bool(), :, :] = self.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], batch['mask_electrodes'].sum(), batch['preprocessed_data'].shape[2], -1)
+        if 'mask_timebins' in batch:
+            batch['preprocessed_data'][:, :, batch['mask_timebins'].bool(), :] = self.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], batch['preprocessed_data'].shape[1], batch['mask_timebins'].sum(), -1)
 
         batch, selected_idx = self._preprocess_subset_electrodes(batch, allowed_remove_idx=allowed_remove_indices, force_remove_idx=force_remove_indices, output_selected_idx=True, keys=['preprocessed_data_clean', 'preprocessed_data'])
         if 'mask_electrodes' in batch:
