@@ -9,7 +9,7 @@ from bfm.model.base import BFModule
 from bfm.model.registry import encoders
 
 
-logger = get_logger(__name__, level=logging.DEBUG)
+logger = get_logger(__name__)
 
 @encoders.register("convolution")
 class ConvolutionPreprocessor(BFModule):

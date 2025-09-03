@@ -66,8 +66,7 @@ def span_mask(B, T, mask_ratio: float = 0.3, span_len: int = 16, device=None):
     return mask
 
 
-logger = get_logger(__name__, level=logging.DEBUG)
-
+logger = get_logger(__name__)
 
 @setups.register("brainwave")
 class BrainWave(TrainingSetup):
