@@ -29,38 +29,7 @@ from model.electrode_embedding import (
 
 ### DEFINING THE MODEL COMPONENTS ###
 
-
-class SimpleMSEAutoregressiveModel(BFModule):
-    def __init__(self, d_model, spectrogram_parameters, d_input, n_layers=5, n_heads=12, dropout=0.1):
-        super().__init__()
-        self.d_model = d_model
-        self.n_layers = n_layers
-        
-        self.transformer = Transformer(d_input=d_input, d_model=d_model, 
-                                        d_output=d_input, 
-                                        n_layer=n_layers, n_head=n_heads, causal=True, 
-                                        rope=True, rope_base=128, dropout=dropout)
-
-    def forward(self, electrode_data, embeddings=None, electrode_transformer_only=False, stop_at_block=None):
-        # electrode_data is of shape (batch_size, n_electrodes, n_timebins, d_input)
-        # embeddings is of shape (batch_size, n_electrodes, d_model)
-        batch_size, n_electrodes, n_timebins, d_input = electrode_data.shape
-
-        positions = torch.arange(n_timebins, device=electrode_data.device, dtype=torch.long)
-        positions = positions.unsqueeze(0).unsqueeze(0).expand(batch_size, n_electrodes, -1) # shape: (batch_size, n_electrodes, n_timebins)
-
-        positions = positions.reshape(batch_size, n_electrodes * n_timebins)
-        electrode_data = electrode_data.reshape(batch_size, n_electrodes * n_timebins, d_input)        
-        if embeddings is not None:
-            embeddings = embeddings.unsqueeze(2).expand(batch_size, n_electrodes, n_timebins, -1) # shape: (batch_size, n_electrodes, n_timebins, d_model)
-            embeddings = embeddings.reshape(batch_size, n_electrodes * n_timebins, -1) # shape: (batch_size, n_electrodes * n_timebins, d_model)
-        
-        transformed_data = self.transformer(electrode_data, embeddings=embeddings, positions=positions, stop_at_block=stop_at_block) # shape: (batch_size, n_electrodes * n_timebins, d_output)
-        
-        d_output = transformed_data.shape[-1]
-        transformed_data = transformed_data.reshape(batch_size, n_electrodes, n_timebins, d_output) # note: d_input = d_output = max_frequency_bin if stop_at_block is None, otherwise d_output = d_model
-        
-        return transformed_data
+from .mse_rm import SimpleTransformerModel
 
 
 ### DEFINING THE TRAINING SETUP ###
@@ -84,7 +53,7 @@ class mse_ar(TrainingSetup):
 
         self.fft_preprocessor = SpectrogramPreprocessor(config['model']['signal_preprocessing']['spectrogram_parameters'], output_dim=-1)
 
-        self.model = SimpleMSEAutoregressiveModel(
+        self.model = SimpleTransformerModel(
             spectrogram_parameters=config['model']['signal_preprocessing']['spectrogram_parameters'],
             d_model=config['model']['transformer']['d_model'],
             d_input=self.fft_preprocessor.max_frequency_bin,
@@ -92,7 +61,7 @@ class mse_ar(TrainingSetup):
             n_heads=config['model']['transformer']['n_heads'],
             dropout=config['training']['dropout']
         ).to(device, dtype=config['model']['dtype'])
-        config['model']['name'] = "SimpleMSEAutoregressiveModel"
+        config['model']['name'] = "SimpleTransformerModel"
 
         ### LOAD ELECTRODE EMBEDDINGS ###
 
