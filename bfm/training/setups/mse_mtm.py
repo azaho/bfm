@@ -99,7 +99,6 @@ class PromptTokens(BFModule):
         self.prompt_interregion = torch.nn.Parameter(torch.zeros(d_model))
         self.prompt_intraregion = torch.nn.Parameter(torch.zeros(d_model))
 
-
 ### DEFINING THE TRAINING SETUP ###
 
 class mse_mtm(TrainingSetup):
@@ -224,22 +223,26 @@ class mse_mtm(TrainingSetup):
         batch['preprocessed_data'] = preprocessed_data.clone()
         allowed_remove_indices = None
         force_remove_indices = None
+        token = None
         if loss_type == 'cosmoothing':
             batch = mask_random_electrodes_and_timebins(batch, p_electrodes=self.p_mask_electrodes, p_timebins=self.p_mask_timebins, key='preprocessed_data')
+            token = self.prompt_tokens.prompt_cosmoothing
         elif loss_type == 'causal':
-            pass
+            token = self.prompt_tokens.prompt_causal
         elif loss_type == 'inter_region':
             batch, allowed_remove_indices = mask_inter_region(batch, self.electrode_locations, key='preprocessed_data')
+            token = self.prompt_tokens.prompt_interregion
         elif loss_type == 'intra_region':
             batch, force_remove_indices = mask_intra_region(batch, self.electrode_locations, p_electrodes=self.p_mask_electrodes, key='preprocessed_data')
             # force_remove_indices = allowed_remove_indices
-        
+            token = self.prompt_tokens.prompt_intraregion
+
         batch, selected_idx = self._preprocess_subset_electrodes(batch, allowed_remove_idx=allowed_remove_indices, force_remove_idx=force_remove_indices, output_selected_idx=True, keys=['preprocessed_data_clean', 'preprocessed_data'])
         if 'mask_electrodes' in batch:
             batch['mask_electrodes'] = batch['mask_electrodes'][selected_idx]
         embeddings = embeddings[:, selected_idx]
 
-        transformed_data = self.model(batch['preprocessed_data'], embeddings) # shape: (batch_size, n_electrodes, n_timebins, d_output)
+        transformed_data, _ = self.model(batch['preprocessed_data'], embeddings, special_tokens=token, special_token_positions=[0]) # shape: (batch_size, n_electrodes, n_timebins, d_output)
 
         if loss_type == 'causal':
             n_timebins = preprocessed_data.shape[2]
