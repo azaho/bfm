@@ -5,8 +5,11 @@ import mne
 from mne_bids import BIDSPath
 from subject.subject import Subject
 import json
+from dotenv import load_dotenv
 
-PODCAST_ROOT_DIR = "/om2/data/public/fietelab/ecog-the-podcast"
+load_dotenv()  # Load environment variables from .env file
+
+PODCAST_ROOT_DIR = os.environ.get("PODCAST_ROOT_DIR", "/om2/data/public/fietelab/ecog-the-podcast")
 
 class PodcastSubject(Subject):
     """
@@ -36,7 +39,6 @@ class PodcastSubject(Subject):
                              subject=f"{self.subject_id:02d}",
                              task="podcast",
                              datatype="ieeg",
-                             description="highgamma",
                              suffix="ieeg",
                              extension="fif")
         

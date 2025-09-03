@@ -165,7 +165,7 @@ class OriginalModel(BFModule):
 
 ### DEFINING THE TRAINING SETUP ###
 
-class andrii0_podcast_pair_last_token(TrainingSetup):
+class andrii0_podcast_pair_causal(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)
 
@@ -189,7 +189,7 @@ class andrii0_podcast_pair_last_token(TrainingSetup):
             n_heads=config['model']['transformer']['n_heads'],
             dropout=config['training']['dropout']
         ).to(device, dtype=config['model']['dtype'])
-        config['model']['name'] = "AndriiLastTokenPodcastPairModel"
+        config['model']['name'] = "AndriiCausalPodcastPairModel"
 
         ### LOAD ELECTRODE EMBEDDINGS ###
 

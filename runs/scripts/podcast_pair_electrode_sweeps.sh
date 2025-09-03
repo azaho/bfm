@@ -1,15 +1,14 @@
 #!/bin/bash
 #SBATCH --job-name=bfm_podcast_pair_xx          
-#SBATCH --ntasks=1            
+#SBATCH --ntasks=4            
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:h100:1
 ####SBATCH --constraint=ampere
 #SBATCH --mem=32G
 #SBATCH -t 12:00:00      
-#SBATCH --array=1-7
-#SBATCH -p ou_bcs_normal
+#SBATCH --array=1-5
+#SBATCH -p mit_preemptable
 #SBATCH --requeue
-#SBATCH --exclude=node100
 source .venv/bin/activate
 export TMPDIR=/om2/scratch/tmp
 export CUDA_VISIBLE_DEVICES=0
@@ -22,7 +21,7 @@ n_in_parallel=1 # How many jobs to run in parallel on the same job (on the same 
 train_subject_trials="podcast01_0,podcast02_0,podcast03_0,podcast04_0,podcast05_0,podcast06_0,podcast07_0,podcast08_0,podcast09_0"
 # eval on subjects 7-9 (will create all possible pairs automatically)
 eval_subject_trials="podcast07_0,podcast08_0,podcast09_0"
-model_name="andrii0_podcast_pair_last_token"
+model_name="andrii0_podcast_pair_causal"
 
 # these parameters are swept over - increased regularization for overfitting
 electrode_options=(48 64 80 96 117)
@@ -61,8 +60,7 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
         --model.context_length 8 \
         --training.future_bin_idx 0 \
         --cluster.eval_model_every_n_epochs 10 \
-        --training.random_string $random_string \
-        --training.train_subject_trials $train_subject_trials \
+        --training.train_subject_trials podcast01_0,podcast02_0,podcast03_0,podcast04_0,podcast05_0,podcast06_0,podcast07_0,podcast08_0,podcast09_0 \
         --training.eval_subject_trials $eval_subject_trials \
         --training.dropout $dropout \
         --training.weight_decay $weight_decay \
