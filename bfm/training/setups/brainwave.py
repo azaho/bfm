@@ -1,6 +1,5 @@
 '''Implementation of BrainWave (https://arxiv.org/abs/2402.10251).'''
 from typing import Any
-import logging
 
 import torch
 import torch.nn as nn
