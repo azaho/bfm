@@ -53,10 +53,11 @@ class mse_ar(TrainingSetup):
 
         self.fft_preprocessor = SpectrogramPreprocessor(config['model']['signal_preprocessing']['spectrogram_parameters'], output_dim=-1)
 
+        d_input = self.fft_preprocessor.n_freqs
         self.model = SimpleTransformerModel(
             spectrogram_parameters=config['model']['signal_preprocessing']['spectrogram_parameters'],
             d_model=config['model']['transformer']['d_model'],
-            d_input=self.fft_preprocessor.max_frequency_bin,
+            d_input=d_input,
             n_layers=config['model']['transformer']['n_layers'],
             n_heads=config['model']['transformer']['n_heads'],
             dropout=config['training']['dropout']

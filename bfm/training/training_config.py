@@ -35,6 +35,7 @@ CONFIG_SCHEMA = {
 
             'spectrogram': ParamConfig(True, bool, 'Whether to use spectrogram'), # Whether to use spectrogram of the signal or take raw voltage as input
             'spectrogram_parameters': {
+                'min_frequency': ParamConfig(0, int, 'Minimum frequency for spectrogram'),
                 'max_frequency': ParamConfig(150, int, 'Maximum frequency for spectrogram'),
                 'tperseg': ParamConfig(0.25, float, 'Time of each spectrogram segment in seconds'),
                 'poverlap': ParamConfig(0.75, float, 'Proportion of overlap between segments for spectrogram'),

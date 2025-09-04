@@ -28,14 +28,16 @@ class SpectrogramPreprocessor(BFModule):
         #    which is a list that goes from 0 to sampling_rate / 2 in increments of sampling_rate / nperseg = 1 / tperseg
         # so max frequency bin is max_frequency * tperseg + 1 (adding one to make the endpoint inclusive)
         self.max_frequency_bin = round(self.spectrogram_parameters['max_frequency'] * self.spectrogram_parameters['tperseg'] + 1)
+        self.min_frequency_bin = round(self.spectrogram_parameters['min_frequency'] * self.spectrogram_parameters['tperseg'])
+        self.n_freqs = self.max_frequency_bin - self.min_frequency_bin
 
         # Transform FFT output to match expected output dimension
-        self.output_transform = nn.Identity() if self.output_dim == -1 else nn.Linear(self.max_frequency_bin, self.output_dim)
+        self.output_transform = nn.Identity() if self.output_dim == -1 else nn.Linear(self.n_freqs, self.output_dim)
 
         if self.spectrogram_parameters['remove_line_noise']:
             example_sampling_rate = 2048
             nperseg = round(self.spectrogram_parameters['tperseg'] * example_sampling_rate)
-            freq_bins = torch.fft.rfftfreq(nperseg, d=1.0/example_sampling_rate)[:self.max_frequency_bin] # Calculate frequency bins (in Hz)
+            freq_bins = torch.fft.rfftfreq(nperseg, d=1.0/example_sampling_rate)[self.min_frequency_bin:self.max_frequency_bin] # Calculate frequency bins (in Hz)
             self.line_noise_mask = self.compute_line_noise_mask(freq_bins=freq_bins, line_noise_freqs=[50,60], margin=2.0)
         else:
             self.line_noise_mask = None
@@ -90,8 +92,8 @@ class SpectrogramPreprocessor(BFModule):
         time_bins = torch.arange(n_times, device=x.device, dtype=torch.float32) * hop_length / sampling_rate
 
         # Trim to max frequency (using a pre-calculated max frequency bin)
-        x = x[:, :self.max_frequency_bin, :]
-        freq_bins = freq_bins[:self.max_frequency_bin]
+        x = x[:, self.min_frequency_bin:self.max_frequency_bin, :]
+        freq_bins = freq_bins[self.min_frequency_bin:self.max_frequency_bin]
             
         # Reshape back
         _, n_freqs, n_times = x.shape
