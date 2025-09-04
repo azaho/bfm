@@ -11,12 +11,12 @@ import torch
 from torch.amp import autocast
 from torch.optim.lr_scheduler import ChainedScheduler
 
-from training.optimizer.builders import build_optimizers, build_schedulers
-from subject.dataset import load_subjects
-from evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
-from training.setup_registry import resolve
-from training.training_config import (
-    log, 
+from bfm.training.optimizer.builders import build_optimizers, build_schedulers
+from bfm.subject.datasets.dataset import load_subjects
+from bfm.evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
+from bfm.training.setup_registry import setups
+from bfm.core.logger import log
+from bfm.training.training_config import (
     update_dir_name, 
     update_random_seed, 
     parse_config_from_args, 
@@ -25,6 +25,8 @@ from training.training_config import (
     convert_dtypes, 
     unconvert_dtypes
 )
+
+RUN_DIR="runs/"
 
 ### PARSE ARGUMENTS ###
 
@@ -92,7 +94,7 @@ pretrained_model_epoch = args.pretrained_model_epoch
 # Determine the epoch to load
 if pretrained_model_epoch < 0:
     # Try to find the latest epoch
-    model_dir_path = os.path.join("runs/data", pretrained_model_dir)
+    model_dir_path = os.path.join(RUN_DIR, "data", pretrained_model_dir)
     if os.path.exists(model_dir_path):
         model_files = [f for f in os.listdir(model_dir_path) if f.startswith("model_epoch_") and f.endswith(".pth")]
         if model_files:
@@ -119,7 +121,7 @@ if pretrained_model_epoch < 0:
         raise FileNotFoundError(f"Pretrained model directory not found: {model_dir_path}")
 
 # Load the pretrained model checkpoint
-checkpoint_path = os.path.join("runs/data", pretrained_model_dir, f"model_epoch_{pretrained_model_epoch}.pth")
+checkpoint_path = os.path.join(RUN_DIR, "data", pretrained_model_dir, f"model_epoch_{pretrained_model_epoch}.pth")
 if not os.path.exists(checkpoint_path):
     raise FileNotFoundError(f"Pretrained model checkpoint not found: {checkpoint_path}")
 
@@ -172,11 +174,11 @@ all_subjects = load_subjects(config['training']['train_subject_trials'],
 
 # Import the training setup class dynamically based on config
 setup_name = config["training"]["setup_name"] # Name in registry
-training_setup = resolve(setup_name, all_subjects=all_subjects, config=config, verbose=True)
+training_setup = setups.resolve(setup_name, all_subjects=all_subjects, config=config, verbose=True)
 
 # Save a copy of the training setup file for reproducibility
 setup_file = str(inspect.getsourcefile(training_setup.__class__)) 
-training_setup_dir = os.path.join('runs/data', full_dir_name, 'training_setup')
+training_setup_dir = os.path.join(RUN_DIR, 'data', full_dir_name, 'training_setup')
 os.makedirs(training_setup_dir, exist_ok=True)
 shutil.copy2(setup_file, training_setup_dir)    
 
@@ -193,7 +195,7 @@ original_dir_name = config['cluster']['dir_name']
 config['cluster']['dir_name'] = pretrained_model_dir
 
 # Load the pretrained weights
-training_setup.load_model(pretrained_model_epoch, load_from_dir="runs/data/")
+training_setup.load_model(pretrained_model_epoch, load_from_dir=f"{RUN_DIR}/data/")
 
 # Restore the full directory name for saving
 config['cluster']['dir_name'] = original_dir_name
@@ -339,7 +341,8 @@ else:
 
 if wandb: 
     log(f"Initializing wandb with project: {config['cluster']['wandb_project']}, name: {config['cluster']['wandb_name']}, entity: {config['cluster']['wandb_entity']}", priority=0)
-    os.makedirs("runs/wandb", exist_ok=True)
+    wandb_dir = f"{RUN_DIR}/wandb"
+    os.makedirs(wandb_dir, exist_ok=True)
     # Create a unique wandb run ID using the random_string
     unique_run_id = f"{config['cluster']['wandb_name']}_{config['training']['random_string']}"
     log(f"Using unique wandb run ID: {unique_run_id}", priority=0)
@@ -348,10 +351,10 @@ if wandb:
     if len(config['cluster']['wandb_entity']) > 0:
         wandb.init(project=config['cluster']['wandb_project'], name=config['cluster']['wandb_name'], id=unique_run_id,
                     entity=config['cluster']['wandb_entity'],
-                    config=config, settings=wandb.Settings(init_timeout=1000), dir="runs/wandb")
+                    config=config, settings=wandb.Settings(init_timeout=1000), dir=wandb_dir)
     else:
         wandb.init(project=config['cluster']['wandb_project'], name=config['cluster']['wandb_name'], id=unique_run_id,
-                    config=config, settings=wandb.Settings(init_timeout=1000), dir="runs/wandb")
+                    config=config, settings=wandb.Settings(init_timeout=1000), dir=wandb_dir)
     log(f"Wandb run initialized successfully", priority=0)
 else:
     log(f"Wandb disabled - project: '{config['cluster']['wandb_project']}', length: {len(config['cluster']['wandb_project'])}", priority=0)

@@ -3,11 +3,12 @@ import numpy as np
 import torch
 import mne
 from mne_bids import BIDSPath
-from subject.subject import Subject
-import json
+from bfm.subject.base import Subject
+from bfm.subject.registry import subjects
 
 PODCAST_ROOT_DIR = "/om2/data/public/fietelab/ecog-the-podcast"
 
+@subjects.register("podcast")
 class PodcastSubject(Subject):
     """
     This class is used to load the neural data for a given podcast subject.

@@ -1,8 +1,8 @@
 import torch
 from torch.utils.data import Dataset
-from subject.podcast import PodcastSubject
-from subject.dataset import SubjectTrialDataset
-from training.training_config import log
+from bfm.subject.subjects.podcast import PodcastSubject
+from bfm.subject.datasets.dataset import SubjectTrialDataset
+from bfm.core.logger import log
 import random
 import numpy as np
 
@@ -213,7 +213,7 @@ def load_podcast_subjects(train_subject_pairs, eval_subject_pairs, dtype, cache=
     Returns:
         dict: Dictionary mapping subject identifiers to PodcastSubject objects
     """
-    from subject.podcast import PodcastSubject
+    from bfm.subject.subjects.podcast import PodcastSubject
     
     # Get all unique subject IDs
     all_subject_ids = set()
@@ -238,7 +238,7 @@ def load_podcast_subjects(train_subject_pairs, eval_subject_pairs, dtype, cache=
 if __name__ == "__main__":
     # Test the paired podcast dataset
     try:
-        from subject.podcast import PodcastSubject
+        from bfm.subject.subjects.podcast import PodcastSubject
         
         # Create two podcast subjects
         subject_a = PodcastSubject(1, cache=False)

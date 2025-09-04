@@ -21,19 +21,7 @@ date: 2025-08-07
     </a>
 </p>
 
-<p align="center"><strong>Brain Foundation Models</strong></p>
+Welcome to the Brain Foundation Models (BFM) documentation. This site is a work in progress.
 
-This is a dummy page for the documentation site powered by [MkDocs](https://www.mkdocs.org/). The theme used is [Material for MkDocs](https://squidfunk.github.io/mkdocs-material/).
 
-## Commands
-
-* `mkdocs serve` - Start the live-reloading docs server.
-* `mkdocs build` - Build the documentation site.
-* `mkdocs -h` - Print help message and exit.
-
-## Project layout
-
-    mkdocs.yml    # The configuration file.
-    docs/
-        index.md  # The documentation homepage.
-        ...       # Other markdown pages, images and other files.
+> This documentation site is a work in progress

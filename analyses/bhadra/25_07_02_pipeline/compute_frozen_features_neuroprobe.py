@@ -5,16 +5,17 @@ import numpy as np
 from torch.amp import autocast
 import gc
 
-from training.optimizer import Muon
-from subject.dataset import load_subjects
-from evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
-from training.training_config import log, update_dir_name, update_random_seed, parse_config_from_args, get_default_config, parse_subject_trials_from_config, convert_dtypes
+from bfm.training.optimizer import Muon
+from bfm.subject.dataset import load_subjects
+from bfm.evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
+from bfm.training.training_config import update_dir_name, update_random_seed, parse_config_from_args, get_default_config, parse_subject_trials_from_config, convert_dtypes
 from torch.optim.lr_scheduler import ChainedScheduler
-from training.training_config import convert_dtypes, unconvert_dtypes, parse_subject_trials_from_config
+from bfm.training.training_config import convert_dtypes, unconvert_dtypes, parse_subject_trials_from_config
 from torch.utils.data import DataLoader
-from training.setup_registry import register
+from bfm.training.setup_registry import setups
+from bfm.core.logger import log
 
-from evaluation.neuroprobe.datasets import BrainTreebankSubjectTrialBenchmarkDataset
+from bfm.evaluation.neuroprobe.datasets import BrainTreebankSubjectTrialBenchmarkDataset
 import evaluation.neuroprobe.config as neuroprobe_config
 
 ### PARSE MODEL DIR ###

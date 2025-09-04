@@ -1,4 +1,4 @@
-from evaluation.neuroprobe.braintreebank_subject import BrainTreebankSubject
+from bfm.evaluation.neuroprobe.braintreebank_subject import BrainTreebankSubject
 import evaluation.neuroprobe.train_test_splits as neuroprobe_train_test_splits
 import evaluation.neuroprobe.config as neuroprobe_config
 

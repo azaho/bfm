@@ -2,7 +2,7 @@
 Defines the TrainingSetup class, which is an interface for training setups.
 
 Functions that raise NotImplementedError are meant to be overridden.
-To create a custom training setup, define a new class in a separate file that 
+To create a custom training setup, define a new class in the `bfm.training.setups` folder that 
 inherits from `TrainingSetup` and implements the required methods.
 '''
 import os
@@ -11,10 +11,11 @@ import json
 import torch
 from torch.utils.data import DataLoader, ConcatDataset
 
-from subject.dataset import SubjectTrialDataset, PreprocessCollator, SubjectBatchSampler
-from training.training_config import log, convert_dtypes
-from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
-from model.electrode_embedding import (
+from bfm.subject.datasets.dataset import SubjectTrialDataset, PreprocessCollator, SubjectBatchSampler
+from bfm.training.training_config import convert_dtypes
+from bfm.core.logger import log
+from bfm.model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
+from bfm.model.encoders.electrode_embedding import (
     ElectrodeEmbedding_Learned,
     ElectrodeEmbedding_NoisyCoordinate,
     ElectrodeEmbedding_Learned_CoordinateInit,
@@ -44,7 +45,7 @@ class TrainingSetup:
             This function initializes the model.
 
             It must set the self.model_components dictionary to a dictionary of the model components, like
-            {"model": model, "electrode_embeddings": electrode_embeddings}, where model and electrode_embeddings are PyTorch modules (those classes must inherit from model.BFModule)
+            {"model": model, "electrode_embeddings": electrode_embeddings}, where model and electrode_embeddings are PyTorch modules (those classes must inherit from bfm.model.base)
         """
         raise NotImplementedError("This function is not (yet) implemented for this training setup.")
     

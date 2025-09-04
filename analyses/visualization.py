@@ -121,11 +121,11 @@ def plot_electrode_data(subject, trial_id, window_from, window_to, n_columns=3, 
     electrode_data = electrode_data[electrode_ids] # reorder electrodes to match electrode_labels
 
     if laplacian_rereference:
-        from model.preprocessing.laplacian_rereferencing import laplacian_rereference_neural_data
+        from bfm.model.preprocessing.laplacian_rereferencing import laplacian_rereference_neural_data
         electrode_data, _, _ = laplacian_rereference_neural_data(electrode_data, electrode_labels, remove_non_laplacian=False)
 
     if spectrogram:
-        from model.preprocessing.spectrogram import SpectrogramPreprocessor
+        from bfm.model.preprocessing.spectrogram import SpectrogramPreprocessor
         spectrogram_preprocessor = SpectrogramPreprocessor(spectrogram_parameters=spectrogram_parameters)
         electrode_data, frequency_bins, time_bins = spectrogram_preprocessor({
             'data': electrode_data.unsqueeze(0), 
@@ -158,10 +158,10 @@ def compute_spectrogram_normalization_parameters(subject, trial_id, time_from_se
     electrode_data = subject.get_all_electrode_data(trial_id, window_from=0, window_to=time_to_seconds * subject.get_sampling_rate())
 
     if laplacian_rereference:
-        from model.preprocessing.laplacian_rereferencing import laplacian_rereference_neural_data
+        from bfm.model.preprocessing.laplacian_rereferencing import laplacian_rereference_neural_data
         electrode_data, _, _ = laplacian_rereference_neural_data(electrode_data, subject.get_electrode_labels(), remove_non_laplacian=False)
 
-    from model.preprocessing.spectrogram import SpectrogramPreprocessor
+    from bfm.model.preprocessing.spectrogram import SpectrogramPreprocessor
     spectrogram_preprocessor = SpectrogramPreprocessor(spectrogram_parameters=spectrogram_parameters)
     electrode_data, frequency_bins, time_bins = spectrogram_preprocessor({
         'data': electrode_data.unsqueeze(0), 
@@ -177,7 +177,7 @@ def compute_spectrogram_normalization_parameters(subject, trial_id, time_from_se
     return mean, std
 
 def braintreebank_movie_times_to_neural_index(subject, trial_id, movie_times):
-    from evaluation.neuroprobe.config import ROOT_DIR, SAMPLING_RATE
+    from bfm.evaluation.neuroprobe.config import ROOT_DIR, SAMPLING_RATE
 
     if isinstance(movie_times, float) or isinstance(movie_times, int):
         movie_times_np = np.array([movie_times])

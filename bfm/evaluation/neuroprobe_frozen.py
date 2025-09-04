@@ -1,3 +1,4 @@
+
 import gc
 from collections import defaultdict
 
@@ -12,10 +13,10 @@ import torch
 import torch.cuda
 from torch.utils.data import DataLoader
 
-from training.training_config import log
-from evaluation.neuroprobe.train_test_splits import generate_splits_SS_SM
+from bfm.core.logger import log
+from bfm.evaluation.neuroprobe.train_test_splits import generate_splits_SS_SM
 import evaluation.neuroprobe.config as neuroprobe_config
-from evaluation.neuroprobe.datasets import BrainTreebankSubjectTrialBenchmarkDataset
+from bfm.evaluation.neuroprobe.datasets import BrainTreebankSubjectTrialBenchmarkDataset
 
 
 ########################## FEATURE EXTRACTION ##########################
@@ -150,7 +151,7 @@ class NeuroprobeFrozenFeaturesExtractor():
 
 if __name__ == "__main__":
     all_subjects = {}
-    from subject.braintreebank import BrainTreebankSubject
+    from bfm.subject.subjects.braintreebank import BrainTreebankSubject
     for subject_id, trial_id in neuroprobe_config.NEUROPROBE_LITE_SUBJECT_TRIALS:
         if subject_id not in all_subjects:
             all_subjects["btbank" + str(subject_id)] = BrainTreebankSubject(subject_id, cache=False)

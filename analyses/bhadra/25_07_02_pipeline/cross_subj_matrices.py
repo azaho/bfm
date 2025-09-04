@@ -6,7 +6,7 @@ import seaborn as sns
 import pandas as pd
 import argparse
 import matplotlib as mpl
-from evaluation.neuroprobe import config as neuroprobe_config
+from bfm.evaluation.neuroprobe import config as neuroprobe_config
 
 
 mpl.rcParams.update({

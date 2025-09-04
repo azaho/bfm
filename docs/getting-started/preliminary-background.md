@@ -16,9 +16,9 @@ The Brain Foundation Models (BFM) project is an initiative to develop and analyz
 !!! Slides
     For a comprehensive introduction to human neuroscience, please review these [slides](https://docs.google.com/presentation/d/1sAi4Ve-jf5c5d0HUJNJ0zBM-QifKDuI8/edit?usp=drive_link&ouid=113306152408669549596&rtpof=true&sd=true) (~2GB) from a talk I gave in the winter.
 
-I will try to find a recording, or give it again! People told me after they loved this introductio. The most useful part for our purposes is the section on StereoEEG, and brain simulation experiments.
+I will try to find a recording, or give it again! People told me after they loved this introduction. The most useful part for our purposes is the section on StereoEEG, and brain simulation experiments.
 
-In parrticular, check out:
+In particular, check out:
 
 - Slide 4 (Optional): A doctor showing different parts of the brain (go to “Credit” for sound)
 - Slide 14: Intracranial Electrophysiology neurotech (we will be working with it!)
@@ -42,7 +42,7 @@ Given a ton of unlabeled neural data, we can create (learn) a transformation fun
 ## Prior Work
 
 !!! Papers
-    Briefly skim the below two papers on my [personal website](https://azaho.org/). 
+    Briefly skim the following two papers on my [personal website](https://azaho.org/). 
 
     - [Learning Representations of Human Neural Activity via Contrastive Neural Forecasting](https://azaho.org/papers/NeurIPS_2025__Contrastive_Neural_Forecasting_paper.pdf)
     - [Neuroprobe: Evaluating Intracranial Brain Responses to Naturalistic Stimuli](https://azaho.org/papers/NeurIPS_2025__BTBench_paper.pdf)

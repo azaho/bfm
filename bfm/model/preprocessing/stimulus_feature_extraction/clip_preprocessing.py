@@ -8,7 +8,6 @@ from PIL import Image
 import clip
 from tqdm import tqdm
 import argparse
-import matplotlib.pyplot as plt
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Extract CLIP features from movie frames.")

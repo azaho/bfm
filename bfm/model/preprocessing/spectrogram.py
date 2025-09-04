@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-from model.BFModule import BFModule
-from training.training_config import get_default_config
+from bfm.model.base import BFModule
+from bfm.training.training_config import get_default_config
 
 class SpectrogramPreprocessor(BFModule):
     def __init__(self, spectrogram_parameters=None, output_dim=-1):
@@ -14,7 +14,7 @@ class SpectrogramPreprocessor(BFModule):
             'window': str, 'Window function for spectrogram', # Allowed values: 'hann', 'boxcar'
         }
         """
-        if spectrogram_parameters is None: # Load default spectrogram parameters from training config
+        if spectrogram_parameters is None: # Load default spectrogram parameters from bfm.training config
             spectrogram_parameters = get_default_config()['model']['signal_preprocessing']['spectrogram_parameters']
 
         super(SpectrogramPreprocessor, self).__init__()

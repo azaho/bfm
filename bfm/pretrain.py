@@ -15,12 +15,12 @@ import wandb
 from dotenv import load_dotenv
 load_dotenv() # Load environment variables from .env file
 
-from training.optimizer.builders import build_optimizers, build_schedulers
-from subject.dataset import load_subjects
-from evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
-from training.setup_registry import resolve
-from training.training_config import (
-    log,
+from bfm.training.optimizer.builders import build_optimizers, build_schedulers
+from bfm.subject.datasets.dataset import load_subjects
+from bfm.evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
+from bfm.training.setup_registry import setups
+from bfm.core.logger import log
+from bfm.training.training_config import (
     update_dir_name,
     update_random_seed,
     parse_config_from_args,
@@ -31,8 +31,6 @@ from training.training_config import (
 ### LOADING CONFIGS ###
 
 RUNS_DIR='runs'
-TRAINING_SETUP_DIR='bfm/training_setup'
-TRAINING_SETUP_IMPORT='training_setup'
 
 config = get_default_config(random_string="TEMP", wandb_project="") # Outputs a dictionary, see utils/training_config.py for how it looks like
 parse_config_from_args(config) # Parses the command line arguments and updates the config dictionary
@@ -66,7 +64,7 @@ all_subjects = load_subjects(
 
 # Import the training setup class dynamically based on config
 setup_name = config["training"]["setup_name"] # Name in registry
-training_setup = resolve(setup_name, all_subjects=all_subjects, config=config, verbose=True)
+training_setup = setups.resolve(setup_name, all_subjects=all_subjects, config=config, verbose=True)
 
 # Save a copy of the training setup file for reproducibility
 setup_file = str(inspect.getsourcefile(training_setup.__class__)) 
@@ -117,14 +115,15 @@ else:
 ### WANDB SETUP ###
 
 if wandb: 
-    os.makedirs("runs/wandb", exist_ok=True)
+    wandb_dir = f"{RUNS_DIR}/wandb"
+    os.makedirs(wandb_dir, exist_ok=True)
     if len(config['cluster']['wandb_entity']) > 0:
         wandb.init(project=config['cluster']['wandb_project'], name=config['cluster']['wandb_name'], id=config['cluster']['wandb_name'],
                     entity=config['cluster']['wandb_entity'],
-                    config=config, settings=wandb.Settings(init_timeout=1000), dir="runs/wandb")
+                    config=config, settings=wandb.Settings(init_timeout=1000), dir=wandb_dir)
     else:
         wandb.init(project=config['cluster']['wandb_project'], name=config['cluster']['wandb_name'], id=config['cluster']['wandb_name'],
-                    config=config, settings=wandb.Settings(init_timeout=1000), dir="runs/wandb")
+                    config=config, settings=wandb.Settings(init_timeout=1000), dir=wandb_dir)
 
 ### EVALUATION OF THE MODEL BEFORE TRAINING ###
 
@@ -160,7 +159,8 @@ for epoch_i in range(config['training']['n_epochs']):
     for batch_idx, batch in enumerate(training_setup.train_dataloader):
         subject_identifier, trial_id = batch['subject_trial'][0]
 
-        for optimizer in optimizers: optimizer.zero_grad()
+        for optimizer in optimizers: 
+            optimizer.zero_grad()
 
         # Use autocast with specified dtype
         with autocast(device_type='cuda', dtype=config['model']['amp_dtype'], enabled=config['model']['use_mixed_precision']):

@@ -15,16 +15,11 @@ readme = "README.md"
 
 dependencies = [
     "h5py",
-    "joblib",
-    "librosa",
-    "matplotlib",
     "numpy",
     "pandas",
     "psutil",
     "python-dotenv",
     "scikit-learn",
-    "scipy",
-    "seaborn",
     "torch",
     "torchvision",
     "torchaudio",
@@ -36,16 +31,42 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "requests",
-    "beautifulsoup4",
-    "ipykernel",
-    "jupyter",
-    "mkdocs",
-    "mkdocs-jupyter",
-    "mkdocs-material", 
-    "pytest",
-    "ruff",
+  # tests
+  "pytest",
+  "pytest-cov",
+
+  # lint
+  "ruff",
+
+  # docs
+  "mkdocs",
+  "mkdocs-material",
+  "mkdocstrings[python]",
+
+  # notebooks / exploration
+  "ipykernel",
+  "jupyter",
+  "matplotlib",
+  "seaborn",
+  "scipy",
 ]
 
 [tool.setuptools.packages.find]
 where = ["."]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "needs_autodiscover: marks tests that require registry autodiscovery"
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]  # basics: style, flakes, isort, pyupgrade, bugbear
+ignore = ["E501"]                    # let the formatter handle wrapping
+
+[tool.ruff.lint.isort]
+known-first-party = ["bfm"]

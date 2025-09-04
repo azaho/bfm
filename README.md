@@ -8,26 +8,23 @@
 
 <p align="center">
     <a href="https://www.python.org/">
-        <img alt="Python" src="https://img.shields.io/badge/Python-3.8+-1f425f.svg?color=purple">
+        <img alt="Python" src="https://img.shields.io/badge/Python-3.11+-1f425f.svg?color=purple">
     </a>
     <a href="https://pytorch.org/">
         <img alt="PyTorch" src="https://img.shields.io/badge/PyTorch-2.0+-ee4c2c.svg">
     </a>
 </p>
 
-<p align="center"><strong>Brain Foundation Models</strong></p>
-
 ## Onboarding
 
-Please see the video at this link for onboarding (requires an MIT zoom log in):
-[ONBOARDING VIDEO (20min)](https://mit.zoom.us/rec/share/s2XgwBipwcQDJEmb9OICnecNDenA0EyKidxDg_zP5M9GdvXQxbobaZVtM44AI3fe.4jEyRBNSP2bvQ_cU?startTime=1749952722000)
+Please follow the instructions on [azaho.github.io/bfm/getting-started](https://azaho.github.io/bfm/getting-started/) for background knowledge, a brief overview of the repository, and the onboarding task.
 
-## Setup instructions
+## Installation
 
 1. First, create a virtual environment and install the package:
 ```sh
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate # On Windows: .venv/Scripts/activate
 pip install --upgrade pip
 pip install -e .[dev]
 ```
@@ -36,7 +33,7 @@ pip install -e .[dev]
 
 3. Now you can try pretraining a model! Will require an A100 GPU (see the [openmind.mit.edu](https://openmind.mit.edu) instructions and FAQ for how to request a node with one).
 ```sh
-python bfm/pretrain.py --training.setup_name andrii0 --cluster.cache_subjects 0 --cluster.eval_at_beginning 0
+python -m bfm.pretrain --training.setup_name andrii0 --cluster.cache_subjects 0 --cluster.eval_at_beginning 0
 ```
 
 P.S. For requesting an A100 node with enough RAM on Engaging, you might want to run

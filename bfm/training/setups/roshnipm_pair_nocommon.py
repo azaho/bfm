@@ -1,24 +1,24 @@
-from model.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
-from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch, laplacian_rereference_neural_data
-from training.training_config import log
+from bfm.model.encoders.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
+from bfm.model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch, laplacian_rereference_neural_data
+from bfm.core.logger import log
 import torch
-from training.training_setup import TrainingSetup
-# from subject.dataset import SubjectTrialDataset, PreprocessCollator, SubjectBatchSampler
-from subject.dataset_pair_nocommon import SubjectTrialPairDataset, PreprocessCollatorPair, SubjectBatchPairSampler, load_subjects
-from model.BFModule import BFModule
-from model.transformer_implementation import Transformer
+from bfm.training.training_setup import TrainingSetup
+# from bfm.subject.dataset import SubjectTrialDataset, PreprocessCollator, SubjectBatchSampler
+from bfm.subject.datasets.dataset_pair_nocommon import SubjectTrialPairDataset, PreprocessCollatorPair, SubjectBatchPairSampler, load_subjects
+from bfm.model.base import BFModule
+from bfm.model.modules.transformer_implementation import Transformer
 import torch.nn as nn
 from torch.utils.data import DataLoader, ConcatDataset
 import os
 
 import numpy as np
-from evaluation.neuroprobe.config import ROOT_DIR, SAMPLING_RATE, BRAINTREEBANK_SUBJECT_TRIAL_MOVIE_NAME_MAPPING
+from bfm.evaluation.neuroprobe.config import ROOT_DIR, SAMPLING_RATE, BRAINTREEBANK_SUBJECT_TRIAL_MOVIE_NAME_MAPPING
 import pandas as pd
-from training.training_setup import TrainingSetup
-from training.setup_registry import register
+from bfm.training.training_setup import TrainingSetup
+from bfm.training.setup_registry import setups
 
 # for main function
-from evaluation.neuroprobe.config import NEUROPROBE_FULL_SUBJECT_TRIALS
+from bfm.evaluation.neuroprobe.config import NEUROPROBE_FULL_SUBJECT_TRIALS
 
 
 # This file first defines the model components, then the training setup.
@@ -181,7 +181,7 @@ class OriginalModel(BFModule):
 
 
 ### DEFINING THE TRAINING SETUP ###
-@register("roshnipm_pair_nocommon")
+@setups.register("roshnipm_pair_nocommon")
 class roshnipm_pair_nocommon(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)
@@ -191,7 +191,7 @@ class roshnipm_pair_nocommon(TrainingSetup):
             This function initializes the model.
 
             It must set the self.model_components dictionary to a dictionary of the model components, like
-            {"model": model, "electrode_embeddings": electrode_embeddings}, where model and electrode_embeddings are PyTorch modules (those classes must inherit from model.BFModule)
+            {"model": model, "electrode_embeddings": electrode_embeddings}, where model and electrode_embeddings are PyTorch modules (those classes must inherit from bfm.model.BFModule)
         """
         config = self.config
         device = config['device']

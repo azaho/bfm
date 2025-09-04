@@ -1,6 +1,6 @@
 import evaluation.neuroprobe.train_test_splits as neuroprobe_train_test_splits
 import evaluation.neuroprobe.config as neuroprobe_config
-from evaluation.neuroprobe.braintreebank_subject import BrainTreebankSubject
+from bfm.evaluation.neuroprobe.braintreebank_subject import BrainTreebankSubject
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
@@ -11,9 +11,10 @@ import gc
 
 from eval_utils import *
 
-from training.training_config import log, parse_subject_trials_from_config, unconvert_dtypes, convert_dtypes
-from subject.dataset import load_subjects
-from training.setup_registry import resolve
+from bfm.training.training_config import parse_subject_trials_from_config, unconvert_dtypes, convert_dtypes
+from bfm.subject.dataset import load_subjects
+from bfm.training.setup_registry import setups
+from bfm.core.logger import log
 
 splits_options = [
     'SS_SM', # same subject, same trial
@@ -110,7 +111,7 @@ subject = all_subjects[f"btbank{subject_id}"] # we only really have one subject,
 
 # Import the training setup class dynamically based on config
 training_setup_name = config["training"]["setup_name"] # Name in registry
-training_setup = resolve(training_setup_name, all_subjects=all_subjects, config=config, verbose=True)
+training_setup = setups.resolve(training_setup_name, all_subjects=all_subjects, config=config, verbose=True)
 
 if verbose:
     log(f"Loading model...", priority=0)

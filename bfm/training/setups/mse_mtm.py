@@ -1,10 +1,10 @@
-from model.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
-from model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
-from training.training_config import log
+from bfm.model.encoders.electrode_embedding import ElectrodeEmbedding_Learned, ElectrodeEmbedding_NoisyCoordinate, ElectrodeEmbedding_Learned_CoordinateInit, ElectrodeEmbedding_Zero
+from bfm.model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
+from bfm.core.logger import log
 import torch
-from training.training_setup import TrainingSetup
-from model.BFModule import BFModule
-from model.transformer_implementation import Transformer
+from bfm.training.training_setup import TrainingSetup
+from bfm.model.base import BFModule
+from bfm.model.modules.transformer_implementation import Transformer
 import torch.nn as nn
 import json
 import random
@@ -21,7 +21,7 @@ import random
 
 ### DEFINING THE MODEL COMPONENTS ###
 
-from model.preprocessing.spectrogram import SpectrogramPreprocessor    
+from bfm.model.preprocessing.spectrogram import SpectrogramPreprocessor    
 from .mse_rm import mask_random_electrodes_and_timebins, SimpleTransformerModel
 
 def get_dk_to_electrodes(batch, electrode_locations):
@@ -116,7 +116,7 @@ class mse_mtm(TrainingSetup):
             This function initializes the model.
 
             It must set the self.model_components dictionary to a dictionary of the model components, like
-            {"model": model, "electrode_embeddings": electrode_embeddings}, where model and electrode_embeddings are PyTorch modules (those classes must inherit from model.BFModule)
+            {"model": model, "electrode_embeddings": electrode_embeddings}, where model and electrode_embeddings are PyTorch modules (those classes must inherit from bfm.model.base)
         """
         config = self.config
         device = config['device']
