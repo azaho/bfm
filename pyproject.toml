@@ -41,6 +41,7 @@ dev = [
   # docs
   "mkdocs",
   "mkdocs-material",
+  "mkdocs-jupyter",
   "mkdocstrings[python]",
 
   # notebooks / exploration
