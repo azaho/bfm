@@ -15,6 +15,8 @@ If you're not yet invited to join as a collaborator to the ["BFM" GitHub reposit
 Please see the video at this link for onboarding (requires an MIT zoom log in):
 [ONBOARDING VIDEO (20min)](https://mit.zoom.us/rec/share/s2XgwBipwcQDJEmb9OICnecNDenA0EyKidxDg_zP5M9GdvXQxbobaZVtM44AI3fe.4jEyRBNSP2bvQ_cU?startTime=1749952722000)
 
+- If you aren't able to access the video, please send me an email.
+
 ## Setup Instructions
 
 1. Clone the codebase to Openmind. Create a directory in `/om2/user/<your_username>/<your_name>` and work there.
@@ -42,6 +44,12 @@ pip install -e .[dev]
     python braintreebank_download_extract.py
     ```
     - Update the `.env` variable `BRAIN_TREEBANK_ROOT_DIR` to point to the root directory of the BrainTreebank dataset on your machine. 
+
+## Orientation
+
+- Skim through the [Reference](https://azaho.github.io/bfm/reference/) section of the docs to get familiar with the project’s structure.  
+- Read the [Contributing Guide](https://github.com/azaho/bfm/blob/master/CONTRIBUTING.md) before making changes.
+
 
 ## Weights and Biases
 
