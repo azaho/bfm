@@ -100,7 +100,8 @@ class PromptTokens(BFModule):
         self.prompt_intraregion = torch.nn.Parameter(torch.zeros(d_model))
 
 ### DEFINING THE TRAINING SETUP ###
-
+from training.setup_registry import register # TODO: move this import up
+@register("mse_mtm")
 class mse_mtm(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)
@@ -139,12 +140,12 @@ class mse_mtm(TrainingSetup):
             d_input=self.fft_preprocessor.max_frequency_bin,
             n_layers=config['model']['transformer']['n_layers'],
             n_heads=config['model']['transformer']['n_heads'],
-            dropout=config['training']['dropout']
+            dropout=config['training']['dropout'],
+            mask_token=True
         ).to(device, dtype=config['model']['dtype'])
         config['model']['name'] = "SimpleTransformerModel"
 
         self.prompt_tokens = PromptTokens(config['model']['transformer']['d_model']).to(device, dtype=config['model']['dtype'])
-        self.mask_token = torch.nn.Parameter(torch.zeros(config['model']['transformer']['d_model'])).to(device, dtype=config['model']['dtype'])
 
         ### LOAD ELECTRODE EMBEDDINGS ###
 
@@ -172,7 +173,6 @@ class mse_mtm(TrainingSetup):
         self.model_components['fft_preprocessor'] = self.fft_preprocessor
         self.model_components['model'] = self.model
         self.model_components['prompt_tokens'] = self.prompt_tokens
-        self.model_components['mask_token'] = self.mask_token
         self.model_components['electrode_embeddings'] = self.electrode_embeddings
 
     def _preprocess_add_electrode_indices(self, batch):
@@ -241,9 +241,9 @@ class mse_mtm(TrainingSetup):
 
         # signal the masked tokens with the mask token
         if 'mask_electrodes' in batch:
-            batch['preprocessed_data'][:, batch['mask_electrodes'].bool(), :, :] = self.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], batch['mask_electrodes'].sum(), batch['preprocessed_data'].shape[2], -1)
+            batch['preprocessed_data'][:, batch['mask_electrodes'].bool(), :, :] = self.model.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], batch['mask_electrodes'].sum(), batch['preprocessed_data'].shape[2], -1)
         if 'mask_timebins' in batch:
-            batch['preprocessed_data'][:, :, batch['mask_timebins'].bool(), :] = self.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], batch['preprocessed_data'].shape[1], batch['mask_timebins'].sum(), -1)
+            batch['preprocessed_data'][:, :, batch['mask_timebins'].bool(), :] = self.model.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], batch['preprocessed_data'].shape[1], batch['mask_timebins'].sum(), -1)
 
         batch, selected_idx = self._preprocess_subset_electrodes(batch, allowed_remove_idx=allowed_remove_indices, force_remove_idx=force_remove_indices, output_selected_idx=True, keys=['preprocessed_data_clean', 'preprocessed_data'])
         if 'mask_electrodes' in batch:

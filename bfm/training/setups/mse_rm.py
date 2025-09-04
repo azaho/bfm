@@ -57,7 +57,7 @@ def mask_random_electrodes_and_timebins(batch, p_electrodes=0.5, p_timebins=0.5,
     return batch
 
 class SimpleTransformerModel(BFModule):
-    def __init__(self, d_model, spectrogram_parameters, d_input, n_layers=5, n_heads=12, dropout=0.1):
+    def __init__(self, d_model, spectrogram_parameters, d_input, n_layers=5, n_heads=12, dropout=0.1, mask_token=False):
         super().__init__()
         self.d_model = d_model
         self.n_layers = n_layers
@@ -66,6 +66,8 @@ class SimpleTransformerModel(BFModule):
                                         d_output=d_input, 
                                         n_layer=n_layers, n_head=n_heads, causal=True, 
                                         rope=True, rope_base=128, dropout=dropout)
+        if mask_token:
+            self.mask_token = torch.nn.Parameter(torch.zeros(d_model)).to(self.device, dtype=self.dtype)
 
     def forward(self, electrode_data, embeddings=None, special_tokens=None, special_token_positions=None, stop_at_block=None):
         # electrode_data is of shape (batch_size, n_electrodes, n_timebins, d_input)
@@ -157,11 +159,10 @@ class mse_rm(TrainingSetup):
             d_input=self.fft_preprocessor.max_frequency_bin,
             n_layers=config['model']['transformer']['n_layers'],
             n_heads=config['model']['transformer']['n_heads'],
-            dropout=config['training']['dropout']
+            dropout=config['training']['dropout'],
+            mask_token=True
         ).to(device, dtype=config['model']['dtype'])
         config['model']['name'] = "SimpleTransformerModel"
-
-        self.mask_token = torch.nn.Parameter(torch.zeros(config['model']['transformer']['d_model'])).to(device, dtype=config['model']['dtype'])
 
         ### LOAD ELECTRODE EMBEDDINGS ###
 
@@ -189,7 +190,6 @@ class mse_rm(TrainingSetup):
         self.model_components['fft_preprocessor'] = self.fft_preprocessor
         self.model_components['model'] = self.model
         self.model_components['electrode_embeddings'] = self.electrode_embeddings
-        self.model_components['mask_token'] = self.mask_token
 
     def _preprocess_add_electrode_indices(self, batch):
         electrode_indices = []
@@ -237,9 +237,9 @@ class mse_rm(TrainingSetup):
 
         # signal the masked tokens with the mask token
         if 'mask_electrodes' in batch:
-            batch['preprocessed_data'][:, batch['mask_electrodes'].bool(), :, :] = self.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], batch['mask_electrodes'].sum(), batch['preprocessed_data'].shape[2], -1)
+            batch['preprocessed_data'][:, batch['mask_electrodes'].bool(), :, :] = self.model.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], batch['mask_electrodes'].sum(), batch['preprocessed_data'].shape[2], -1)
         if 'mask_timebins' in batch:
-            batch['preprocessed_data'][:, :, batch['mask_timebins'].bool(), :] = self.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], batch['preprocessed_data'].shape[1], batch['mask_timebins'].sum(), -1)
+            batch['preprocessed_data'][:, :, batch['mask_timebins'].bool(), :] = self.model.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], batch['preprocessed_data'].shape[1], batch['mask_timebins'].sum(), -1)
 
         transformed_data, _ = self.model(batch['preprocessed_data'], embeddings, special_tokens=self.mask_token, special_token_positions=[0]) # shape: (batch_size, n_electrodes, n_timebins, d_output)
 
