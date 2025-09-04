@@ -22,32 +22,7 @@ import random
 ### DEFINING THE MODEL COMPONENTS ###
 
 from bfm.model.preprocessing.spectrogram import SpectrogramPreprocessor    
-
-def mask_random_electrodes_and_timebins(batch, p_electrodes=0.5, p_timebins=0.5, key='data'):
-    """
-    input: 
-        dictionary batch, with
-            batch[key] shape: (batch_size, n_electrodes, n_timebins, d_input)
-            batch['electrode_labels'] shape: list of length 1 (since it's the same across the batch), each element is a list of electrode labels
-            and batch['metadata'] containing the subject identifier and trial id
-    output:
-        the same dictionary batch, with the following changes:
-            batch[key], a masked version of the input data, with the same shape as the input data
-            batch['mask_electrodes'], a mask of shape (n_electrodes,), with 1s where the data is masked and 0s where it is not
-            batch['mask_timebins'], a mask of shape (n_timebins,), with 1s where the data is masked and 0s where it is not
-    """
-    batch_size, n_electrodes, n_timebins, d_input = batch[key].shape
-
-    mask_electrodes = torch.rand(n_electrodes) < p_electrodes
-    mask_timebins = torch.rand(n_timebins) < p_timebins
-
-    mask_electrodes = mask_electrodes.to(batch[key].device, dtype=batch[key].dtype)
-    mask_timebins = mask_timebins.to(batch[key].device, dtype=batch[key].dtype)
-
-    batch[key] = batch[key] * (1-mask_electrodes.unsqueeze(-1).unsqueeze(-1).unsqueeze(0)) * (1-mask_timebins.unsqueeze(0).unsqueeze(0).unsqueeze(-1))
-    batch['mask_electrodes'] = mask_electrodes
-    batch['mask_timebins'] = mask_timebins
-    return batch
+from .mse_rm import mask_random_electrodes_and_timebins, SimpleTransformerModel
 
 def get_dk_to_electrodes(batch, electrode_locations):
     # electrode_locations = electrode_locations[batch['metadata']['subject_identifier']]
@@ -114,47 +89,19 @@ def mask_intra_region(batch, electrode_locations, p_electrodes=0.5, key='data'):
     batch['mask_electrodes'] = mask_electrodes
     return batch, allowed_remove_indices
 
-class MTMModel(BFModule):
-    def __init__(self, d_model, spectrogram_parameters, d_input, n_layers=5, n_heads=12, dropout=0.1):
+class PromptTokens(BFModule):
+    def __init__(self, d_model):
         super().__init__()
         self.d_model = d_model
-        self.n_layers = n_layers
-        
-        self.transformer = Transformer(d_input=d_input, d_model=d_model, 
-                                        d_output=d_input, 
-                                        n_layer=n_layers, n_head=n_heads, causal=True, 
-                                        rope=True, rope_base=128, dropout=dropout)
-
         # the four tasks in MtM
         self.prompt_cosmoothing = torch.nn.Parameter(torch.zeros(d_model))
         self.prompt_causal = torch.nn.Parameter(torch.zeros(d_model))
         self.prompt_interregion = torch.nn.Parameter(torch.zeros(d_model))
         self.prompt_intraregion = torch.nn.Parameter(torch.zeros(d_model))
 
-    def forward(self, electrode_data, embeddings=None, electrode_transformer_only=False, stop_at_block=None):
-        # electrode_data is of shape (batch_size, n_electrodes, n_timebins, d_input)
-        # embeddings is of shape (batch_size, n_electrodes, d_model)
-        batch_size, n_electrodes, n_timebins, d_input = electrode_data.shape
-
-        positions = torch.arange(n_timebins, device=electrode_data.device, dtype=torch.long)
-        positions = positions.unsqueeze(0).unsqueeze(0).expand(batch_size, n_electrodes, -1) # shape: (batch_size, n_electrodes, n_timebins)
-
-        positions = positions.reshape(batch_size, n_electrodes * n_timebins)
-        electrode_data = electrode_data.reshape(batch_size, n_electrodes * n_timebins, d_input)        
-        if embeddings is not None:
-            embeddings = embeddings.unsqueeze(2).expand(batch_size, n_electrodes, n_timebins, -1) # shape: (batch_size, n_electrodes, n_timebins, d_model)
-            embeddings = embeddings.reshape(batch_size, n_electrodes * n_timebins, -1) # shape: (batch_size, n_electrodes * n_timebins, d_model)
-        
-        transformed_data = self.transformer(electrode_data, embeddings=embeddings, positions=positions, stop_at_block=stop_at_block) # shape: (batch_size, n_electrodes * n_timebins, d_output)
-        
-        d_output = transformed_data.shape[-1]
-        transformed_data = transformed_data.reshape(batch_size, n_electrodes, n_timebins, d_output) # note: d_input = d_output = max_frequency_bin if stop_at_block is None, otherwise d_output = d_model
-        
-        return transformed_data
-
-
 ### DEFINING THE TRAINING SETUP ###
-
+from training.setup_registry import register # TODO: move this import up
+@register("mse_mtm")
 class mse_mtm(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)
@@ -187,15 +134,18 @@ class mse_mtm(TrainingSetup):
 
         self.fft_preprocessor = SpectrogramPreprocessor(config['model']['signal_preprocessing']['spectrogram_parameters'], output_dim=-1)
 
-        self.model = MTMModel(
+        self.model = SimpleTransformerModel(
             spectrogram_parameters=config['model']['signal_preprocessing']['spectrogram_parameters'],
             d_model=config['model']['transformer']['d_model'],
             d_input=self.fft_preprocessor.max_frequency_bin,
             n_layers=config['model']['transformer']['n_layers'],
             n_heads=config['model']['transformer']['n_heads'],
-            dropout=config['training']['dropout']
+            dropout=config['training']['dropout'],
+            mask_token=True
         ).to(device, dtype=config['model']['dtype'])
-        config['model']['name'] = "SimpleMSEAutoregressiveModel"
+        config['model']['name'] = "SimpleTransformerModel"
+
+        self.prompt_tokens = PromptTokens(config['model']['transformer']['d_model']).to(device, dtype=config['model']['dtype'])
 
         ### LOAD ELECTRODE EMBEDDINGS ###
 
@@ -222,6 +172,7 @@ class mse_mtm(TrainingSetup):
 
         self.model_components['fft_preprocessor'] = self.fft_preprocessor
         self.model_components['model'] = self.model
+        self.model_components['prompt_tokens'] = self.prompt_tokens
         self.model_components['electrode_embeddings'] = self.electrode_embeddings
 
     def _preprocess_add_electrode_indices(self, batch):
@@ -274,22 +225,32 @@ class mse_mtm(TrainingSetup):
         batch['preprocessed_data'] = preprocessed_data.clone()
         allowed_remove_indices = None
         force_remove_indices = None
+        token = None
         if loss_type == 'cosmoothing':
             batch = mask_random_electrodes_and_timebins(batch, p_electrodes=self.p_mask_electrodes, p_timebins=self.p_mask_timebins, key='preprocessed_data')
+            token = self.prompt_tokens.prompt_cosmoothing
         elif loss_type == 'causal':
-            pass
+            token = self.prompt_tokens.prompt_causal
         elif loss_type == 'inter_region':
             batch, allowed_remove_indices = mask_inter_region(batch, self.electrode_locations, key='preprocessed_data')
+            token = self.prompt_tokens.prompt_interregion
         elif loss_type == 'intra_region':
             batch, force_remove_indices = mask_intra_region(batch, self.electrode_locations, p_electrodes=self.p_mask_electrodes, key='preprocessed_data')
             # force_remove_indices = allowed_remove_indices
-        
+            token = self.prompt_tokens.prompt_intraregion
+
+        # signal the masked tokens with the mask token
+        if 'mask_electrodes' in batch:
+            batch['preprocessed_data'][:, batch['mask_electrodes'].bool(), :, :] = self.model.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], batch['mask_electrodes'].sum().item(), batch['preprocessed_data'].shape[2], -1)
+        if 'mask_timebins' in batch:
+            batch['preprocessed_data'][:, :, batch['mask_timebins'].bool(), :] = self.model.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], batch['preprocessed_data'].shape[1], batch['mask_timebins'].sum().item(), -1)
+
         batch, selected_idx = self._preprocess_subset_electrodes(batch, allowed_remove_idx=allowed_remove_indices, force_remove_idx=force_remove_indices, output_selected_idx=True, keys=['preprocessed_data_clean', 'preprocessed_data'])
         if 'mask_electrodes' in batch:
             batch['mask_electrodes'] = batch['mask_electrodes'][selected_idx]
         embeddings = embeddings[:, selected_idx]
 
-        transformed_data = self.model(batch['preprocessed_data'], embeddings) # shape: (batch_size, n_electrodes, n_timebins, d_output)
+        transformed_data, _ = self.model(batch['preprocessed_data'], embeddings, special_tokens=token, special_token_positions=[0]) # shape: (batch_size, n_electrodes, n_timebins, d_output)
 
         if loss_type == 'causal':
             n_timebins = preprocessed_data.shape[2]
