@@ -2,6 +2,7 @@ from bfm.model.encoders.electrode_embedding import ElectrodeEmbedding_Learned, E
 from bfm.model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
 from bfm.core.logger import log
 import torch
+from bfm.training.setup_registry import setups
 from bfm.training.training_setup import TrainingSetup
 from bfm.model.base import BFModule
 from bfm.model.modules.transformer_implementation import Transformer
@@ -100,8 +101,7 @@ class PromptTokens(BFModule):
         self.prompt_intraregion = torch.nn.Parameter(torch.zeros(d_model))
 
 ### DEFINING THE TRAINING SETUP ###
-from training.setup_registry import register # TODO: move this import up
-@register("mse_mtm")
+@setups.register("mse_mtm") 
 class mse_mtm(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)
