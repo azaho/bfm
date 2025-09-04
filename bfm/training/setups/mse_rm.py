@@ -56,8 +56,8 @@ def mask_random_electrodes_and_timebins(batch, p_electrodes=0.5, p_timebins=0.5,
     batch['mask_timebins'] = mask_timebins
     return batch
 
-class SimpleMSEAutoregressiveModel(BFModule):
-    def __init__(self, d_model, spectrogram_parameters, d_input, n_layers=5, n_heads=12, dropout=0.1):
+class SimpleTransformerModel(BFModule):
+    def __init__(self, d_model, spectrogram_parameters, d_input, n_layers=5, n_heads=12, dropout=0.1, mask_token=False):
         super().__init__()
         self.d_model = d_model
         self.n_layers = n_layers
@@ -66,27 +66,62 @@ class SimpleMSEAutoregressiveModel(BFModule):
                                         d_output=d_input, 
                                         n_layer=n_layers, n_head=n_heads, causal=True, 
                                         rope=True, rope_base=128, dropout=dropout)
+        if mask_token:
+            self.mask_token = torch.nn.Parameter(torch.zeros(d_model)).to(self.device, dtype=self.dtype)
 
-    def forward(self, electrode_data, embeddings=None, electrode_transformer_only=False, stop_at_block=None):
+    def forward(self, electrode_data, embeddings=None, special_tokens=None, special_token_positions=None, stop_at_block=None):
         # electrode_data is of shape (batch_size, n_electrodes, n_timebins, d_input)
         # embeddings is of shape (batch_size, n_electrodes, d_model)
+        # special_tokens is of shape (n_special_tokens, d_model)
+        # special_token_positions is of shape (n_special_tokens,), with the positions of the special tokens. if None, give the last possible position to all special tokens
         batch_size, n_electrodes, n_timebins, d_input = electrode_data.shape
 
         positions = torch.arange(n_timebins, device=electrode_data.device, dtype=torch.long)
         positions = positions.unsqueeze(0).unsqueeze(0).expand(batch_size, n_electrodes, -1) # shape: (batch_size, n_electrodes, n_timebins)
-
         positions = positions.reshape(batch_size, n_electrodes * n_timebins)
-        electrode_data = electrode_data.reshape(batch_size, n_electrodes * n_timebins, d_input)        
+
+        electrode_data = electrode_data.reshape(batch_size, n_electrodes * n_timebins, d_input)
         if embeddings is not None:
             embeddings = embeddings.unsqueeze(2).expand(batch_size, n_electrodes, n_timebins, -1) # shape: (batch_size, n_electrodes, n_timebins, d_model)
             embeddings = embeddings.reshape(batch_size, n_electrodes * n_timebins, -1) # shape: (batch_size, n_electrodes * n_timebins, d_model)
-        
-        transformed_data = self.transformer(electrode_data, embeddings=embeddings, positions=positions, stop_at_block=stop_at_block) # shape: (batch_size, n_electrodes * n_timebins, d_output)
+
+        if special_tokens is not None:
+            # If special tokens are provided, we need to add them to the electrode data, positions, and embeddings.
+            # 1. add the special tokens to the electrode data
+            special_tokens = special_tokens.unsqueeze(0).expand(batch_size, -1, -1) # shape: (batch_size, n_special_tokens, d_model)
+            electrode_data = torch.cat([electrode_data, special_tokens], dim=1) # shape: (batch_size, n_electrodes * n_timebins + n_special_tokens, d_input)
+
+            # 2. add the special token positions to the positions
+            if special_token_positions is None: 
+                # if none, give the last possible position to all special tokens
+                special_token_positions = torch.ones(len(special_tokens), device=electrode_data.device, dtype=torch.long) * n_timebins
+            elif type(special_token_positions) == int:
+                special_token_positions = torch.ones(len(special_tokens), device=electrode_data.device, dtype=torch.long) * special_token_positions
+            elif type(special_token_positions) == list:
+                special_token_positions = torch.tensor(special_token_positions, device=electrode_data.device, dtype=torch.long)
+            else:
+                raise ValueError(f"special_token_positions must be None, int, or list, got {type(special_token_positions)}")
+            special_token_positions = special_token_positions.unsqueeze(0).expand(batch_size, -1) # shape: (batch_size, n_special_tokens)
+            positions = torch.cat([positions, special_token_positions], dim=1) # shape: (batch_size, n_electrodes * n_timebins + n_special_tokens)
+
+            # 3. add the special token embeddings to the embeddings
+            if embeddings is not None:
+                special_token_embeddings = torch.zeros_like(special_tokens)
+                embeddings = torch.cat([embeddings, special_token_embeddings], dim=1) # shape: (batch_size, n_electrodes * n_timebins + n_special_tokens, d_model)
+
+        transformed_data = self.transformer(electrode_data, embeddings=embeddings, positions=positions, stop_at_block=stop_at_block) # shape: (batch_size, n_electrodes * n_timebins, d_output) or (batch_size, n_electrodes * n_timebins + n_special_tokens, d_output)
+        if special_tokens is not None:
+            # If special tokens are provided, we need to remove them from the transformed data.
+            transformed_special_tokens = transformed_data[:, -len(special_tokens):, :] # shape: (batch_size, n_special_tokens, d_output)
+            transformed_data = transformed_data[:, :-len(special_tokens), :] # shape: (batch_size, n_electrodes * n_timebins, d_output)
         
         d_output = transformed_data.shape[-1]
         transformed_data = transformed_data.reshape(batch_size, n_electrodes, n_timebins, d_output) # note: d_input = d_output = max_frequency_bin if stop_at_block is None, otherwise d_output = d_model
         
-        return transformed_data
+        if special_tokens is not None:
+            return transformed_data, transformed_special_tokens
+        else:
+            return transformed_data
 
 
 ### DEFINING THE TRAINING SETUP ###
@@ -118,15 +153,16 @@ class mse_rm(TrainingSetup):
 
         self.fft_preprocessor = SpectrogramPreprocessor(config['model']['signal_preprocessing']['spectrogram_parameters'], output_dim=-1)
 
-        self.model = SimpleMSEAutoregressiveModel(
+        self.model = SimpleTransformerModel(
             spectrogram_parameters=config['model']['signal_preprocessing']['spectrogram_parameters'],
             d_model=config['model']['transformer']['d_model'],
             d_input=self.fft_preprocessor.max_frequency_bin,
             n_layers=config['model']['transformer']['n_layers'],
             n_heads=config['model']['transformer']['n_heads'],
-            dropout=config['training']['dropout']
+            dropout=config['training']['dropout'],
+            mask_token=True
         ).to(device, dtype=config['model']['dtype'])
-        config['model']['name'] = "SimpleMSEAutoregressiveModel"
+        config['model']['name'] = "SimpleTransformerModel"
 
         ### LOAD ELECTRODE EMBEDDINGS ###
 
@@ -199,7 +235,13 @@ class mse_rm(TrainingSetup):
         batch['preprocessed_data'] = preprocessed_data.clone()
         batch = mask_random_electrodes_and_timebins(batch, p_electrodes=self.p_mask_electrodes, p_timebins=self.p_mask_timebins, key='preprocessed_data')
 
-        transformed_data = self.model(batch['preprocessed_data'], embeddings) # shape: (batch_size, n_electrodes, n_timebins, d_output)
+        # signal the masked tokens with the mask token
+        if 'mask_electrodes' in batch:
+            batch['preprocessed_data'][:, batch['mask_electrodes'].bool(), :, :] = self.model.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], batch['mask_electrodes'].sum().item(), batch['preprocessed_data'].shape[2], -1)
+        if 'mask_timebins' in batch:
+            batch['preprocessed_data'][:, :, batch['mask_timebins'].bool(), :] = self.model.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], batch['preprocessed_data'].shape[1], batch['mask_timebins'].sum().item(), -1)
+
+        transformed_data, _ = self.model(batch['preprocessed_data'], embeddings, special_tokens=self.mask_token, special_token_positions=[0]) # shape: (batch_size, n_electrodes, n_timebins, d_output)
 
         n_timebins = preprocessed_data.shape[2]
         mse_fbi = torch.nn.functional.mse_loss(transformed_data[:, :, :n_timebins-self.config['training']['future_bin_idx'], :], preprocessed_data[:, :, self.config['training']['future_bin_idx']:, :])
