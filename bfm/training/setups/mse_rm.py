@@ -67,7 +67,7 @@ class SimpleTransformerModel(BFModule):
                                         n_layer=n_layers, n_head=n_heads, causal=True, 
                                         rope=True, rope_base=128, dropout=dropout)
         if mask_token:
-            self.mask_token = torch.nn.Parameter(torch.zeros(d_model)).to(self.device, dtype=self.dtype)
+            self.mask_token = torch.nn.Parameter(torch.zeros(d_input)).to(self.device, dtype=self.dtype)
 
     def forward(self, electrode_data, embeddings=None, special_tokens=None, special_token_positions=None, stop_at_block=None):
         # electrode_data is of shape (batch_size, n_electrodes, n_timebins, d_input)
