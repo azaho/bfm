@@ -237,9 +237,9 @@ class mse_rm(TrainingSetup):
 
         # signal the masked tokens with the mask token
         if 'mask_electrodes' in batch:
-            batch['preprocessed_data'][:, batch['mask_electrodes'].bool(), :, :] = self.model.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], batch['mask_electrodes'].sum().item(), batch['preprocessed_data'].shape[2], -1)
+            batch['preprocessed_data'][:, batch['mask_electrodes'].bool(), :, :] = self.model.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], int(batch['mask_electrodes'].sum().item()), batch['preprocessed_data'].shape[2], -1)
         if 'mask_timebins' in batch:
-            batch['preprocessed_data'][:, :, batch['mask_timebins'].bool(), :] = self.model.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], batch['preprocessed_data'].shape[1], batch['mask_timebins'].sum().item(), -1)
+            batch['preprocessed_data'][:, :, batch['mask_timebins'].bool(), :] = self.model.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], batch['preprocessed_data'].shape[1], int(batch['mask_timebins'].sum().item()), -1)
 
         transformed_data, _ = self.model(batch['preprocessed_data'], embeddings, special_tokens=self.mask_token, special_token_positions=[0]) # shape: (batch_size, n_electrodes, n_timebins, d_output)
 
