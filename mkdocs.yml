@@ -85,3 +85,7 @@ plugins:
             docstring_style: google
             show_source: true
             filters: ["!^_"]   # hide _private names
+
+logging:
+  loggers:
+    griffe: error
