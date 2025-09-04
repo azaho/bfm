@@ -78,11 +78,10 @@ plugins:
       execute: false
       include_source: true
   - mkdocstrings:
-    default_handler: python
-    handlers:
-      python:
-        options:
-          docstring_style: google
-          show_source: true
-          filters: ["!^_"]   # hide _private names
-          
+      default_handler: python
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: true
+            filters: ["!^_"]   # hide _private names
