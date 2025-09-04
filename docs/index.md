@@ -21,7 +21,7 @@ date: 2025-08-07
     </a>
 </p>
 
-Welcome to the Brain Foundation Models (BFM) documentation. This site is a work in progress.
+Welcome to the Brain Foundation Models (BFM) documentation. 
 
 
 > This documentation site is a work in progress
