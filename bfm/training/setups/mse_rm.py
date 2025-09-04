@@ -241,7 +241,7 @@ class mse_rm(TrainingSetup):
         if 'mask_timebins' in batch:
             batch['preprocessed_data'][:, :, batch['mask_timebins'].bool(), :] = self.model.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], batch['preprocessed_data'].shape[1], int(batch['mask_timebins'].sum().item()), -1)
 
-        transformed_data, _ = self.model(batch['preprocessed_data'], embeddings, special_tokens=self.mask_token, special_token_positions=[0]) # shape: (batch_size, n_electrodes, n_timebins, d_output)
+        transformed_data, _ = self.model(batch['preprocessed_data'], embeddings, special_tokens=self.model.mask_token, special_token_positions=[0]) # shape: (batch_size, n_electrodes, n_timebins, d_output)
 
         n_timebins = preprocessed_data.shape[2]
         mse_fbi = torch.nn.functional.mse_loss(transformed_data[:, :, :n_timebins-self.config['training']['future_bin_idx'], :], preprocessed_data[:, :, self.config['training']['future_bin_idx']:, :])
