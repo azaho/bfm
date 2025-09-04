@@ -22,7 +22,7 @@ import os
 import pkgutil
 from collections.abc import Callable
 from functools import cache
-from typing import Generic, TypeVar
+from typing import Generic, TypeVar, Optional, Dict, List
 from bfm.core.logger import get_logger
 
 T = TypeVar("T")
@@ -74,7 +74,7 @@ class Registry(Generic[T]):
             (modules under it should import and call @register). If no package is specified, the caller's package will be used.
         relative (bool): If True, the package is treated as relative to the caller's package.
     """
-    def __init__(self, package: str | None = None, relative: bool = True):
+    def __init__(self, package: Optional[str] = None, relative: bool = True):
         if package is None:
             base_pkg = _caller_package()
         elif relative:
@@ -82,8 +82,8 @@ class Registry(Generic[T]):
         else:
             base_pkg = package
             
-        self._store: dict[str, Factory] = {}
-        self._aliases: dict[str, str] = {}
+        self._store: Dict[str, Factory] = {}
+        self._aliases: Dict[str, str] = {}
         self._autodiscover = _make_autodiscover(base_pkg)
 
     def register(self, name: str, *aliases: str) -> Callable[[Factory], Factory]:
@@ -125,12 +125,12 @@ class Registry(Generic[T]):
         key = name.strip().lower()
         return key in self._store or key in self._aliases
 
-    def list(self) -> list[str]:
+    def list(self) -> List[str]:
         """Canonical keys (not aliases)."""
         self._autodiscover()
         return sorted(self._store.keys())
 
-    def list_aliases(self) -> dict[str, str]:
+    def list_aliases(self) -> Dict[str, str]:
         """alias → canonical mapping."""
         self._autodiscover()
         return self._aliases
