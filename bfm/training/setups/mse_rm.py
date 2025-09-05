@@ -113,8 +113,8 @@ class SimpleTransformerModel(BFModule):
         transformed_data = self.transformer(electrode_data, embeddings=embeddings, positions=positions, stop_at_block=stop_at_block) # shape: (batch_size, n_electrodes * n_timebins, d_output) or (batch_size, n_electrodes * n_timebins + n_special_tokens, d_output)
         if special_tokens is not None:
             # If special tokens are provided, we need to remove them from the transformed data.
-            transformed_special_tokens = transformed_data[:, -len(special_tokens):, :] # shape: (batch_size, n_special_tokens, d_output)
-            transformed_data = transformed_data[:, :-len(special_tokens), :] # shape: (batch_size, n_electrodes * n_timebins, d_output)
+            transformed_special_tokens = transformed_data[:, -n_special_tokens:, :] # shape: (batch_size, n_special_tokens, d_output)
+            transformed_data = transformed_data[:, :-n_special_tokens, :] # shape: (batch_size, n_electrodes * n_timebins, d_output)
         
         d_output = transformed_data.shape[-1]
         transformed_data = transformed_data.reshape(batch_size, n_electrodes, n_timebins, d_output) # note: d_input = d_output = max_frequency_bin if stop_at_block is None, otherwise d_output = d_model
