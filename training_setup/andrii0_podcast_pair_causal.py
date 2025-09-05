@@ -416,17 +416,13 @@ class andrii0_podcast_pair_causal(TrainingSetup):
                 output_electrode_labels=True
             )
             
-            # TEMPORAL BLOCK SPLITTING (first 40% + last 40% train, middle 20% test)
+            # TEMPORAL BLOCK SPLITTING (first 80% train, last 20% test)
             # Split into contiguous train/test blocks to prevent temporal leakage
             total_windows = len(dataset)
-            first_train_size = int(total_windows * 0.4)  # First 40%
-            test_size = int(total_windows * 0.2)         # Middle 20%
-            last_train_start = first_train_size + test_size  # Start of last 40%
-            
-            # Create train indices (first 40% + last 40% of windows)
-            train_indices = list(range(first_train_size)) + list(range(last_train_start, total_windows))
-            # Create test indices (middle 20% of windows)
-            test_indices = list(range(first_train_size, last_train_start))
+            # Create train indices (first 80% of windows)
+            train_indices = list(range(int(total_windows * 0.8)))
+            # Create test indices (last 20% of windows)
+            test_indices = list(range(int(total_windows * 0.8), total_windows))
             
             train_dataset = torch.utils.data.Subset(dataset, train_indices)
             test_dataset = torch.utils.data.Subset(dataset, test_indices)

@@ -1,13 +1,13 @@
 #!/bin/bash
-#SBATCH --job-name=bfm_xx          
+#SBATCH --job-name=btbank_sequential         
 #SBATCH --ntasks=1            
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:h100:1
 ####SBATCH --constraint=ampere
-#SBATCH --mem=128G
+#SBATCH --mem=384G
 #SBATCH -t 12:00:00      
 #SBATCH --array=1-16
-#SBATCH -p ou_bcs_normal
+#SBATCH -p mit_preemptable
 #SBATCH --requeue
 source .venv/bin/activate
 export TMPDIR=/om2/scratch/tmp
@@ -35,7 +35,7 @@ eval_subject_trials="btbank3_1,btbank3_2,btbank4_0,btbank4_2,btbank10_1"
 # these parameters are swept over
 dropout_options=(0.0 0.1 0.2 0.3)
 weight_decay_options=(0.0 0.001 0.01 0.1)
-model_name="roshnipm_pair_random"
+model_name="roshnipm_pair_sequential"
 
 # Calculate indices for parallel jobs
 base_idx=$(( ($SLURM_ARRAY_TASK_ID-1) * n_in_parallel ))
@@ -61,7 +61,7 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
     # Store the expected wandb run directory name for this run
     wandb_run_dirs+=("runs/wandb/wandb/offline-run-*-${model_name}_wd${weight_decay}_dr${dropout}_r${random_string}")
 
-    python -u pretrain.py  --training.setup_name roshnipm_pair_random \
+    python -u pretrain.py  --training.setup_name roshnipm_pair_sequential \
         --cluster.cache_subjects 1 \
         --cluster.num_workers_dataloaders 4 \
         --training.max_n_electrodes 64 \
@@ -69,7 +69,7 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
         --training.batch_size 64 \
         --training.p_test 0.2 \
         --model.context_length 2 \
-        --cluster.eval_model_every_n_epochs 10 \
+        --cluster.eval_model_every_n_epochs 100 \
         --training.random_string $random_string \
         --training.train_subject_trials $train_subject_trials \
         --training.eval_subject_trials $eval_subject_trials \

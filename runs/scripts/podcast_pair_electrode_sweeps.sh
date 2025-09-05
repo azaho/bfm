@@ -4,7 +4,7 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:h100:1
 ####SBATCH --constraint=ampere
-#SBATCH --mem=32G
+#SBATCH --mem=128G
 #SBATCH -t 12:00:00      
 #SBATCH --array=1-5
 #SBATCH -p mit_preemptable
@@ -56,7 +56,7 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
         --training.max_n_electrodes $electrode \
         --training.n_epochs 200 \
         --training.batch_size 32 \
-        --training.p_test 0.3 \
+        --training.p_test 0.2 \
         --model.context_length 8 \
         --training.future_bin_idx 0 \
         --cluster.eval_model_every_n_epochs 10 \
@@ -64,6 +64,7 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
         --training.eval_subject_trials $eval_subject_trials \
         --training.dropout $dropout \
         --training.weight_decay $weight_decay \
+        --training.random_string $random_string \
         --training.eval_tasks "" \
         --cluster.wandb_project roshnipm_iclr_reruns \
         --cluster.wandb_entity andrii-mit \
