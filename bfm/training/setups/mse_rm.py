@@ -88,15 +88,16 @@ class SimpleTransformerModel(BFModule):
         if special_tokens is not None:
             # If special tokens are provided, we need to add them to the electrode data, positions, and embeddings.
             # 1. add the special tokens to the electrode data
+            n_special_tokens = len(special_tokens)
             special_tokens = special_tokens.unsqueeze(0).expand(batch_size, -1, -1) # shape: (batch_size, n_special_tokens, d_model)
             electrode_data = torch.cat([electrode_data, special_tokens], dim=1) # shape: (batch_size, n_electrodes * n_timebins + n_special_tokens, d_input)
 
             # 2. add the special token positions to the positions
             if special_token_positions is None: 
                 # if none, give the last possible position to all special tokens
-                special_token_positions = torch.ones(len(special_tokens), device=electrode_data.device, dtype=torch.long) * n_timebins
+                special_token_positions = torch.ones(n_special_tokens, device=electrode_data.device, dtype=torch.long) * n_timebins
             elif type(special_token_positions) == int:
-                special_token_positions = torch.ones(len(special_tokens), device=electrode_data.device, dtype=torch.long) * special_token_positions
+                special_token_positions = torch.ones(n_special_tokens, device=electrode_data.device, dtype=torch.long) * special_token_positions
             elif type(special_token_positions) == list:
                 special_token_positions = torch.tensor(special_token_positions, device=electrode_data.device, dtype=torch.long)
             else:
@@ -106,7 +107,7 @@ class SimpleTransformerModel(BFModule):
 
             # 3. add the special token embeddings to the embeddings
             if embeddings is not None:
-                special_token_embeddings = torch.zeros_like(special_tokens)
+                special_token_embeddings = torch.zeros(batch_size, n_special_tokens, self.d_model, device=electrode_data.device, dtype=electrode_data.dtype)
                 embeddings = torch.cat([embeddings, special_token_embeddings], dim=1) # shape: (batch_size, n_electrodes * n_timebins + n_special_tokens, d_model)
 
         transformed_data = self.transformer(electrode_data, embeddings=embeddings, positions=positions, stop_at_block=stop_at_block) # shape: (batch_size, n_electrodes * n_timebins, d_output) or (batch_size, n_electrodes * n_timebins + n_special_tokens, d_output)
