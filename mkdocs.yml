@@ -1,6 +1,6 @@
 site_name: Brain Foundation Models
 site_description: Codebase Documentation for the Brain Foundation Models (BFM) project.
-site_author: Andrii Zahorodnii
+site_author: Andrii Zahorodnii, Alexander Brady
 repo_url: https://github.com/azaho/bfm
 
 nav:
