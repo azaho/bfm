@@ -251,7 +251,7 @@ class mse_mtm(TrainingSetup):
             batch['mask_electrodes'] = batch['mask_electrodes'][selected_idx]
         embeddings = embeddings[:, selected_idx]
 
-        transformed_data, _ = self.model(batch['preprocessed_data'], embeddings, special_tokens=token, special_token_positions=[0]) # shape: (batch_size, n_electrodes, n_timebins, d_output)
+        transformed_data, _ = self.model(batch['preprocessed_data'], embeddings, special_tokens=token.unsqueeze(0), special_token_positions=[0]) # shape: (batch_size, n_electrodes, n_timebins, d_output)
 
         if loss_type == 'causal':
             n_timebins = preprocessed_data.shape[2]
