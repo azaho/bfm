@@ -257,7 +257,7 @@ class mse_rm(TrainingSetup):
         }
         return losses
 
-    def generate_frozen_features(self, batch, stop_at_block=-2):
+    def generate_frozen_features(self, batch, stop_at_block=-1):
         # INPUT:
         #   batch['data'] shape: (batch_size, n_electrodes, n_timesamples)
         #   batch['electrode_labels'] shape: list of length 1 (since it's the same across the batch), each element is a list of electrode labels
