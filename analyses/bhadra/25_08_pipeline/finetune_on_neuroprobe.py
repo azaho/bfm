@@ -16,16 +16,17 @@ from sklearn.metrics import roc_auc_score, accuracy_score
 from torch.optim.lr_scheduler import ChainedScheduler
 import torch.nn as nn
 from torch.utils.data import DataLoader
+from bfm.training.setup_registry import setups
 from training_setup.training_config import (
     convert_dtypes,
     get_default_config,
-    log,
     parse_config_from_args,
     parse_subject_trials_from_config,
     unconvert_dtypes,
     update_dir_name,
     update_random_seed,
 )
+from bfm.core.logger import log
 from utils.muon_optimizer import Muon
 # torch.set_float32_matmul_precision('high')
 
@@ -85,16 +86,6 @@ config['training']['train_subject_trials'] = f"btbank{train_subject_id}_{train_t
 config['training']['eval_subject_trials'] = f"btbank{test_subject_id}_{test_trial_id}"
 parse_subject_trials_from_config(config)
 
-if 'setup_name' not in config['training']:
-    config['training']['setup_name'] = "andrii0" # XXX: this is only here for backwards compatibility, can remove soon
-
-if 'signal_preprocessing' in config['model'] and 'spectrogram_parameters' not in config['model']['signal_preprocessing']:
-    config['model']['signal_preprocessing']['spectrogram_parameters'] = {
-    'max_frequency': config.get('spectrogram_max_frequency'),
-    'time_bin_size': config.get('time_bin_size')
-    }
-# XXX: this is only here for backwards compatibility, can remove soon
-
 
 ### LOAD SUBJECTS ###
 
@@ -116,13 +107,8 @@ electrode_subset_test = neuroprobe_config.NEUROPROBE_LITE_ELECTRODES[f"btbank{te
 ### LOAD MODEL ###
 
 # Import the training setup class dynamically based on config
-try:
-    setup_module = __import__(f'training_setup.{config["training"]["setup_name"].lower()}', fromlist=[config["training"]["setup_name"]])
-    setup_class = getattr(setup_module, config["training"]["setup_name"])
-    training_setup = setup_class(all_subjects, config, verbose=True)
-except (ImportError, AttributeError) as e:
-    print(f"Could not load training setup '{config['training']['setup_name']}'. Are you sure the filename and the class name are the same and correspond to the parameter? Error: {str(e)}")
-    exit()
+setup_name = config["training"]["setup_name"] # Name in registry
+training_setup = setups.resolve(setup_name, all_subjects=all_subjects, config=config, verbose=True)
 
 
 log(f"Loading model...", priority=0)
@@ -261,7 +247,6 @@ for eval_name in eval_tasks:
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            log("optimizer step")
 
             train_losses.append(loss.item())
             all_train_preds.append(logits.detach().cpu())
@@ -371,9 +356,6 @@ for eval_name in eval_tasks:
             training_statistics_store=None,
         )
 
-        log(
-        f"[Epoch {epoch_idx+1}/{finetuning_epochs}] "
-        f"Train - Loss: {train_loss_mean:.4f}, Acc: {train_acc:.4f}, AUROC: {train_auroc:.4f} | "
-        f"Test - Loss: {test_loss_mean:.4f}, Acc: {test_acc:.4f}, AUROC: {test_auroc:.4f}",
-        priority=0
-        )
+        log(f"Epoch {epoch_idx+1}/{finetuning_epochs}, " + \
+            f"Train - Loss: {train_loss_mean:.4f}, Acc: {train_acc:.4f}, AUROC: {train_auroc:.4f} | " + \
+            f"Test - Loss: {test_loss_mean:.4f}, Acc: {test_acc:.4f}, AUROC: {test_auroc:.4f}", priority=0)
