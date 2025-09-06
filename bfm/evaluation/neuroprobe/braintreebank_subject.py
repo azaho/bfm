@@ -12,10 +12,11 @@ class BrainTreebankSubject:
         This class is used to load the neural data for a given subject and trial.
         It also contains methods to get the data for a given electrode and trial, and to get the spectrogram for a given electrode and trial.
     """
-    def __init__(self, subject_id, allow_corrupted=False, cache=False, dtype=torch.float32):
+    def __init__(self, subject_id, allow_corrupted=False, allow_missing_coordinates=False, cache=False, dtype=torch.float32):
         self.subject_id = subject_id
         self.subject_identifier = f'btbank{subject_id}'
         self.allow_corrupted = allow_corrupted
+        self.allow_missing_coordinates = allow_missing_coordinates
         self.cache = cache
         self.dtype = dtype  # Store dtype as instance variable
 
@@ -55,11 +56,19 @@ class BrainTreebankSubject:
         return electrode_labels
     def _clean_electrode_label(self, electrode_label):
         return electrode_label.replace('*', '').replace('#', '')
-    def _get_corrupted_electrodes(self, corrupted_electrodes_file):
-        corrupted_electrodes_file = os.path.join(ROOT_DIR, corrupted_electrodes_file)
+    def _get_corrupted_electrodes(self):
+        corrupted_electrodes_file = os.path.join(ROOT_DIR, "corrupted_elec.json")
         corrupted_electrodes = json.load(open(corrupted_electrodes_file))
         corrupted_electrodes = [self._clean_electrode_label(e) for e in corrupted_electrodes[f'sub_{self.subject_id}']]
-        return corrupted_electrodes
+
+        if not self.allow_missing_coordinates:
+            missing_coordinate_electrodes = {
+                "sub_1": ["F3cId10"], "sub_2": [], 
+                "sub_3": ["F3c9", "F3c10", "T1aIc1", "T1aIc2", "P2a10", "O1aIb2", "O1aIb3", "O1aIb4", "O1aIb5", "O1aIb6", "O1aIb7", "O1aIb8"], 
+                "sub_4": ["LT1aIb10", "LF3bIa12"], "sub_5": [], "sub_6": [], "sub_7": ["LF3aOFa16", "LF1cCb12"], "sub_8": ["F2bCb6", "F2bCb14"], 
+                "sub_9": ["P2a6", "P2a7", "P2a8"], "sub_10": ["T1aIa4", "P2cCc5"]}[f'sub_{self.subject_id}']
+            corrupted_electrodes += missing_coordinate_electrodes
+        return list(set(corrupted_electrodes))
     def _filter_electrode_labels(self):
         """
             Filter the electrode labels to remove corrupted electrodes and electrodes that don't have brain signal
@@ -67,10 +76,7 @@ class BrainTreebankSubject:
         filtered_electrode_labels = self.electrode_labels
         # Step 1. Remove corrupted electrodes
         if not self.allow_corrupted:
-            corrupted_electrodes_file = os.path.join(ROOT_DIR, "corrupted_elec.json")
-            with open(corrupted_electrodes_file, 'r') as f:
-                corrupted_electrodes = json.load(f)
-            corrupted_electrodes = [self._clean_electrode_label(e) for e in corrupted_electrodes[f'sub_{self.subject_id}']]
+            corrupted_electrodes = self._get_corrupted_electrodes()
             filtered_electrode_labels = [e for e in filtered_electrode_labels if e not in corrupted_electrodes]
         # Step 2. Remove trigger electrodes
         trigger_electrodes = [e for e in self.electrode_labels if (e.upper().startswith("DC") or e.upper().startswith("TRIG"))]
@@ -156,15 +162,28 @@ class BrainTreebankSubject:
         """
             Get the coordinates of the electrodes for this subject
             Returns:
-                coordinates: (n_electrodes, 3) tensor of coordinates (L, I, P) without any preprocessing of the coordinates
-                All coordinates are in between 50mm and 200mm for this dataset (check braintreebank_utils.ipynb for statistics)
+                coordinates: (n_electrodes, 3) tensor of MNI coordinates (X, Y, Z) in mm
         """
-        # Create tensor of coordinates in same order as electrode_labels
-        coordinates = torch.zeros((len(self.electrode_labels), 3), dtype=self.dtype)
-        for i, label in enumerate(self.electrode_labels):
-            row = self.get_electrode_metadata(label)
-            coordinates[i] = torch.tensor([row['L'], row['I'], row['P']], dtype=self.dtype)
-        return coordinates
+        loc_file = os.path.join(ROOT_DIR, f'localization/elec_coords_full.csv')
+        df = pd.read_csv(loc_file)
+
+        # Remove asterisks from electrode names in the dataframe
+        df['Electrode'] = df['Electrode'].str.replace('*', '', regex=False)
+        
+        electrode_coordinates = torch.zeros((len(self.electrode_labels), 3), dtype=self.dtype) * np.nan
+        for electrode_label in self.electrode_labels:
+            # Find the row for this electrode and subject
+            electrode_row = df[(df['Electrode'] == electrode_label) & (df['Subject'] == f'sub_{self.subject_id}')]
+            
+            if not electrode_row.empty:
+                electrode_id = self.electrode_ids[electrode_label]
+                electrode_coordinates[electrode_id] = torch.tensor([
+                    electrode_row.iloc[0]['X'],
+                    electrode_row.iloc[0]['Y'], 
+                    electrode_row.iloc[0]['Z']
+                ], dtype=self.dtype)
+        return electrode_coordinates
+
     def get_electrode_metadata(self, electrode_label):
         """
             Get the metadata for a given electrode.
