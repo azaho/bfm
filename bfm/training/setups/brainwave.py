@@ -154,8 +154,8 @@ class BrainWave(TrainingSetup):
         B, N, T = raw.shape
         logger.debug(f"BrainWave calculate_pretrain_loss input shape: {raw.shape}")
 
-        mask = self._make_mask(raw)     # [B, T]
-        mask = mask.unsqueeze(1)        # [B, 1, T]  (broadcast over N)
+        mask = self._make_mask(raw, mask_ratio=0.2, span_len=3)  # [B, T]
+        mask = mask.unsqueeze(1)                                 # [B, 1, T]  (broadcast over N)
 
         
         # Partially observed input
@@ -194,4 +194,4 @@ class BrainWave(TrainingSetup):
         """Generate frozen features for the given batch."""
         with torch.no_grad():
             _, frozen_features = self.forward(batch)
-        return frozen_features.detach()
+        return frozen_features
