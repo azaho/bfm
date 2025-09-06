@@ -54,7 +54,8 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-where = ["bfm"]
+where = ["."]
+include = ["bfm*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
