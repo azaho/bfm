@@ -3,7 +3,6 @@ import json
 import time
 import gc
 import shutil
-import inspect
 
 import numpy as np
 import torch
@@ -11,15 +10,14 @@ from torch.amp import autocast
 from torch.optim.lr_scheduler import ChainedScheduler
 
 import wandb
-
 from dotenv import load_dotenv
 load_dotenv() # Load environment variables from .env file
 
-from bfm.training.optimizer.builders import build_optimizers, build_schedulers
-from bfm.subject.datasets.dataset import load_subjects
-from bfm.training.setup_registry import setups
-from bfm.core.logger import log
-from bfm.training.training_config import (
+from utils.muon_optimizer import Muon
+from subject.dataset import load_subjects
+from evaluation.neuroprobe_tasks import FrozenModelEvaluation_SS_SM
+from training_setup.training_config import (
+    log,
     update_dir_name,
     update_random_seed,
     parse_config_from_args,
@@ -30,6 +28,8 @@ from bfm.training.training_config import (
 ### LOADING CONFIGS ###
 
 RUNS_DIR='runs'
+TRAINING_SETUP_DIR='training_setup'
+TRAINING_SETUP_IMPORT='training_setup'
 
 config = get_default_config(random_string="TEMP", wandb_project="") # Outputs a dictionary, see utils/training_config.py for how it looks like
 parse_config_from_args(config) # Parses the command line arguments and updates the config dictionary
@@ -62,14 +62,23 @@ all_subjects = load_subjects(
 ### LOADING TRAINING SETUP ###
 
 # Import the training setup class dynamically based on config
-setup_name = config["training"]["setup_name"] # Name in registry
-training_setup = setups.resolve(setup_name, all_subjects=all_subjects, config=config, verbose=True)
+training_setup_name = config["training"]["setup_name"].lower() # if this is X, the filename should be training_setup/X.py and the class name should be XTrainingSetup
+try:
+    setup_module = __import__(f'{TRAINING_SETUP_IMPORT}.{training_setup_name}', fromlist=[training_setup_name])
+    setup_class = getattr(setup_module, training_setup_name)
+    training_setup = setup_class(all_subjects, config, verbose=True)
+except (ImportError, AttributeError) as e:
+    print(f"ERROR: Could not load training setup '{config['training']['setup_name']}'. Are you sure the filename and the class name are the same and correspond to the parameter?")
+    print(f"Alternatively, the error could be because of a syntax error in the training setup file.")
+    print(f"Thrown error when trying to import the training setup: {str(e)}")
+    exit()
 
 # Save a copy of the training setup file for reproducibility
-setup_file = str(inspect.getsourcefile(training_setup.__class__)) 
+
+setup_file = f'{TRAINING_SETUP_DIR}/{training_setup_name}.py'
 training_setup_copy_dir = os.path.join(RUNS_DIR, 'data', dir_name, 'training_setup')
 os.makedirs(training_setup_copy_dir, exist_ok=True)
-shutil.copy2(setup_file, training_setup_copy_dir) 
+shutil.copy2(setup_file, training_setup_copy_dir)
 
 ### LOAD MODEL ###
 
@@ -81,24 +90,78 @@ training_setup.load_dataloaders()
 
 ### LOAD OPTIMIZER AND LEARNING RATE SCHEDULER ###
 
-model_params = training_setup.model_parameters(verbose=True)
-optimizers = build_optimizers(model_params, config)
-schedulers = build_schedulers(optimizers, config, training_setup)
+all_params = training_setup.model_parameters(verbose=True)
+
+optimizers = []
+if config['training']['optimizer'] == 'Muon': # Muon is like the newest and coolest optimizer that works better than Adam
+    # Muon only supports matrix parameters, so we use adam for the other parameters
+    matrix_params = [p for p in all_params if p.ndim == 2] 
+    other_params = [p for p in all_params if p.ndim != 2]
+    optimizers.append(Muon(matrix_params, lr=config['training']['learning_rate'], momentum=0.95, nesterov=True, backend='newtonschulz5', backend_steps=5, weight_decay=config['training']['weight_decay']))
+    if len(other_params) > 0:
+        optimizers.append(torch.optim.AdamW(other_params, lr=config['training']['learning_rate'], weight_decay=config['training']['weight_decay'], betas=(0.9, 0.95)))
+else:
+    optimizers = [torch.optim.AdamW(all_params, lr=config['training']['learning_rate'], weight_decay=config['training']['weight_decay'], betas=(0.9, 0.95))]
+
+schedulers = [] # Learning rate scheduling (warmup and falloff, both optional)
+for optimizer in optimizers:
+    total_steps = config['training']['n_epochs'] * len(training_setup.train_dataloader)
+    warmup = (torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1e-5, end_factor=1.0, total_iters=config['training']['warmup_steps']) if config['training']['warmup_steps'] > 0
+             else None)
+    main = (torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=1, end_factor=1e-5, total_iters=total_steps) if config['training']['lr_schedule'] == 'linear' 
+        else torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=total_steps) if config['training']['lr_schedule'] == 'cosine'
+        else None)
+    if warmup is not None and main is not None: schedulers.append(ChainedScheduler([warmup, main]))
+    elif warmup is not None: schedulers.append(warmup)
+    elif main is not None: schedulers.append(main)
+
+# Below for all the tasks in Neuroprobe
+# eval_tasks = ['frame_brightness', 'global_flow', 'local_flow', 'global_flow_angle', 'local_flow_angle', 'face_num', 'volume', 'pitch', 'delta_volume', 
+#               'delta_pitch', 'speech', 'onset', 'gpt2_surprisal', 'word_length', 'word_gap', 'word_index', 'word_head_pos', 'word_part_speech', 'speaker']
+eval_tasks = config['training']['eval_tasks'].split(',')
+evaluation = FrozenModelEvaluation_SS_SM(
+    # model evaluation function
+    model_preprocess_functions=training_setup.get_preprocess_functions(pretraining=False),
+    model_evaluation_function=training_setup.generate_frozen_features,
+    eval_aggregation_method=config['cluster']['eval_aggregation_method'],
+    # benchmark parameters 
+    eval_names=eval_tasks, lite=True,
+    subject_trials=[(all_subjects[subject_identifier], trial_id) for subject_identifier, trial_id in config['training']['eval_subject_trials']],
+    # dataloader parameters
+    device=device,
+    dtype=config['training']['data_dtype'],
+    batch_size=config['training']['batch_size'],
+    num_workers_eval=config['cluster']['num_workers_eval'],
+    prefetch_factor=config['cluster']['prefetch_factor'],
+)
 
 ### WANDB SETUP ###
 
 if wandb: 
-    wandb_dir = f"{RUNS_DIR}/wandb"
+    wandb_dir = os.path.join(RUNS_DIR, 'wandb')
     os.makedirs(wandb_dir, exist_ok=True)
-    wandb.init(
-        project=config['cluster']['wandb_project'], 
-        name=config['cluster']['wandb_name'], 
-        id=config['cluster']['wandb_name'],
-        entity=config['cluster']['wandb_entity'] if len(config['cluster']['wandb_entity']) > 0 else None,
-        config=config, 
-        settings=wandb.Settings(init_timeout=1000), 
-        dir=wandb_dir
-    )
+    wandb.init(project=config['cluster']['wandb_project'], name=config['cluster']['wandb_name'], id=config['cluster']['wandb_name'],
+               config=config, settings=wandb.Settings(init_timeout=480), dir=wandb_dir)
+
+### EVALUATION OF THE MODEL BEFORE TRAINING ###
+
+eval_results = {}
+if config['cluster']['eval_at_beginning']:
+    log(f"Evaluating model...", priority=0)
+    training_setup.eval_mode()
+    # 
+    eval_raw = evaluation.evaluate_on_all_metrics(quick_eval=config['cluster']['quick_eval'], only_keys_containing='auroc/average', raw_data=True, key_prefix="raw_")
+    eval_results.update(eval_raw)
+    log(f"eval_raw: {eval_raw}", priority=0)
+    #
+    eval_full_model = evaluation.evaluate_on_all_metrics(quick_eval=config['cluster']['quick_eval'], only_keys_containing='auroc/average')
+    log(f"eval_full_model: {eval_full_model}", priority=0)
+    eval_results.update(eval_full_model)
+    #
+    if wandb: wandb.log(eval_results, step=1)
+    del eval_full_model, eval_raw
+    torch.cuda.empty_cache()
+    gc.collect()
 
 ### TRAINING ###
 
@@ -114,8 +177,7 @@ for epoch_i in range(config['training']['n_epochs']):
     for batch_idx, batch in enumerate(training_setup.train_dataloader):
         subject_identifier, trial_id = batch['subject_trial'][0]
 
-        for optimizer in optimizers: 
-            optimizer.zero_grad()
+        for optimizer in optimizers: optimizer.zero_grad()
 
         # Use autocast with specified dtype
         with autocast(device_type='cuda', dtype=config['model']['amp_dtype'], enabled=config['model']['use_mixed_precision']):
@@ -165,17 +227,17 @@ for epoch_i in range(config['training']['n_epochs']):
     with torch.no_grad():
         test_loss_dict = training_setup.calculate_pretrain_test_loss()
         eval_results.update({f"test_{k}": v.item() for k, v in test_loss_dict.items()})
-        # Check if there are any non-accuracy losses in the test_loss_dict
-        non_accuracy_losses = [v.item() for k, v in test_loss_dict.items() if 'accuracy' not in k]
-        if len(non_accuracy_losses) > 0:
-            eval_results['test_loss'] = sum(non_accuracy_losses) / len(non_accuracy_losses)
-        else:
-            # If no test data or only accuracy metrics, set test_loss to a default value
-            log("Warning: No test data available or test dataloader is empty. Setting test_loss to inf.", priority=1)
-            eval_results['test_loss'] = float('inf')  # or 0.0, depending on your preference
+        eval_results['test_loss'] = sum([v.item() for k, v in test_loss_dict.items() if 'accuracy' not in k]) / len([v for k, v in test_loss_dict.items() if 'accuracy' not in k])
         losses_string = f" / ".join([f"{k.split('_')[1]}: {v:.4f}" for k, v in test_loss_dict.items() if 'accuracy' not in k])
         accuracy_string = f" / ".join([f"{k.split('_')[1]}: {v:.4f}" for k, v in test_loss_dict.items() if 'accuracy' in k])
         log(f"Test loss: {eval_results['test_loss']:.4f} ({losses_string}), Accuracies: {accuracy_string}", priority=0)
+        if (epoch_i+1) % config['cluster']['eval_model_every_n_epochs'] == 0:
+            evaluation_results_strings = evaluation.evaluate_on_all_metrics(quick_eval=config['cluster']['quick_eval'], only_keys_containing='auroc/average')
+            eval_results.update(evaluation_results_strings)
+            log("eval_full_model" + str(evaluation_results_strings))
+            del evaluation_results_strings
+            torch.cuda.empty_cache()
+            gc.collect()
         time_remaining = (time.time() - epoch_start_time) * (config['training']['n_epochs'] - (epoch_i + 1))
         days = int(time_remaining // (24 * 3600))
         log(f"Epoch {epoch_i+1}/{config['training']['n_epochs']}, Estimated time remaining: {days}d, {time.strftime('%H:%M:%S', time.gmtime(time_remaining % (24 * 3600)))}", priority=0)

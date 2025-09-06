@@ -67,7 +67,7 @@ class SimpleTransformerModel(BFModule):
                                         n_layer=n_layers, n_head=n_heads, causal=True, 
                                         rope=True, rope_base=128, dropout=dropout)
         if mask_token:
-            self.mask_token = torch.nn.Parameter(torch.zeros(d_model)).to(self.device, dtype=self.dtype)
+            self.mask_token = torch.nn.Parameter(torch.zeros(d_input)).to(self.device, dtype=self.dtype)
 
     def forward(self, electrode_data, embeddings=None, special_tokens=None, special_token_positions=None, stop_at_block=None):
         # electrode_data is of shape (batch_size, n_electrodes, n_timebins, d_input)
@@ -88,15 +88,16 @@ class SimpleTransformerModel(BFModule):
         if special_tokens is not None:
             # If special tokens are provided, we need to add them to the electrode data, positions, and embeddings.
             # 1. add the special tokens to the electrode data
+            n_special_tokens = len(special_tokens)
             special_tokens = special_tokens.unsqueeze(0).expand(batch_size, -1, -1) # shape: (batch_size, n_special_tokens, d_model)
             electrode_data = torch.cat([electrode_data, special_tokens], dim=1) # shape: (batch_size, n_electrodes * n_timebins + n_special_tokens, d_input)
 
             # 2. add the special token positions to the positions
             if special_token_positions is None: 
                 # if none, give the last possible position to all special tokens
-                special_token_positions = torch.ones(len(special_tokens), device=electrode_data.device, dtype=torch.long) * n_timebins
+                special_token_positions = torch.ones(n_special_tokens, device=electrode_data.device, dtype=torch.long) * n_timebins
             elif type(special_token_positions) == int:
-                special_token_positions = torch.ones(len(special_tokens), device=electrode_data.device, dtype=torch.long) * special_token_positions
+                special_token_positions = torch.ones(n_special_tokens, device=electrode_data.device, dtype=torch.long) * special_token_positions
             elif type(special_token_positions) == list:
                 special_token_positions = torch.tensor(special_token_positions, device=electrode_data.device, dtype=torch.long)
             else:
@@ -106,14 +107,14 @@ class SimpleTransformerModel(BFModule):
 
             # 3. add the special token embeddings to the embeddings
             if embeddings is not None:
-                special_token_embeddings = torch.zeros_like(special_tokens)
+                special_token_embeddings = torch.zeros(batch_size, n_special_tokens, self.d_model, device=electrode_data.device, dtype=electrode_data.dtype)
                 embeddings = torch.cat([embeddings, special_token_embeddings], dim=1) # shape: (batch_size, n_electrodes * n_timebins + n_special_tokens, d_model)
 
         transformed_data = self.transformer(electrode_data, embeddings=embeddings, positions=positions, stop_at_block=stop_at_block) # shape: (batch_size, n_electrodes * n_timebins, d_output) or (batch_size, n_electrodes * n_timebins + n_special_tokens, d_output)
         if special_tokens is not None:
             # If special tokens are provided, we need to remove them from the transformed data.
-            transformed_special_tokens = transformed_data[:, -len(special_tokens):, :] # shape: (batch_size, n_special_tokens, d_output)
-            transformed_data = transformed_data[:, :-len(special_tokens), :] # shape: (batch_size, n_electrodes * n_timebins, d_output)
+            transformed_special_tokens = transformed_data[:, -n_special_tokens:, :] # shape: (batch_size, n_special_tokens, d_output)
+            transformed_data = transformed_data[:, :-n_special_tokens, :] # shape: (batch_size, n_electrodes * n_timebins, d_output)
         
         d_output = transformed_data.shape[-1]
         transformed_data = transformed_data.reshape(batch_size, n_electrodes, n_timebins, d_output) # note: d_input = d_output = max_frequency_bin if stop_at_block is None, otherwise d_output = d_model
@@ -153,10 +154,11 @@ class mse_rm(TrainingSetup):
 
         self.fft_preprocessor = SpectrogramPreprocessor(config['model']['signal_preprocessing']['spectrogram_parameters'], output_dim=-1)
 
+        d_input = self.fft_preprocessor.n_freqs
         self.model = SimpleTransformerModel(
             spectrogram_parameters=config['model']['signal_preprocessing']['spectrogram_parameters'],
             d_model=config['model']['transformer']['d_model'],
-            d_input=self.fft_preprocessor.max_frequency_bin,
+            d_input=d_input,
             n_layers=config['model']['transformer']['n_layers'],
             n_heads=config['model']['transformer']['n_heads'],
             dropout=config['training']['dropout'],
@@ -237,11 +239,11 @@ class mse_rm(TrainingSetup):
 
         # signal the masked tokens with the mask token
         if 'mask_electrodes' in batch:
-            batch['preprocessed_data'][:, batch['mask_electrodes'].bool(), :, :] = self.model.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], batch['mask_electrodes'].sum().item(), batch['preprocessed_data'].shape[2], -1)
+            batch['preprocessed_data'][:, batch['mask_electrodes'].bool(), :, :] = self.model.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], int(batch['mask_electrodes'].sum().item()), batch['preprocessed_data'].shape[2], -1)
         if 'mask_timebins' in batch:
-            batch['preprocessed_data'][:, :, batch['mask_timebins'].bool(), :] = self.model.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], batch['preprocessed_data'].shape[1], batch['mask_timebins'].sum().item(), -1)
+            batch['preprocessed_data'][:, :, batch['mask_timebins'].bool(), :] = self.model.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], batch['preprocessed_data'].shape[1], int(batch['mask_timebins'].sum().item()), -1)
 
-        transformed_data, _ = self.model(batch['preprocessed_data'], embeddings, special_tokens=self.mask_token, special_token_positions=[0]) # shape: (batch_size, n_electrodes, n_timebins, d_output)
+        transformed_data, _ = self.model(batch['preprocessed_data'], embeddings, special_tokens=self.model.mask_token.unsqueeze(0), special_token_positions=[0]) # shape: (batch_size, n_electrodes, n_timebins, d_output)
 
         n_timebins = preprocessed_data.shape[2]
         mse_fbi = torch.nn.functional.mse_loss(transformed_data[:, :, :n_timebins-self.config['training']['future_bin_idx'], :], preprocessed_data[:, :, self.config['training']['future_bin_idx']:, :])

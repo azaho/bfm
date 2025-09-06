@@ -2,6 +2,7 @@ from bfm.model.encoders.electrode_embedding import ElectrodeEmbedding_Learned, E
 from bfm.model.preprocessing.laplacian_rereferencing import laplacian_rereference_batch
 from bfm.core.logger import log
 import torch
+from bfm.training.setup_registry import setups
 from bfm.training.training_setup import TrainingSetup
 from bfm.model.base import BFModule
 from bfm.model.modules.transformer_implementation import Transformer
@@ -100,8 +101,7 @@ class PromptTokens(BFModule):
         self.prompt_intraregion = torch.nn.Parameter(torch.zeros(d_model))
 
 ### DEFINING THE TRAINING SETUP ###
-from training.setup_registry import register # TODO: move this import up
-@register("mse_mtm")
+@setups.register("mse_mtm") 
 class mse_mtm(TrainingSetup):
     def __init__(self, all_subjects, config, verbose=True):
         super().__init__(all_subjects, config, verbose)
@@ -134,10 +134,11 @@ class mse_mtm(TrainingSetup):
 
         self.fft_preprocessor = SpectrogramPreprocessor(config['model']['signal_preprocessing']['spectrogram_parameters'], output_dim=-1)
 
+        d_input = self.fft_preprocessor.n_freqs
         self.model = SimpleTransformerModel(
             spectrogram_parameters=config['model']['signal_preprocessing']['spectrogram_parameters'],
             d_model=config['model']['transformer']['d_model'],
-            d_input=self.fft_preprocessor.max_frequency_bin,
+            d_input=d_input,
             n_layers=config['model']['transformer']['n_layers'],
             n_heads=config['model']['transformer']['n_heads'],
             dropout=config['training']['dropout'],
@@ -145,7 +146,7 @@ class mse_mtm(TrainingSetup):
         ).to(device, dtype=config['model']['dtype'])
         config['model']['name'] = "SimpleTransformerModel"
 
-        self.prompt_tokens = PromptTokens(config['model']['transformer']['d_model']).to(device, dtype=config['model']['dtype'])
+        self.prompt_tokens = PromptTokens(d_input).to(device, dtype=config['model']['dtype'])
 
         ### LOAD ELECTRODE EMBEDDINGS ###
 
@@ -241,16 +242,16 @@ class mse_mtm(TrainingSetup):
 
         # signal the masked tokens with the mask token
         if 'mask_electrodes' in batch:
-            batch['preprocessed_data'][:, batch['mask_electrodes'].bool(), :, :] = self.model.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], batch['mask_electrodes'].sum().item(), batch['preprocessed_data'].shape[2], -1)
+            batch['preprocessed_data'][:, batch['mask_electrodes'].bool(), :, :] = self.model.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], int(batch['mask_electrodes'].sum().item()), batch['preprocessed_data'].shape[2], -1)
         if 'mask_timebins' in batch:
-            batch['preprocessed_data'][:, :, batch['mask_timebins'].bool(), :] = self.model.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], batch['preprocessed_data'].shape[1], batch['mask_timebins'].sum().item(), -1)
+            batch['preprocessed_data'][:, :, batch['mask_timebins'].bool(), :] = self.model.mask_token.unsqueeze(0).unsqueeze(0).unsqueeze(0).expand(batch['preprocessed_data'].shape[0], batch['preprocessed_data'].shape[1], int(batch['mask_timebins'].sum().item()), -1)
 
         batch, selected_idx = self._preprocess_subset_electrodes(batch, allowed_remove_idx=allowed_remove_indices, force_remove_idx=force_remove_indices, output_selected_idx=True, keys=['preprocessed_data_clean', 'preprocessed_data'])
         if 'mask_electrodes' in batch:
             batch['mask_electrodes'] = batch['mask_electrodes'][selected_idx]
         embeddings = embeddings[:, selected_idx]
 
-        transformed_data, _ = self.model(batch['preprocessed_data'], embeddings, special_tokens=token, special_token_positions=[0]) # shape: (batch_size, n_electrodes, n_timebins, d_output)
+        transformed_data, _ = self.model(batch['preprocessed_data'], embeddings, special_tokens=token.unsqueeze(0), special_token_positions=[0]) # shape: (batch_size, n_electrodes, n_timebins, d_output)
 
         if loss_type == 'causal':
             n_timebins = preprocessed_data.shape[2]
