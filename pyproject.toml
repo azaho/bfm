@@ -16,7 +16,10 @@ requires-python = ">=3.9"
 
 dependencies = [
     "h5py",
+    "mne",
+    "mne_bids",
     "numpy",
+    "omegaconf",
     "pandas",
     "psutil",
     "python-dotenv",
@@ -24,10 +27,8 @@ dependencies = [
     "torch",
     "torchvision",
     "torchaudio",
-    "wandb",
-    "mne",
     "tqdm",
-    "mne_bids"
+    "wandb",
 ]
 
 [project.optional-dependencies]

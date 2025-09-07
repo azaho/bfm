@@ -1,9 +1,10 @@
 import pytest
 import torch
+from omegaconf import OmegaConf
 
 from bfm.model.base import BFModule
 from bfm.model.factory import build_model
-from bfm.model.registry import backbones, encoders
+from bfm.model.registry import encoders, backbones
 
 
 @encoders.register("dummy_enc")
@@ -12,9 +13,6 @@ class DummyEncoder(BFModule):
         super().__init__()
         self.linear = torch.nn.Linear(dim, dim)
 
-    def forward(self, x):
-        return self.linear(x)
-
 
 @backbones.register("dummy_backbone")
 class DummyBackbone(BFModule):
@@ -22,68 +20,67 @@ class DummyBackbone(BFModule):
         super().__init__()
         self.linear = torch.nn.Linear(dim, dim)
 
-    def forward(self, x):
-        return self.linear(x)
+
+def make_cfg(**overrides):
+    """Returns an OmegaConf DictConfig with attribute access and .get()"""
+    base = {
+        "encoder":  {"registry": "encoders",  "name": "dummy_enc",      "kwargs": {"dim": 8}},
+        "backbone": {"registry": "backbones", "name": "dummy_backbone", "kwargs": {"dim": 8}},
+    }
+    base.update(overrides)
+    return OmegaConf.create(base)
 
 
-class DummyCfg:
-    """Mimics Hydra/OmegaConf config tree with attributes."""
-
-    class encoder:
-        name = "dummy_enc"
-        kwargs = {"dim": 8}
-
-    class backbone:
-        name = "dummy_backbone"
-        kwargs = {"dim": 8}
-
-    device = "cpu"
-
-    class model:
-        dtype = torch.float32
-
-
-def test_build_model_returns_modules():
-    cfg = DummyCfg()
-    enc, bbk = build_model(cfg)
-    assert isinstance(enc, BFModule)
-    assert isinstance(bbk, BFModule)
-
-
-def test_modules_on_correct_device_and_dtype():
-    cfg = DummyCfg()
-    cfg.device = "cpu"
-    cfg.model.dtype = torch.float32
-    enc, bbk = build_model(cfg)
-
-    # check parameter device and dtype
-    p = next(enc.parameters())
-    assert str(p.device) == cfg.device
-    assert p.dtype == cfg.model.dtype
-
-    p = next(bbk.parameters())
-    assert str(p.device) == cfg.device
-    assert p.dtype == cfg.model.dtype
+def test_build_model_adds_submodules():
+    cfg = make_cfg()
+    model = build_model(module=None, cfg=cfg, components=["encoder", "backbone"])
+    assert isinstance(model, BFModule)
+    assert isinstance(model.encoder, DummyEncoder)
+    assert isinstance(model.backbone, DummyBackbone)
 
 
 def test_kwargs_are_passed():
-    cfg = DummyCfg()
-    cfg.encoder.kwargs = {"dim": 16}
-    cfg.backbone.kwargs = {"dim": 16}
-    enc, bbk = build_model(cfg)
+    cfg = make_cfg(
+        encoder={"registry": "encoders", "name": "dummy_enc", "kwargs": {"dim": 16}},
+        backbone={"registry": "backbones", "name": "dummy_backbone", "kwargs": {"dim": 16}},
+    )
+    model = build_model(None, cfg, ["encoder", "backbone"])
+    assert model.encoder.linear.in_features == 16
+    assert model.backbone.linear.out_features == 16
 
-    # both should have Linear layers with in/out = 16
-    assert enc.linear.in_features == 16
-    assert bbk.linear.out_features == 16
+
+def test_kwargs_optional():
+    # no "kwargs" key → factory should default to {}
+    cfg = make_cfg(
+        encoder={"registry": "encoders", "name": "dummy_enc"},
+        backbone={"registry": "backbones", "name": "dummy_backbone"},
+    )
+    model = build_model(None, cfg, ["encoder", "backbone"])
+    assert isinstance(model.encoder, DummyEncoder)
+    assert isinstance(model.backbone, DummyBackbone)
 
 
-def test_invalid_name_raises():
-    cfg = DummyCfg()
-    cfg.encoder.name = "does_not_exist"
+def test_provided_module_is_used():
+    provided = BFModule()
+    cfg = make_cfg()
+    model = build_model(provided, cfg, ["encoder"])
+    assert model is provided
+    assert isinstance(model.encoder, DummyEncoder)
+
+
+def test_missing_component_cfg_raises():
+    cfg = make_cfg()
+    with pytest.raises(ValueError):
+        build_model(None, cfg, ["missing"])
+
+
+def test_invalid_registry_name_raises():
+    cfg = make_cfg(bad={"registry": "does_not_exist", "name": "x", "kwargs": {}})
+    with pytest.raises(ValueError):
+        build_model(None, cfg, ["bad"])
+
+
+def test_unknown_component_name_raises_keyerror():
+    cfg = make_cfg(encoder={"registry": "encoders", "name": "does_not_exist", "kwargs": {}})
     with pytest.raises(KeyError):
-        build_model(cfg)
-
-    cfg = DummyCfg()
-    cfg.backbone.name = "does_not_exist"
-    with pytest.raises(KeyError):
-        build_model(cfg)
+        build_model(None, cfg, ["encoder"])
