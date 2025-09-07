@@ -31,7 +31,7 @@ def build_model(module: Optional[nn.Module], cfg, components: List[str]) -> BFMo
     module = module or BFModule()
     for component in components:
 
-        component_cfg = getattr(cfg, component, None)
+        component_cfg = getattr(cfg.components, component, None)
         if component_cfg is None:
             raise ValueError(f"Component {component} not found in configuration.")
         

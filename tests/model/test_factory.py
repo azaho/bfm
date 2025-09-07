@@ -28,7 +28,7 @@ def make_cfg(**overrides):
         "backbone": {"registry": "backbones", "name": "dummy_backbone", "kwargs": {"dim": 8}},
     }
     base.update(overrides)
-    return OmegaConf.create(base)
+    return OmegaConf.create({"components": base})
 
 
 def test_build_model_adds_submodules():
