@@ -2,7 +2,10 @@ import torch
 import torch.nn as nn
 from bfm.model.base import BFModule
 from bfm.training.training_config import get_default_config
+from bfm.model.registry import preprocessors
 
+
+@preprocessors.register("spectrogram")
 class SpectrogramPreprocessor(BFModule):
     def __init__(self, spectrogram_parameters=None, output_dim=-1):
         """
