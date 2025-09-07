@@ -1,5 +1,6 @@
 import logging
 import time
+from typing import Optional
 
 import psutil
 import torch
@@ -35,7 +36,7 @@ class ResourceFormatter(logging.Formatter):
         return f"[{t} {lvl}][{gpu}][RAM {ram:.1f}G] {indent}{where} {msg}"
 
 
-def get_logger(name: str = __name__, level: int = logging.INFO) -> logging.Logger:
+def get_logger(name: str = __name__, level: Optional[int] = None) -> logging.Logger:
     """Create a logger with our custom resource formatter."""
     logger = logging.getLogger(name)
     if not logger.handlers:
@@ -43,7 +44,10 @@ def get_logger(name: str = __name__, level: int = logging.INFO) -> logging.Logge
         formatter = ResourceFormatter("%(message)s")  # only use msg in body
         handler.setFormatter(formatter)
         logger.addHandler(handler)
+        
+    if level is not None:
         logger.setLevel(level)
+        
     return logger
 
 
