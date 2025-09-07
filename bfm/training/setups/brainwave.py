@@ -3,12 +3,11 @@ from typing import Any
 
 import torch
 import torch.nn as nn
-from omegaconf import OmegaConf, DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from bfm.model.factory import build_model
 from bfm.training.setup_registry import setups
 from bfm.training.training_setup import TrainingSetup
-
 
 CONFIG = {
     "in_channels": 2048,  # Get this dynamically
@@ -16,7 +15,10 @@ CONFIG = {
         "spectrogram": {
             "registry": "preprocessors",
             "name": "spectrogram",
-            "kwargs": "${signal_preprocessing.spectrogram_parameters}"
+            "kwargs": {
+                "output_dim": "${transformer.d_model}",
+                "spectrogram_parameters": "${signal_preprocessing.spectrogram_parameters}"
+            }
         },
         "encoder": {
             "registry": "encoders",
@@ -24,7 +26,7 @@ CONFIG = {
             "kwargs": {
                 "patch_length": 15, # 60 in original paper, but n_timebins is 49 so needs to be less than that
                 "n_freqbins": 38,   # Read dynamically
-                "output_dim": 768,
+                "output_dim":  "${transformer.d_model}",
                 "out_channels": 8,
                 "kernel_size": 1 / 4,
                 "stride": 1 / 8,
@@ -76,12 +78,12 @@ class BrainWaveBackbone(nn.Module):
     def forward(self, batch: dict) -> torch.Tensor:
         """
         Args:
-            x (torch.Tensor): Input tensor of shape [batch_size, n_electrodes, n_timesamples]
+            batch (dict): Input batch containing:
+                - 'data' (torch.Tensor): Input tensor of shape [batch_size, n_electrodes, n_timesamples]
         
         Returns:
             torch.Tensor: Output tensor of shape [batch_size, n_electrodes, n_patches, output_dim]
         """        
-        x = batch['data']
         spec = self.spectogram(batch) # [B, N, T, F]
                
         emb = self.encoder(spec)   # [B, N, P, D]
@@ -107,15 +109,18 @@ class BrainWave(TrainingSetup):
         verbose (bool): Boolean flag for verbose output.
     """
     def __init__(self, all_subjects, config, verbose=True):
-        merged = {**config["model"], **CONFIG}
-        cfg = OmegaConf.create(merged)
-        super().__init__(all_subjects, cfg, verbose)
-        self.device = config['device']
+        super().__init__(all_subjects, config, verbose)
     
     
     def initialize_model(self):
-        self.model = BrainWaveBackbone(self.config)
-        self.model.to(self.device, dtype=self.config.dtype)
+        merged = {**self.config["model"], **CONFIG}
+        # Remove dtype keys to avoid conflicts for now
+        merged.pop("dtype", None)  
+        merged.pop("amp_dtype", None)
+        cfg = OmegaConf.create(merged)
+        self.model = BrainWaveBackbone(cfg)
+        
+        self.model.to(self.config['device'], dtype=self.config['model']['dtype'])
         self.model_components['model'] = self.model
         
     

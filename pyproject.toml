@@ -69,7 +69,7 @@ target-version = "py39"
 line-length = 88
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B"]  # basics: style, flakes, isort, pyupgrade, bugbear
+select = ["E", "F", "I", "B"]        # basics: style, flakes, isort, bugbear
 ignore = ["E501"]                    # let the formatter handle wrapping
 
 [tool.ruff.lint.isort]

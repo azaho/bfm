@@ -4,7 +4,7 @@ from omegaconf import OmegaConf
 
 from bfm.model.base import BFModule
 from bfm.model.factory import build_model
-from bfm.model.registry import encoders, backbones
+from bfm.model.registry import backbones, encoders
 
 
 @encoders.register("dummy_enc")
@@ -24,8 +24,12 @@ class DummyBackbone(BFModule):
 def make_cfg(**overrides):
     """Returns an OmegaConf DictConfig with attribute access and .get()"""
     base = {
-        "encoder":  {"registry": "encoders",  "name": "dummy_enc",      "kwargs": {"dim": 8}},
-        "backbone": {"registry": "backbones", "name": "dummy_backbone", "kwargs": {"dim": 8}},
+        "encoder": {"registry": "encoders", "name": "dummy_enc", "kwargs": {"dim": 8}},
+        "backbone": {
+            "registry": "backbones",
+            "name": "dummy_backbone",
+            "kwargs": {"dim": 8},
+        },
     }
     base.update(overrides)
     return OmegaConf.create({"components": base})
@@ -42,7 +46,11 @@ def test_build_model_adds_submodules():
 def test_kwargs_are_passed():
     cfg = make_cfg(
         encoder={"registry": "encoders", "name": "dummy_enc", "kwargs": {"dim": 16}},
-        backbone={"registry": "backbones", "name": "dummy_backbone", "kwargs": {"dim": 16}},
+        backbone={
+            "registry": "backbones",
+            "name": "dummy_backbone",
+            "kwargs": {"dim": 16},
+        },
     )
     model = build_model(None, cfg, ["encoder", "backbone"])
     assert model.encoder.linear.in_features == 16
@@ -81,6 +89,8 @@ def test_invalid_registry_name_raises():
 
 
 def test_unknown_component_name_raises_keyerror():
-    cfg = make_cfg(encoder={"registry": "encoders", "name": "does_not_exist", "kwargs": {}})
+    cfg = make_cfg(
+        encoder={"registry": "encoders", "name": "does_not_exist", "kwargs": {}}
+    )
     with pytest.raises(KeyError):
         build_model(None, cfg, ["encoder"])
