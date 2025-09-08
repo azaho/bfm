@@ -1,14 +1,15 @@
 #!/bin/bash
 #SBATCH --job-name=eval_model          # Name of the job
-#SBATCH --ntasks=1             # 8 tasks total
-#SBATCH --cpus-per-task=2    # Request 8 CPU cores per GPU
+#SBATCH --ntasks=1             
+#SBATCH --cpus-per-task=2    
 #SBATCH --mem=64G
 #SBATCH --gres=gpu:1
-#SBATCH -t 3:00:00         # total run time limit (HH:MM:SS) (increased to 24 hours)
-#SBATCH --array=9-72  # 285 if doing mini btbench
+#SBATCH --exclude=dgx001,dgx002,node057,node059
+#SBATCH -t 3:00:00     
+#SBATCH --array=1-288 
 #SBATCH --output runs/logs/%A_%a.out # STDOUT
 #SBATCH --error runs/logs/%A_%a.err # STDERR
-#SBATCH -p ou_bcs_low # mit_preemptable
+#SBATCH -p use-everything # ou_bcs_low # mit_preemptable
 
 # Set up environment
 module load miniforge
@@ -23,18 +24,19 @@ declare -a subjects=(1 1 2 2 3 3 4 4 7 7 10 10)
 declare -a trials=(1 2 0 4 0 1 0 1 0 1 0 1)
 
 declare -a model_dirs=(
-    "mse_mtm_lr0.003_wd0.0_dr0.2_rR1_t20250821_100316"
-    "mse_rm_lr0.003_wd0.0_dr0.2_rR1_t20250821_100316"
-    "mse_ar_lr0.003_wd0.0_dr0.2_rR1_t20250821_100316"
+    "andrii0_lr0.003_wd0.0_dr0.2_rR2_t20250905_141853"
+    "mse_ar_lr0.003_wd0.0_dr0.2_rR2_t20250905_141854"
+    "mse_mtm_lr0.003_wd0.0_dr0.2_rR2_t20250905_141646"
+    "mse_rm_lr0.003_wd0.0_dr0.2_rR2_t20250905_141848"
     # "mse_ar_lr0.003_wd0.001_dr0.2_rR1_t20250723_113733"
     # "mse_ar_lr0.003_wd0.001_dr0.0_rR1_t20250723_113729"
     # "mse_rm_lr0.003_wd0.0_dr0.2_rR5_pme0.5_pmt0.2_t20250726_120024"
     # "mse_rm_lr0.003_wd0.0_dr0.0_rR5_pme0.5_pmt0.2_t20250726_120022"
     # "mse_rm_lr0.003_wd0.0_dr0.2_rR7_pme0.5_pmt0.2_fbi1_t20250727_211004"
 )
-BATCH_SIZE=150 # 300 on adnrii0 takes ~<10G of RAM
+BATCH_SIZE=150 # 300 on adnrii0 takes ~<10G of GPU memory
 
-declare -a model_epochs=(0 5)
+declare -a model_epochs=(0 30)
 
 declare -a eval_names=(
     "frame_brightness"
@@ -72,8 +74,8 @@ declare -a classifier_type=(
 
 declare -a feature_type=(
     "keepall"
-    # "meanE"
-    # "cls"
+    "meanE"
+    "cls"
     # "meanT"
     # "meanT_meanE"
     # "meanT_cls"
