@@ -1,10 +1,11 @@
 '''Implementation of BrainWave (https://arxiv.org/abs/2402.10251).'''
-from typing import Any
+from typing import Any, Tuple
 
 import torch
 import torch.nn as nn
 from omegaconf import DictConfig, OmegaConf
 
+from bfm.model.base import BFModule
 from bfm.model.factory import build_model
 from bfm.training.setup_registry import setups
 from bfm.training.training_setup import TrainingSetup
@@ -25,7 +26,7 @@ CONFIG = {
             "name": "convolution",
             "kwargs": {
                 "patch_length": 15, # 60 in original paper, but n_timebins is 49 so needs to be less than that
-                "n_freqbins": 38,   # Read dynamically
+                "n_freqbins": "${transformer.d_model}",
                 "output_dim":  "${transformer.d_model}",
                 "out_channels": 8,
                 "kernel_size": 1 / 4,
@@ -37,11 +38,11 @@ CONFIG = {
             "registry": "backbones",
             "name": "brainwave",
             "kwargs": {
-                "in_dim": 768,
-                "hidden_size": "${transformer.d_model}",
-                "n_layers": "${transformer.n_layers}",
-                "n_heads": "${transformer.n_heads}",
-                "ffn_dim": 2048,
+                "in_dim": "${transformer.d_model}",
+                "hidden_size": "${transformer.d_model}", # paper uses 768
+                "n_layers": "${transformer.n_layers}", # paper uses 10
+                "n_heads": "${transformer.n_heads}", # paper uses 16
+                "ffn_dim": 256, # paper uses 2048
                 "max_len": 16,  # 15 signal patches + [CLS]
                 "add_cls": False # Important
             },
@@ -53,7 +54,7 @@ CONFIG = {
 
 def span_mask(B, T, mask_ratio: float = 0.3, span_len: int = 16, device=None):
     """Create random contiguous masks."""
-    device = device or "cpu"
+    device = device or 'cpu'
     mask = torch.zeros(B, T, dtype=torch.bool, device=device)
     num_mask = int(T * mask_ratio)
     n_spans  = max(1, num_mask // span_len)
@@ -63,7 +64,8 @@ def span_mask(B, T, mask_ratio: float = 0.3, span_len: int = 16, device=None):
             mask[b, s:s+span_len] = True
     return mask
 
-class BrainWaveBackbone(nn.Module):
+
+class BrainWaveBackbone(BFModule):
     def __init__(self, cfg: DictConfig):
         super().__init__()
         build_model(self, cfg, components=[
@@ -75,7 +77,7 @@ class BrainWaveBackbone(nn.Module):
         )
 
 
-    def forward(self, batch: dict) -> torch.Tensor:
+    def forward(self, batch: dict) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             batch (dict): Input batch containing:
@@ -84,15 +86,15 @@ class BrainWaveBackbone(nn.Module):
         Returns:
             torch.Tensor: Output tensor of shape [batch_size, n_electrodes, n_patches, output_dim]
         """        
-        spec = self.spectogram(batch) # [B, N, T, F]
+        spec = self.spectrogram(batch)                   # [B, N, T, F]
                
-        emb = self.encoder(spec)   # [B, N, P, D]
+        emb = self.encoder(spec)                        # [B, N, P, D]
         B, N, P, D = emb.shape
 
         tok = emb.reshape(B * N, P, D)                   # merge batch & channel
-        tok, _ = self.backbone(tok)  # -> [B * N, P, D2]
+        tok, _ = self.backbone(tok)                      # -> [B * N, P, D2]
 
-        out, pooled = self.channel_attention(tok)
+        out, pooled = self.channel_attention(tok)        # out: [B * N, P, D2], pooled: [B * N, D2]
         out = out.reshape(B, N, P, -1)                   # [B, N, P, D2]
         
         return out, pooled
@@ -146,7 +148,7 @@ class BrainWave(TrainingSetup):
                 Accuracies are exempt and are just used for logging.
         """        
         batch['data'] = batch['data'].to(
-            self.device, non_blocking=True
+            self.model.device, non_blocking=True
         )
         
         raw = batch["data"] # [B, N, T]
@@ -168,8 +170,8 @@ class BrainWave(TrainingSetup):
         recon_patches = self.model.decoder(tok)   # [B, N, P, patch_len]
         recon = recon_patches.reshape(B, N, T)    # [B, N, T]
         
-        mask = mask.to(self.device)
-        raw = raw.to(self.device)
+        mask = mask.to(self.model.device)
+        raw = raw.to(self.model.device)
 
         # L1 reconstruction loss
         l1 = (recon - raw).abs()                  # [B, N, T]
