@@ -1,3 +1,5 @@
+# Credit: Bhadra Rupesh, MIT; Andrii Zahorodnii, MIT
+
 import gc
 import json
 import os
@@ -45,6 +47,7 @@ parser.add_argument('--overwrite', action='store_true', help='Overwrite existing
 parser.add_argument('--finetuning_batch_size', type=int, default=100, help='Batch size for feature computation')
 parser.add_argument('--finetuning_learning_rate', type=float, default=0.003, help='Learning rate for finetuning')
 parser.add_argument('--finetuning_epochs', type=int, default=20, help='Number of epochs to train')
+parser.add_argument('--random_seed', type=int, default=42, help='Random seed for reproducibility')
 args = parser.parse_args()
 
 model_dir = args.model_dir
@@ -58,6 +61,7 @@ overwrite = args.overwrite
 batch_size = args.finetuning_batch_size
 finetuning_learning_rate = args.finetuning_learning_rate
 finetuning_epochs = args.finetuning_epochs
+random_seed = args.random_seed
 
 # defaulting to the SS_DM split
 train_subject_trial = [(s_i, t_i) for s_i, t_i in neuroprobe_config.NEUROPROBE_LITE_SUBJECT_TRIALS if s_i == test_subject_id and t_i != test_trial_id][0]
@@ -66,6 +70,11 @@ train_subject_id, train_trial_id = train_subject_trial
 bins_start_before_word_onset_seconds = 0
 bins_end_after_word_onset_seconds = 1.0
 
+### SET SEED ###
+
+torch.cuda.manual_seed(random_seed)
+torch.manual_seed(random_seed)
+np.random.seed(random_seed)
 
 ### LOAD CONFIG ###
 
@@ -169,7 +178,7 @@ for eval_name in eval_tasks:
             "batch_size": batch_size,
         },
         dir="runs/wandb/",
-        name=f"{model_dir}_ft_{eval_name}_t{train_subject_id}_{train_trial_id}_e{test_subject_id}_{test_trial_id}"
+        name=f"{model_dir}_ft_{eval_name}_t{train_subject_id}_{train_trial_id}_e{test_subject_id}_{test_trial_id}_r{random_seed}"
         # id=f"{model_dir}_ft_{eval_name}_t{train_subject_id}_{train_trial_id}_e{test_subject_id}_{test_trial_id}"
     )
 
@@ -212,7 +221,7 @@ for eval_name in eval_tasks:
         ]
     )
 
-    finetune_run_name = f"{model_dir}/FT/{eval_name}_S{train_subject_id}-{train_trial_id}_T{test_subject_id}-{test_trial_id}"
+    finetune_run_name = f"{model_dir}/model_epoch{model_epoch}_FT/{eval_name}_S{train_subject_id}-{train_trial_id}_T{test_subject_id}-{test_trial_id}_r{random_seed}"
     config['cluster']['dir_name'] = finetune_run_name
 
     training_setup.model_components['linear_head'] = linear_head
@@ -503,15 +512,15 @@ for eval_name in eval_tasks:
             },
 
             "timing": {
-                "regression_run_time": regression_run_time,
+                "total_training_time": regression_run_time,
             }
         }
         
         # Create results directory if it doesn't exist
-        results_dir = os.path.join(RUNS_DIR, finetune_run_name, "results")
+        results_dir = os.path.join(RUNS_DIR, finetune_run_name, "..", "results")
         os.makedirs(results_dir, exist_ok=True)
         
-        file_save_path = os.path.join(results_dir, f"best_model_results_{eval_name}.json")
+        file_save_path = os.path.join(results_dir, f"population_btbank{test_subject_id}_{test_trial_id}_{eval_name}.json")
         with open(file_save_path, "w") as f:
             json.dump(results, f, indent=4)
         log(f"Results saved to {file_save_path}", priority=0)
