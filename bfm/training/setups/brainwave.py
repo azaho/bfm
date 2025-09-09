@@ -6,7 +6,7 @@ import torch.nn as nn
 from omegaconf import DictConfig, OmegaConf
 
 from bfm.model.base import BFModule
-from bfm.model.factory import build_model
+from bfm.model.factory import build_module
 from bfm.training.setup_registry import setups
 from bfm.training.training_setup import TrainingSetup
 
@@ -68,9 +68,10 @@ def span_mask(B, T, mask_ratio: float = 0.3, span_len: int = 16, device=None):
 class BrainWaveBackbone(BFModule):
     def __init__(self, cfg: DictConfig):
         super().__init__()
-        build_model(self, cfg, components=[
-            "spectrogram", "encoder", "backbone", "channel_attention"
-        ])
+        self.spectrogram = build_module("spectrogram", cfg)
+        self.encoder = build_module("encoder", cfg)
+        self.backbone = build_module("backbone", cfg)
+        self.channel_attention = build_module("channel_attention", cfg)
         self.decoder = nn.Linear(
             cfg.transformer.d_model,
             cfg.in_channels

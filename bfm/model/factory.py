@@ -1,51 +1,54 @@
-from typing import List, Optional
+from typing import Any, Dict, cast
+from collections.abc import Mapping 
+from omegaconf import DictConfig, OmegaConf
 
-import torch.nn as nn
-from omegaconf import OmegaConf
-
-from bfm.core.registry import Registry
 from bfm.model.base import BFModule
+from bfm.core.registry import Registry
 from bfm.model.registry import REGISTRIES
 
 
-def build_model(module: Optional[nn.Module], cfg, components: List[str]) -> BFModule:
-    """
-    Assembled named components into a BFModule.
+def _cfg_to_kwargs(cfg: DictConfig) -> Dict[str, Any]:
+    """Convert a DictConfig to a standard dictionary, resolving any references."""
+    container = OmegaConf.to_container(cfg, resolve=True)
+    
+    if not isinstance(container, Mapping):
+        raise TypeError(f"Expected dict-like container, got {type(container).__name__}")
 
+    def _normalize(obj: Any) -> Any:
+        if isinstance(obj, Mapping):
+            return {str(k): _normalize(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [_normalize(x) for x in obj]
+        return obj
+
+    return cast(Dict[str, Any], _normalize(container))
+
+
+def build_module(component: str, cfg: DictConfig) -> BFModule:
+    """
+    Build a component from the configuration.
+    
     Expects cfg.components.<component> to have:
       - registry: str  (one of REGISTRIES keys)
       - name: str    (name of the component in the registry)
       - kwargs: dict
 
     Args:
-        module: An instance of BFModule to which components will be added. If None, a new BFModule is created.
-        cfg: Configuration object with model parameters.
-        components: List of component names to build and assemble.
+        component (str): Name of the component to build.    
+        cfg (DictConfig): Configuration object with model parameters.
 
     Returns:
-        BFModule: Assembled model with specified components.
-
-    Raises:
-        ValueError: If a component's configuration is missing or if the specified registry is not found.
+        BFModule: Constructed BFModule.
     """
-    module = module or BFModule()
-    for component in components:
-        component_cfg = getattr(cfg.components, component, None)
-        if component_cfg is None:
-            raise ValueError(f"Component {component} not found in configuration.")
+    component_cfg = getattr(cfg.components, component, None)
+    if component_cfg is None:
+        raise ValueError(f"Component {component} not found in configuration.")
 
-        registry = REGISTRIES.get(component_cfg.registry)
-        if not isinstance(registry, Registry):
-            raise ValueError(f"Registry {component_cfg.registry} not found or valid.")
+    registry = REGISTRIES.get(component_cfg.registry)
+    if not isinstance(registry, Registry):
+        raise ValueError(f"Registry {component_cfg.registry} not found or valid.")
 
-        module_component = registry.resolve(
-            component_cfg.name,
-            **(
-                OmegaConf.to_container(component_cfg.kwargs, resolve=True)
-                if "kwargs" in component_cfg
-                else {}
-            ),
-        )
-        module.add_module(component, module_component)
-
-    return module
+    return registry.resolve(
+        component_cfg.name, 
+        **_cfg_to_kwargs(component_cfg.kwargs) if "kwargs" in component_cfg else {}
+    )
