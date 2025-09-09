@@ -7,7 +7,7 @@
 #SBATCH -t 1:20:00
 #SBATCH --constraint=24GB
 #SBATCH --exclude=dgx001,dgx002
-#SBATCH --array=1-1824
+#SBATCH --array=539-1824
 #SBATCH --output runs/logs_ft/%A_%a.out # STDOUT
 #SBATCH --error runs/logs_ft/%A_%a.err # STDERR
 #SBATCH -p use-everything
@@ -52,7 +52,7 @@ declare -a model_dirs=(
 )
 
 declare -a model_epochs=(
-    0 10
+    0 30
 )
 
 # Calculate indices for this task
@@ -73,10 +73,11 @@ echo "Model dir: $MODEL_DIR"
 echo "Model epoch: $MODEL_EPOCH"
 
 # Add the -u flag to Python to force unbuffered output
-python -u finetune_on_neuroprobe.py \
+python -u analyses/finetune_on_neuroprobe.py \
     --eval_name $EVAL_NAME \
     --subject_id $SUBJECT \
     --trial_id $TRIAL \
     --model_dir $MODEL_DIR \
     --model_epoch $MODEL_EPOCH \
-    --finetuning_batch_size 128
+    --finetuning_batch_size 96 \
+    --random_seed 42
