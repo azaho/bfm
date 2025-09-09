@@ -44,6 +44,7 @@ def get_logger(name: str = __name__, level: Optional[int] = None) -> logging.Log
         formatter = ResourceFormatter("%(message)s")  # only use msg in body
         handler.setFormatter(formatter)
         logger.addHandler(handler)
+        level = level or logging.INFO # default level
         
     if level is not None:
         logger.setLevel(level)
