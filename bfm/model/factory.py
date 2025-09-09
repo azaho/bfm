@@ -28,10 +28,10 @@ def build_module(component: str, cfg: DictConfig) -> BFModule:
     """
     Build a component from the configuration.
     
-    Expects cfg.components.<component> to have:
-      - registry: str  (one of REGISTRIES keys)
-      - name: str    (name of the component in the registry)
-      - kwargs: dict
+    Expects `cfg.components.<component>` to have:
+      - `registry`: str  (one of REGISTRIES keys)
+      - `name`: str    (name of the component in the registry)
+      - `kwargs`: dict
 
     Args:
         component (str): Name of the component to build.    
