@@ -12,7 +12,7 @@ import gc
 from eval_utils import *
 
 from bfm.training.training_config import parse_subject_trials_from_config, unconvert_dtypes, convert_dtypes
-from bfm.subject.dataset import load_subjects
+from bfm.subject.datasets.dataset import load_subjects
 from bfm.training.setup_registry import setups
 from bfm.core.logger import log
 
