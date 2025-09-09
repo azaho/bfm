@@ -148,7 +148,9 @@ class BrainWave(TrainingSetup):
                 Accuracies are exempt and are just used for logging.
         """        
         batch['data'] = batch['data'].to(
-            self.model.device, non_blocking=True
+            self.model.device, 
+            self.model.dtype,
+            non_blocking=True
         )
         
         raw = batch["data"] # [B, N, T]
