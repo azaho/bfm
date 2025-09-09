@@ -178,7 +178,7 @@ for eval_name in eval_tasks:
             "batch_size": batch_size,
         },
         dir="runs/wandb/",
-        name=f"{model_dir}_ft_{eval_name}_t{train_subject_id}_{train_trial_id}_e{test_subject_id}_{test_trial_id}_r{random_seed}"
+        name=f"{model_dir}_epoch{model_epoch}_ft_{eval_name}_t{train_subject_id}_{train_trial_id}_e{test_subject_id}_{test_trial_id}_r{random_seed}"
         # id=f"{model_dir}_ft_{eval_name}_t{train_subject_id}_{train_trial_id}_e{test_subject_id}_{test_trial_id}"
     )
 
@@ -376,7 +376,7 @@ for eval_name in eval_tasks:
                     batch = preprocess_function(batch)
 
                 model_output = training_setup.generate_frozen_features(batch)
-                cls = model_output[:, 0, :, :]
+                cls = model_output.mean(dim=1) #[:, 0, :, :]
                 pooled = cls.mean(dim=1)
                 logits = linear_head(pooled).squeeze(-1)
 
