@@ -46,7 +46,7 @@ parser.add_argument('--model_epoch', type=int, default=-1, help='Epoch of the mo
 parser.add_argument('--overwrite', action='store_true', help='Overwrite existing frozen features')
 parser.add_argument('--finetuning_batch_size', type=int, default=100, help='Batch size for feature computation')
 parser.add_argument('--finetuning_learning_rate', type=float, default=0.003, help='Learning rate for finetuning')
-parser.add_argument('--finetuning_epochs', type=int, default=20, help='Number of epochs to train')
+parser.add_argument('--finetuning_epochs', type=int, default=10, help='Number of epochs to train')
 parser.add_argument('--random_seed', type=int, default=42, help='Random seed for reproducibility')
 args = parser.parse_args()
 
@@ -211,8 +211,8 @@ for eval_name in eval_tasks:
 
     linear_head = nn.Linear(config['model']['transformer']['d_model'], 1).to(device)
 
-    base_lr = finetuning_learning_rate
-    head_lr = base_lr * 10
+    base_lr = finetuning_learning_rate * 0.1
+    head_lr = finetuning_learning_rate
 
     optimizer = torch.optim.AdamW(
         [
