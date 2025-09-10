@@ -25,7 +25,7 @@ venv
 
 # Output directories
 runs/data/
-runs/logs/
+runs/logs*/
 runs/wandb/
 runs/scripts/*
 runs/analyses
