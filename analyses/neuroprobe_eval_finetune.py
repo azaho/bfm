@@ -32,11 +32,16 @@ from bfm.core.logger import log
 
 RUNS_DIR='runs/data'
 
-### PARSE MODEL DIR ###
+splits_options = [
+    'SS_SM', # same subject, same trial
+    'SS_DM', # same subject, different trial    
+    'DS_DM', # different subject, different trial
+]
 
 import argparse
 parser = argparse.ArgumentParser()
 parser.add_argument('--model_dir', type=str, required=True, help='Directory containing the saved model')
+parser.add_argument('--split_type', type=str, choices=splits_options, default='SS_DM', help=f'Type of splits to use ({", ".join(splits_options)})')
 # parser.add_argument('--train_subject_id', type=str, required=True, help='Subject identifier')
 # parser.add_argument('--train_trial_id', type=int, required=True, help='Trial identifier')
 parser.add_argument('--subject_id', type=int, required=True, help='Subject identifier')
@@ -54,6 +59,7 @@ args = parser.parse_args()
 
 model_dir = args.model_dir
 model_epoch = args.model_epoch if args.model_epoch >= 0 else "final"
+split_type = args.split_type
 # train_subject_id = args.train_subject_id
 # train_trial_id = args.train_trial_id
 test_subject_id = args.subject_id
@@ -68,8 +74,14 @@ finetuning_feature_aggregation_method = args.finetuning_feature_aggregation_meth
 random_seed = args.random_seed
 
 # defaulting to the SS_DM split
-train_subject_trial = [(s_i, t_i) for s_i, t_i in neuroprobe_config.NEUROPROBE_LITE_SUBJECT_TRIALS if s_i == test_subject_id and t_i != test_trial_id][0]
-train_subject_id, train_trial_id = train_subject_trial
+assert split_type != 'SS_SM', 'SS_SM split is not supported for finetuning yet'
+
+if split_type == 'SS_DM':
+    train_subject_trial = [(s_i, t_i) for s_i, t_i in neuroprobe_config.NEUROPROBE_LITE_SUBJECT_TRIALS if s_i == test_subject_id and t_i != test_trial_id][0]
+    train_subject_id, train_trial_id = train_subject_trial
+elif split_type == 'DS_DM':
+    assert test_subject_id != neuroprobe_config.DS_DM_TRAIN_SUBJECT_ID, f'Cannot evaluate on the same subject as the training subject ({neuroprobe_config.DS_DM_TRAIN_SUBJECT_ID})'
+    train_subject_id, train_trial_id = neuroprobe_config.DS_DM_TRAIN_SUBJECT_ID, neuroprobe_config.DS_DM_TRAIN_TRIAL_ID
 
 bins_start_before_word_onset_seconds = 0
 bins_end_after_word_onset_seconds = 1.0
@@ -235,7 +247,7 @@ for eval_name in eval_tasks:
     config['cluster']['dir_name'] = finetune_run_name
 
     # Create results directory if it doesn't exist
-    results_dir = os.path.join(RUNS_DIR, finetune_run_name, "..", "results")
+    results_dir = os.path.join(RUNS_DIR, finetune_run_name, "..", f"eval_lite_results_{split_type}")
     os.makedirs(results_dir, exist_ok=True)
     
     results_file_save_path = os.path.join(results_dir, f"population_btbank{test_subject_id}_{test_trial_id}_{eval_name}.json")
