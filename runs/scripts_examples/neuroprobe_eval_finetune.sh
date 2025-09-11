@@ -4,10 +4,10 @@
 #SBATCH --cpus-per-task=2  
 #SBATCH --mem=64G
 #SBATCH --gres=gpu:1
-#SBATCH -t 1:20:00
+#SBATCH -t 24:00:00
 #SBATCH --constraint=24GB
 #SBATCH --exclude=dgx001,dgx002
-#SBATCH --array=539-1824
+#SBATCH --array=1-192
 #SBATCH --output runs/logs_ft/%A_%a.out # STDOUT
 #SBATCH --error runs/logs_ft/%A_%a.err # STDERR
 #SBATCH -p use-everything
@@ -43,6 +43,9 @@ declare -a eval_names=(
     "word_part_speech"
     "speaker"
 )
+eval_names=(
+    $(IFS=,; echo "${eval_names[*]}") # This line is needed to convert the array to a comma-separated string. Feel free to remove it if you don't need it.
+)
 
 declare -a model_dirs=(
     "andrii0_lr0.003_wd0.0_dr0.2_rR2_t20250905_141853"
@@ -55,11 +58,17 @@ declare -a model_epochs=(
     0 30
 )
 
+declare -a finetuning_feature_aggregation_methods=(
+    "meanT_meanE"
+    "keepall"
+)
+
 # Calculate indices for this task
 EVAL_IDX=$(( ($SLURM_ARRAY_TASK_ID-1) % ${#eval_names[@]} ))
 PAIR_IDX=$(( ($SLURM_ARRAY_TASK_ID-1) / ${#eval_names[@]} % ${#subjects[@]} ))
 MODEL_DIR_IDX=$(( ($SLURM_ARRAY_TASK_ID-1) / ${#eval_names[@]} / ${#subjects[@]} % ${#model_dirs[@]} ))
 MODEL_EPOCH_IDX=$(( ($SLURM_ARRAY_TASK_ID-1) / ${#eval_names[@]} / ${#subjects[@]} / ${#model_dirs[@]} % ${#model_epochs[@]} ))
+FINETUNING_FEATURE_AGGREGATION_METHOD_IDX=$(( ($SLURM_ARRAY_TASK_ID-1) / ${#eval_names[@]} / ${#subjects[@]} / ${#model_dirs[@]} / ${#model_epochs[@]} % ${#finetuning_feature_aggregation_methods[@]} ))
 
 # Get subject, trial and eval name for this task
 EVAL_NAME=${eval_names[$EVAL_IDX]}
@@ -67,17 +76,19 @@ SUBJECT=${subjects[$PAIR_IDX]}
 TRIAL=${trials[$PAIR_IDX]}
 MODEL_DIR=${model_dirs[$MODEL_DIR_IDX]}
 MODEL_EPOCH=${model_epochs[$MODEL_EPOCH_IDX]}
-
+FINETUNING_FEATURE_AGGREGATION_METHOD=${finetuning_feature_aggregation_methods[$FINETUNING_FEATURE_AGGREGATION_METHOD_IDX]}
 echo "Running eval for eval $EVAL_NAME, subject $SUBJECT, trial $TRIAL"
 echo "Model dir: $MODEL_DIR"
 echo "Model epoch: $MODEL_EPOCH"
+echo "Finetuning feature aggregation method: $FINETUNING_FEATURE_AGGREGATION_METHOD"
 
 # Add the -u flag to Python to force unbuffered output
-python -u analyses/finetune_on_neuroprobe.py \
+python -u analyses/neuroprobe_eval_finetune.py \
     --eval_name $EVAL_NAME \
     --subject_id $SUBJECT \
     --trial_id $TRIAL \
     --model_dir $MODEL_DIR \
     --model_epoch $MODEL_EPOCH \
     --finetuning_batch_size 96 \
-    --random_seed 42
+    --random_seed 42 \
+    --finetuning_feature_aggregation_method $FINETUNING_FEATURE_AGGREGATION_METHOD

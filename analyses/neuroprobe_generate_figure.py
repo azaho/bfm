@@ -1,23 +1,15 @@
-import argparse
-import glob
-import json
-import math
-import os
-
-import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
+import numpy as np
 import seaborn as sns
-
-import evaluation.neuroprobe.config as neuroprobe_config
-
-save_path = 'analyses/figures/'
-font_path = 'analyses/font_arial.ttf'
-
+import json
+import os
+import glob, math
+import pandas as pd
+import bfm.evaluation.neuroprobe.config as neuroprobe_config
 
 ### PARSE ARGUMENTS ###
 
+import argparse
 parser = argparse.ArgumentParser(description='Create performance figure for BTBench evaluation')
 parser.add_argument('--split_type', type=str, default='SS_DM', 
                     help='Split type to use (SS_SM or SS_DM or DS_DM)')
@@ -28,46 +20,88 @@ metric = 'AUROC' # 'AUROC'
 assert metric == 'AUROC', 'Metric must be AUROC; no other metric is supported'
 
 separate_overall_yscale = True # Whether to have the "Task Mean" figure panel have a 0.5-0.6 ylim instead of 0.5-0.9 (used to better see the difference between models)
-n_fig_legend_cols = 3
+overall_axis_ylim = (0.4925, 0.75) if separate_overall_yscale else (0.48, 0.95)
+other_axis_ylim = (0.48, 0.95)
+
+figure_size_multiplier = 1.8
+n_fig_legend_cols = 3 if figure_size_multiplier<1.8 else 4
 
 ### DEFINE MODELS ###
+
+# assert split_type == 'SS_DM', 'Split type must be SS_DM'
 
 models = [
     {
         'name': 'Linear',
         'color_palette': 'viridis',
-        'eval_results_path': f'/om2/user/zaho/btbench/eval_results_lite_{split_type}/linear_remove_line_noise/'
-    },
-    {
-        'name': 'Linear (STFT)',
-        'color_palette': 'viridis', 
-        'eval_results_path': f'/om2/user/zaho/btbench/eval_results_lite_{split_type}/linear_fft_realimag/'
+        'eval_results_path': f'/om2/user/zaho/neuroprobe/data/eval_results_lite_{split_type}/linear_voltage/'
     },
     {
         'name': 'Linear (spectrogram)',
-        'color_palette': 'viridis',
-        'eval_results_path': f'/om2/user/zaho/btbench/eval_results_lite_{split_type}/linear_fft_abs/'
+        'color_palette': 'viridis', 
+        'eval_results_path': f'/om2/user/zaho/neuroprobe/data/eval_results_lite_{split_type}/linear_stft_abs_nperseg512_poverlap0.75_maxfreq150/'
+    },
+    {
+        'name': 'Linear (laplacian+spectrogram)',
+        'color_palette': 'viridis', 
+        'eval_results_path': f'/om2/user/zaho/neuroprobe/data/eval_results_lite_{split_type}/linear_laplacian-stft_abs_nperseg512_poverlap0.75_maxfreq150/'
+    },
+    # {
+    #     'name': 'Population Transformer',
+    #     'color_palette': 'viridis', 
+    #     'eval_results_path': f'/om2/user/zaho/PopTCameraReadyPrep/outputs/neuroprobe_popt_lite/eval_results_{split_type}/'
+    # },
+    {
+        'name': 'BrainBERT (untrained)',
+        'color_palette': 'viridis', 
+        'eval_results_path': f'/om2/user/zaho/BrainBERT/eval_results_{split_type}/brainbert_randomly_initialized_keepall/',
+        'pad_x': 1,
     },
     {
         'name': 'BrainBERT',
-        'color_palette': 'plasma',
-        'eval_results_path': f'/om2/user/zaho/BrainBERT/eval_results_lite_{split_type}/brainbert_frozen_mean_granularity_{-1}/'
+        'color_palette': 'viridis', 
+        'eval_results_path': f'/om2/user/zaho/BrainBERT/eval_results_{split_type}/brainbert_keepall/'
     },
+]+ [
+    {
+        'name': f'Andrii0 epoch {model_epoch} ({feature_type})',
+        'color_palette': 'rainbow',
+        'eval_results_path': f'runs/data/andrii0_lr0.003_wd0.0_dr0.2_rR2_t20250905_141853/model_epoch{model_epoch}_FT/results/',
+        'pad_x': 1 if model_epoch==0 else 0,
+    } for feature_type in ['meanE_meanT'] for model_epoch in [0, 30] # , 'meanE', 'cls', 'meanT', 'meanT_meanE', 'meanT_cls'
+] + [
+    {
+        'name': f'MSE autoreg. epoch {model_epoch} ({feature_type})',
+        'color_palette': 'rainbow',
+        'eval_results_path': f'runs/data/mse_ar_lr0.003_wd0.0_dr0.2_rR2_t20250905_141854/model_epoch{model_epoch}_FT/results/',
+        'pad_x': 1 if model_epoch==0 else 0,
+    } for feature_type in ['meanE_meanT'] for model_epoch in [0, 30] # , 'meanE', 'cls', 'meanT', 'meanT_meanE', 'meanT_cls'
+] + [
+    {
+        'name': f'MSE random masking epoch {model_epoch} ({feature_type})',
+        'color_palette': 'rainbow',
+        'eval_results_path': f'runs/data/mse_rm_lr0.003_wd0.0_dr0.2_rR2_t20250905_141848/model_epoch{model_epoch}_FT/results/',
+        'pad_x': 1 if model_epoch==0 else 0,
+    } for feature_type in ['meanE_meanT'] for model_epoch in [0, 30] # , 'meanE', 'cls', 'meanT', 'meanT_meanE', 'meanT_cls'
+] + [
+    {
+        'name': f'MSE-MtM epoch {model_epoch} ({feature_type})',
+        'color_palette': 'rainbow',
+        'eval_results_path': f'runs/data/mse_mtm_lr0.003_wd0.0_dr0.2_rR2_t20250905_141646/model_epoch{model_epoch}_FT/results/',
+        'pad_x': 1 if model_epoch==0 else 0,
+    } for feature_type in ['meanE_meanT'] for model_epoch in [0, 30] # , 'meanE', 'cls', 'meanT', 'meanT_meanE', 'meanT_cls'
+] + [
     # {
-    #     'name': 'PopT (frozen)',
-    #     'color_palette': 'magma',
-    #     'eval_results_path': f'/om2/user/zaho/btbench/eval_results_popt/population_frozen_{split_type}_results.csv'
-    # },
-    {
-        'name': 'PopT',
-        'color_palette': 'magma',
-        'eval_results_path': f'/om2/user/zaho/btbench/eval_results_popt/popt_{split_type}_results.csv'
-    },
-    {
-        'name': 'Logistic Regression',
-        'color_palette': 'magma',
-        'eval_results_path': f'/om2/user/brupesh/bfm/runs/data/eval_results_frozen_features_{split_type}/model_epoch40/'
-    }
+    #     'name': f'Andrii BB {bb_model_name} {model_epoch} ({feature_type})',
+    #     'color_palette': 'rainbow',
+    #     'eval_results_path': f'runs/analyses/andrii/25_07_14_andrii0_evals/eval_results_lite_{split_type}/linear_{bb_model_dir}_epoch{model_epoch}_{feature_type}/',
+    #     'pad_x': 1 if model_epoch==0 else 0,
+    # } for bb_model_name, bb_model_dir in {
+    #     "default": "andrii_brainbert_lr0.003_wd0.0_dr0.2_rR2_t20250716_001553",
+    #     "slr": "andrii_brainbert_lr0.0003_wd0.0_dr0.2_rR_SLR_t20250719_173751",
+    #     "czw": "andrii_brainbert_lr0.003_wd0.0_dr0.2_rR_CZWPARAMS3_t20250719_173741",
+    #     "czw_slr": "andrii_brainbert_lr0.0003_wd0.0_dr0.2_rR_CZWPARAMS3SLR_t20250719_173743"
+    # }.items() for feature_type in ['keepall'] for model_epoch in [0, 10, 15, 30]
 ]
 
 ### DEFINE TASK NAME MAPPING ###
@@ -77,21 +111,25 @@ task_name_mapping = {
     'speech': 'Speech',
     'volume': 'Volume', 
     'pitch': 'Voice Pitch',
-    'speaker': 'Speaker Identity',
+
     'delta_volume': 'Delta Volume',
-    'delta_pitch': 'Delta Pitch',
-    'gpt2_surprisal': 'GPT-2 Surprisal',
-    'word_length': 'Word Length',
-    'word_gap': 'Inter-word Gap',
     'word_index': 'Word Position',
+    'word_gap': 'Inter-word Gap',
+    'word_length': 'Word Length',
+
+    'gpt2_surprisal': 'GPT-2 Surprisal',
     'word_head_pos': 'Head Word Position',
     'word_part_speech': 'Part of Speech',
-    'frame_brightness': 'Frame Brightness',
+    'speaker': 'Speaker Identity',
+
     'global_flow': 'Global Optical Flow',
     'local_flow': 'Local Optical Flow',
-    'global_flow_angle': 'Global Flow Angle',
-    'local_flow_angle': 'Local Flow Angle',
+    'frame_brightness': 'Frame Brightness',
     'face_num': 'Number of Faces',
+    
+    # 'delta_pitch': 'Delta Pitch',
+    # 'global_flow_angle': 'Global Flow Angle',
+    # 'local_flow_angle': 'Local Flow Angle',
 }
 
 subject_trials = neuroprobe_config.NEUROPROBE_LITE_SUBJECT_TRIALS
@@ -132,62 +170,6 @@ def parse_results_default(model):
 for model in models:
     model['parse_results_function'] = parse_results_default
 
-def parse_results_hara(model):
-    for task in task_name_mapping.keys():
-        subject_trial_means = []
-        for subject_id, trial_id in subject_trials:
-            pattern = f'/om2/user/hmor/btbench/eval_results_ds_dt_lite_desikan_killiany/DS-DT-FixedTrain-Lite_{task}_test_S{subject_id}T{trial_id}_*.json'
-            matching_files = glob.glob(pattern)
-            if matching_files:
-                filename = matching_files[0]  # Take the first matching file
-            else:
-                print(f"Warning: No matching file found for pattern {pattern}, skipping...")
-            
-            with open(filename, 'r') as json_file:
-                data = json.load(json_file)
-            data = data['final_auroc']
-            subject_trial_means.append(data)
-        performance_data[task][model['name']] = {
-            'mean': np.mean(subject_trial_means),
-            'sem': np.std(subject_trial_means) / np.sqrt(len(subject_trial_means))
-        }
-if split_type == 'DS_DM': # XXX remove this later, have a unified interface for all models
-    models[0]['parse_results_function'] = parse_results_hara
-
-def parse_results_popt(model):
-    # Read the CSV file
-    popt_data = pd.read_csv(model['eval_results_path'])
-    # Group by subject_id, trial_id, and task_name to calculate mean across folds
-    for task in task_name_mapping.keys():
-        subject_trial_means = []
-        
-        for subject_id, trial_id in subject_trials:
-            # Filter data for current subject, trial, and task
-            task_data = popt_data[(popt_data['subject_id'] == subject_id) & 
-                                (popt_data['trial_id'] == trial_id) & 
-                                ((popt_data['task_name'] == task) | (popt_data['task_name'] == task + '_frozen_True'))]
-            
-            if not task_data.empty:
-                # Calculate mean ROC AUC across folds
-                value = task_data['test_roc_auc'].mean()
-                subject_trial_means.append(value)
-            else:
-                print(f"Warning: No data found for subject {subject_id}, trial {trial_id}, task {task} in POPT results ({model['eval_results_path']})")
-        
-        if subject_trial_means:
-            performance_data[task][model['name']] = {
-                'mean': np.mean(subject_trial_means),
-                'sem': np.std(subject_trial_means) / np.sqrt(len(subject_trial_means))
-            }
-        else:
-            performance_data[task][model['name']] = {
-                'mean': np.nan,
-                'sem': np.nan
-            }
-for model in models:
-    if 'PopT' in model['name']:
-        model['parse_results_function'] = parse_results_popt
-
 for model in models:
     model['parse_results_function'](model)
     
@@ -205,6 +187,8 @@ for model in models:
 ### PREPARING FOR PLOTTING ###
 
 # Add Arial font
+import matplotlib.font_manager as fm
+font_path = 'analyses/font_arial.ttf'
 fm.fontManager.addfont(font_path)
 plt.rcParams['font.family'] = 'Arial'
 plt.rcParams.update({'font.size': 12})
@@ -218,38 +202,45 @@ for model in models:
 for model in models:
     model['color'] = sns.color_palette(model['color_palette'], color_palette_ids[model['color_palette']])[model['color_palette_id']]
 
+# Assign model x-positions
+current_x_pos = 0
+for i, model in enumerate(models):
+    if model.get('pad_x', 0): current_x_pos += model['pad_x']
+    model['x_pos'] = current_x_pos
+    current_x_pos += 1
+
 ### PLOT STUFF ###
 
-# Create figure with 4x5 grid - reduced size
-n_cols = 5
-n_rows = math.ceil((len(task_name_mapping)+1)/n_cols)
-fig, axs = plt.subplots(n_rows, n_cols, figsize=(8/5*n_cols, 6/4*n_rows+.6 * len(models) / n_fig_legend_cols/3/2))
+# Create figure with modified grid layout using GridSpec
+import matplotlib.gridspec as gridspec
 
-# Flatten axs for easier iteration
-axs_flat = axs.flatten()
+n_cols = 4
+overall_height = 1.2  # Height of overall axis
+margin_height = -0.05   # Margin between overall and task plots
+task_rows = math.ceil(len(task_name_mapping)/n_cols)
+
+# Create height ratios: [overall_height, margin_height, task_row_1, task_row_2, ...]
+height_ratios = [overall_height, margin_height] + [1.0] * task_rows
+n_rows = len(height_ratios)
+
+fig = plt.figure(figsize=(figure_size_multiplier*8/5*n_cols, figure_size_multiplier*6/4*n_rows+.6 * len(models) / n_fig_legend_cols/3/2))
+gs = gridspec.GridSpec(n_rows, n_cols, height_ratios=height_ratios, hspace=0.3, wspace=0.2)
 
 # Bar width
 bar_width = 0.2
 
-# Plot overall performance in first axis
-first_ax = axs_flat[0]
+# Plot overall performance spanning entire first row
+first_ax = fig.add_subplot(gs[0, :])
 for i, model in enumerate(models):
     perf = overall_performance[model['name']]
-    first_ax.bar(i * bar_width, perf['mean'], bar_width,
+    first_ax.bar(model['x_pos']*bar_width, perf['mean'], bar_width,
                 yerr=perf['sem'],
                 color=model['color'],
                 capsize=6)
 
 first_ax.set_title('Task Mean', fontsize=12, pad=10, bbox=dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.5'))
-if metric == 'accuracy':
-    first_ax.set_ylim(0.2, 1.0)
-else:
-    if separate_overall_yscale:
-        first_ax.set_ylim(0.4925, 0.65)
-        first_ax.set_yticks([0.5, 0.6])
-    else:
-        first_ax.set_ylim(0.48, 0.87)
-        first_ax.set_yticks([0.5, 0.6, 0.7, 0.8])
+first_ax.set_ylim(overall_axis_ylim)
+first_ax.set_yticks(np.arange(0.5, overall_axis_ylim[1], 0.1))
 first_ax.set_xticks([])
 first_ax.set_ylabel(metric)
 first_ax.axhline(y=0.5, color='black', linestyle='--', alpha=0.5)
@@ -257,36 +248,34 @@ first_ax.spines['top'].set_visible(False)
 first_ax.spines['right'].set_visible(False)
 first_ax.tick_params(axis='y')
 
-# Plot counter - start from 1 for remaining plots
-plot_idx = 1
+# Plot counter - start from 0 for task plots in remaining rows
+plot_idx = 0
 
 for task, chance_level in task_name_mapping.items():
-    ax = axs_flat[plot_idx]
+    # Calculate row and column for current task (starting after overall axis and margin)
+    row = plot_idx // n_cols + 2  # Start from row 2 (0=overall, 1=margin, 2+=tasks)
+    col = plot_idx % n_cols
+    ax = fig.add_subplot(gs[row, col])
     
     # Plot bars for each model
     x = np.arange(len(models))
     for i, model in enumerate(models):
         perf = performance_data[task][model['name']]
-        ax.bar(i * bar_width, perf['mean'], bar_width,
+        ax.bar(model['x_pos']*bar_width, perf['mean'], bar_width,
                 yerr=perf['sem'], 
                 color=model['color'],
-                capsize=6)
+                capsize=6/(models[-1]['x_pos']+1) * 10)
     
     # Customize plot
     ax.set_title(task_name_mapping[task], fontsize=12, pad=10)
-    if metric == 'accuracy':
-        ax.set_ylim(0.2, 1.0)
-    else:
-        ax.set_ylim(0.48, 0.87)
-        ax.set_yticks([0.5, 0.6, 0.7, 0.8])
+    ax.set_ylim(other_axis_ylim)
+    ax.set_yticks(np.arange(0.5, other_axis_ylim[1], 0.1))
     ax.set_xticks([])
-    if (plot_idx % 5 == 0):  # Left-most plots
-        ax.set_ylabel(metric)
+    if col == 0:  # Left-most plots
+        ax.set_ylabel("AUROC")
 
     # Add horizontal line at chance level
-    if metric == 'AUROC':
-        chance_level = 0.5
-    ax.axhline(y=chance_level, color='black', linestyle='--', alpha=0.5)
+    ax.axhline(y=0.5, color='black', linestyle='--', alpha=0.5)
     
     # Remove top and right spines
     ax.spines['top'].set_visible(False)
@@ -310,12 +299,20 @@ fig.legend(handles, [model['name'] for model in models] + ["Chance"],
             frameon=False)
 
 # Adjust layout with space at the bottom for legend
-plt.tight_layout(rect=[0, 0.2 if len(task_name_mapping)<10 or len(models)>3 else 0.1, 1, 1], w_pad=0.4)
+rect_y = (0.11 + 0.05 * (math.ceil((len(models)+1)/n_fig_legend_cols)-1)) / figure_size_multiplier
+plt.subplots_adjust(bottom=rect_y)
 
 # Save figure
-file_name = f'neuroprobe_eval_lite_{split_type}.pdf'
-save_path = os.path.join(save_path, file_name)
+save_path = f'analyses/andrii/25_07_14_andrii0_evals/figures/neuroprobe_eval_lite_{split_type}.pdf'
 os.makedirs(os.path.dirname(save_path), exist_ok=True)
 plt.savefig(save_path, dpi=300, bbox_inches='tight')
 print(f'Saved figure to {save_path}')
+
+performance_data['overall'] = overall_performance
+print(performance_data)
+filename = f'analyses/andrii/25_07_14_andrii0_evals/figures/neuroprobe_eval_lite_{split_type}.json' 
+with open(filename, 'w') as f:
+    json.dump(performance_data, f)
+print(f'Saved performance data to {filename}')
+
 plt.close()
