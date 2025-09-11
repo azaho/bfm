@@ -24,7 +24,7 @@ splits_options = [
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--eval_name', type=str, default='onset', help='Evaluation name(s) (e.g. onset, gpt2_surprisal). If multiple, separate with commas.')
-parser.add_argument('--split_type', type=str, choices=splits_options, default='SS_SM', help=f'Type of splits to use ({", ".join(splits_options)})')
+parser.add_argument('--split_type', type=str, choices=splits_options, default='SS_DM', help=f'Type of splits to use ({", ".join(splits_options)})')
 parser.add_argument('--subject_id', type=int, required=True, help='Subject ID')
 parser.add_argument('--trial_id', type=int, required=True, help='Trial ID')
 
