@@ -138,6 +138,26 @@ class mse_ar(TrainingSetup):
         }
         return losses
 
+    def calculate_persistence_baseline_loss(self, batch, output_accuracy=True):
+        # INPUT:
+        #   batch['data'] shape: (batch_size, n_electrodes, n_timesamples)
+        #   batch['electrode_index'] shape: (batch_size, n_electrodes)
+        #   batch['metadata']: dictionary containing metadata like the subject identifier and trial id, sampling rate, etc.
+        # OUTPUT:
+        #   This function will output a dictionary of losses, with the keys being the loss names and the values being the loss values.
+        #   The final loss is the mean of all the losses. Accuracies are exempt and are just used for logging.
+        batch['data'] = batch['data'].to(self.model.device, dtype=self.model.dtype, non_blocking=True)
+        batch['electrode_index'] = batch['electrode_index'].to(self.model.device, non_blocking=True)
+        
+        embeddings = self.electrode_embeddings(batch)
+        preprocessed_data = self.fft_preprocessor(batch) # shape: (batch_size, n_electrodes, n_timebins, d_input)
+        transformed_data = preprocessed_data # shape: (batch_size, n_electrodes, n_timebins, d_output)
+
+        losses = {
+            "mse_a": torch.nn.functional.mse_loss(transformed_data[:, :, :-self.config['training']['future_bin_idx'], :], preprocessed_data[:, :, self.config['training']['future_bin_idx']:, :])
+        }
+        return losses
+
     def generate_frozen_features(self, batch, stop_at_block=-1):
         # INPUT:
         #   batch['data'] shape: (batch_size, n_electrodes, n_timesamples)
