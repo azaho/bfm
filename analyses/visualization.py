@@ -91,7 +91,7 @@ def plot_given_electrode_data(electrode_data, electrode_labels, times, frequenci
         plt.savefig(save_path, bbox_inches='tight')
     plt.show()
 
-def plot_electrode_data(subject, trial_id, window_from, window_to, n_columns=3, annotations={}, electrodes=None, laplacian_rereference=True, spectrogram=False, spectrogram_parameters=None, spectrogram_normalization_parameters=None, time_start=None, time_end=None, plot_width=1, plot_height=1, save_path=None):
+def plot_electrode_data(subject, trial_id, window_from, window_to, n_columns=3, annotations={}, electrodes=None, laplacian_rereference=True, spectrogram=False, spectrogram_parameters=None, spectrogram_normalization_parameters=None, time_start=None, time_end=None, plot_width=1, plot_height=1, save_path=None, display_locations=True):
     """Plot neural data from multiple electrodes, either as time series or spectrograms.
 
     Args:
@@ -114,15 +114,20 @@ def plot_electrode_data(subject, trial_id, window_from, window_to, n_columns=3, 
     """
     electrode_labels = subject.get_electrode_labels() if electrodes is None else electrodes
     electrode_ids = [subject.get_electrode_labels().index(label) for label in electrode_labels]
-    electrode_locations = {electrode_label: subject.get_electrode_metadata(electrode_label)['DesikanKilliany'] for electrode_label in electrode_labels}
-    electrode_titles = [f"{subject.subject_identifier}_{trial_id}_{label} ({location})" for label, location in electrode_locations.items()]
+
+    if display_locations:
+        electrode_locations = {electrode_label: subject.get_electrode_metadata(electrode_label)['DesikanKilliany'] for electrode_label in electrode_labels}
+        electrode_titles = [f"{subject.subject_identifier}_{trial_id}_{label} ({location})" for label, location in electrode_locations.items()]
+    else:
+        electrode_titles = [f"{subject.subject_identifier}_{trial_id}_{label}" for label in electrode_labels]
     
     electrode_data = subject.get_all_electrode_data(trial_id, window_from=window_from, window_to=window_to)
-    electrode_data = electrode_data[electrode_ids] # reorder electrodes to match electrode_labels
 
     if laplacian_rereference:
         from bfm.model.preprocessing.laplacian_rereferencing import laplacian_rereference_neural_data
-        electrode_data, _, _ = laplacian_rereference_neural_data(electrode_data, electrode_labels, remove_non_laplacian=False)
+        electrode_data, _, _ = laplacian_rereference_neural_data(electrode_data, subject.get_electrode_labels(), remove_non_laplacian=False)
+        
+    electrode_data = electrode_data[electrode_ids] # reorder electrodes to match electrode_labels
 
     if spectrogram:
         from bfm.model.preprocessing.spectrogram import SpectrogramPreprocessor
