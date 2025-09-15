@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=bfm_podcast_xx          
+#SBATCH --job-name=podcast_pair          
 #SBATCH --ntasks=1            
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:a100:1
@@ -27,7 +27,7 @@ fi
 
 n_in_parallel=1 # How many jobs to run in parallel on the same job (on the same GPU!)
 
-model_name="andrii0_podcast"
+model_name="andrii0_podcast_pair"
 
 # these parameters are fixed
 # train on subjects 1-6 (first 6 subjects)
@@ -55,10 +55,10 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
     # Convert index to parameter selections
     dropout=${dropout_options[$((idx % n_dr))]}
     weight_decay=${weight_decay_options[$((idx / n_dr))]}
-    random_string="modified_$(date +%s)"
+    random_string="podcast_paired_$(date +%s)"
 
-    log_out="runs/logs/${model_name}_modified_wd${weight_decay}_dr${dropout}.out"
-    log_err="runs/logs/${model_name}_modified_wd${weight_decay}_dr${dropout}.err"
+    log_out="runs/logs/${model_name}_podcast_paired_wd${weight_decay}_dr${dropout}.out"
+    log_err="runs/logs/${model_name}_podcast_paired_wd${weight_decay}_dr${dropout}.err"
 
     # Store the expected wandb run directory name for this run
     wandb_run_dirs+=("runs/wandb/wandb/offline-run-*-${model_name}_wd${weight_decay}_dr${dropout}_r${random_string}")
@@ -66,19 +66,20 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
     python -u pretrain.py  --training.setup_name $model_name \
         --cluster.cache_subjects 1 \
         --cluster.num_workers_dataloaders 4 \
-        --training.max_n_electrodes 235 \
+        --training.max_n_electrodes 117 \
         --training.batch_size 64 \
         --training.p_test 0.2 \
         --model.context_length 2 \
         --training.n_epochs 200 \
-        --cluster.eval_model_every_n_epochs 5 \
+        --cluster.eval_at_beginning 1 \
+        --cluster.eval_model_every_n_epochs 100 \
         --training.random_string $random_string \
         --training.train_subject_trials $train_subject_trials \
         --training.eval_subject_trials $eval_subject_trials \
         --training.eval_tasks "" \
         --training.dropout $dropout \
         --training.weight_decay $weight_decay \
-        --cluster.wandb_project podcast \
+        --cluster.wandb_project roshnipm_iclr_reruns \
         --cluster.wandb_entity andrii-mit \
         > "$log_out" 2> "$log_err" &
 done

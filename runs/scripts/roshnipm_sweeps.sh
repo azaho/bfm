@@ -1,13 +1,13 @@
 #!/bin/bash
-#SBATCH --job-name=btbank_sequential         
+#SBATCH --job-name=btbank_unpaired      
 #SBATCH --ntasks=1            
 #SBATCH --cpus-per-task=4
-#SBATCH --gres=gpu:h100:1
+#SBATCH --gres=gpu:a100:1
 ####SBATCH --constraint=ampere
 #SBATCH --mem=384G
-#SBATCH -t 12:00:00      
+#SBATCH -t 48:00:00      
 #SBATCH --array=1-16
-#SBATCH -p mit_preemptable
+#SBATCH -p normal
 #SBATCH --requeue
 source .venv/bin/activate
 export TMPDIR=/om2/scratch/tmp
@@ -35,7 +35,7 @@ eval_subject_trials="btbank3_1,btbank3_2,btbank4_0,btbank4_2,btbank10_1"
 # these parameters are swept over
 dropout_options=(0.0 0.1 0.2 0.3)
 weight_decay_options=(0.0 0.001 0.01 0.1)
-model_name="roshnipm_pair_sequential"
+model_name="andrii0"
 
 # Calculate indices for parallel jobs
 base_idx=$(( ($SLURM_ARRAY_TASK_ID-1) * n_in_parallel ))
@@ -53,22 +53,23 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
     # Convert index to parameter selections
     dropout=${dropout_options[$((idx % n_dr))]}
     weight_decay=${weight_decay_options[$((idx / n_dr))]}
-    random_string="btbank_random_$(date +%s)"
+    random_string="btbank_unpaired_$(date +%s)"
 
-    log_out="runs/logs/${model_name}_btbank_wd${weight_decay}_dr${dropout}.out"
-    log_err="runs/logs/${model_name}_btbank_wd${weight_decay}_dr${dropout}.err"
+    log_out="runs/logs/${model_name}_btbank_unpaired_wd${weight_decay}_dr${dropout}.out"
+    log_err="runs/logs/${model_name}_btbank_unpaired_wd${weight_decay}_dr${dropout}.err"
 
     # Store the expected wandb run directory name for this run
     wandb_run_dirs+=("runs/wandb/wandb/offline-run-*-${model_name}_wd${weight_decay}_dr${dropout}_r${random_string}")
 
-    python -u pretrain.py  --training.setup_name roshnipm_pair_sequential \
+    python -u pretrain.py  --training.setup_name $model_name \
         --cluster.cache_subjects 1 \
         --cluster.num_workers_dataloaders 4 \
-        --training.max_n_electrodes 64 \
+        --training.max_n_electrodes 128 \
         --training.n_epochs 200 \
         --training.batch_size 64 \
         --training.p_test 0.2 \
         --model.context_length 2 \
+        --cluster.eval_at_beginning 1 \
         --cluster.eval_model_every_n_epochs 100 \
         --training.random_string $random_string \
         --training.train_subject_trials $train_subject_trials \

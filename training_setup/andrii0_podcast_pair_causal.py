@@ -420,9 +420,9 @@ class andrii0_podcast_pair_causal(TrainingSetup):
             # Split into contiguous train/test blocks to prevent temporal leakage
             total_windows = len(dataset)
             # Create train indices (first 80% of windows)
-            train_indices = list(range(int(total_windows * 0.8)))
+            train_indices = list(range(int(total_windows * (1 - config['training']['p_test']))))
             # Create test indices (last 20% of windows)
-            test_indices = list(range(int(total_windows * 0.8), total_windows))
+            test_indices = list(range(int(total_windows * (1 - config['training']['p_test'])), total_windows))
             
             train_dataset = torch.utils.data.Subset(dataset, train_indices)
             test_dataset = torch.utils.data.Subset(dataset, test_indices)

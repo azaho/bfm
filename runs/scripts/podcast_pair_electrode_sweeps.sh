@@ -2,12 +2,12 @@
 #SBATCH --job-name=bfm_podcast_pair_xx          
 #SBATCH --ntasks=4            
 #SBATCH --cpus-per-task=4
-#SBATCH --gres=gpu:h100:1
+#SBATCH --gres=gpu:a100:1
 ####SBATCH --constraint=ampere
 #SBATCH --mem=128G
 #SBATCH -t 12:00:00      
 #SBATCH --array=1-5
-#SBATCH -p mit_preemptable
+#SBATCH -p normal
 #SBATCH --requeue
 source .venv/bin/activate
 export TMPDIR=/om2/scratch/tmp
@@ -42,10 +42,10 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
     
     # Convert index to parameter selections
     electrode=${electrode_options[$((idx % n_electrode))]}
-    random_string="electrode${electrode}_$(date +%s)"
+    random_string="electrode_hg${electrode}_$(date +%s)"
 
-    log_out="runs/logs/${model_name}_electrode${electrode}.out"
-    log_err="runs/logs/${model_name}_electrode${electrode}.err"
+    log_out="runs/logs/${model_name}_electrode_hg${electrode}.out"
+    log_err="runs/logs/${model_name}_electrode_hg${electrode}.err"
 
     # Store the expected wandb run directory name for this run
     wandb_run_dirs+=("runs/wandb/wandb/offline-run-*-${model_name}_wd${weight_decay}_dr${dropout}_r${random_string}")
@@ -57,7 +57,7 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
         --training.n_epochs 200 \
         --training.batch_size 32 \
         --training.p_test 0.2 \
-        --model.context_length 8 \
+        --model.context_length 4 \
         --training.future_bin_idx 0 \
         --cluster.eval_model_every_n_epochs 10 \
         --training.train_subject_trials podcast01_0,podcast02_0,podcast03_0,podcast04_0,podcast05_0,podcast06_0,podcast07_0,podcast08_0,podcast09_0 \

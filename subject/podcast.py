@@ -39,6 +39,7 @@ class PodcastSubject(Subject):
                              subject=f"{self.subject_id:02d}",
                              task="podcast",
                              datatype="ieeg",
+                             description="highgamma",
                              suffix="ieeg",
                              extension="fif")
         

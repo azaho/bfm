@@ -22,7 +22,7 @@ n_in_parallel=1 # How many jobs to run in parallel on the same job (on the same 
 train_subject_trials="podcast01_0,podcast02_0,podcast03_0,podcast04_0,podcast05_0,podcast06_0,podcast07_0,podcast08_0,podcast09_0"
 # eval on subjects 7-9 (will create all possible pairs automatically)
 eval_subject_trials="podcast07_0,podcast08_0,podcast09_0"
-model_name="andrii0_podcast_pair_bert"
+model_name="andrii0_podcast_pair_causal"
 
 # these parameters are swept over - increased regularization for overfitting
 cl_options=(1 2 3 4 8 12 16)
@@ -44,10 +44,10 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
     
     # Convert index to parameter selections
     cl=${cl_options[$((idx % n_cl))]}
-    random_string="cl${cl}_402040_$(date +%s)"
+    random_string="cl${cl}_$(date +%s)"
 
-    log_out="runs/logs/${model_name}_cl${cl}_402040.out"
-    log_err="runs/logs/${model_name}_cl${cl}_402040.err"
+    log_out="runs/logs/${model_name}_cl${cl}.out"
+    log_err="runs/logs/${model_name}_cl${cl}.err"
 
     # Store the expected wandb run directory name for this run
     wandb_run_dirs+=("runs/wandb/wandb/offline-run-*-${model_name}_wd${weight_decay}_dr${dropout}_r${random_string}")
@@ -68,7 +68,7 @@ for i in $(seq 0 $(( n_in_parallel - 1 ))); do
         --training.dropout $dropout \
         --training.weight_decay $weight_decay \
         --training.eval_tasks "" \
-        --cluster.wandb_project podcast \
+        --cluster.wandb_project roshnipm_iclr_reruns \
         --cluster.wandb_entity andrii-mit \
         > "$log_out" 2> "$log_err" &
 done

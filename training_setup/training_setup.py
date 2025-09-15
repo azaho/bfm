@@ -231,7 +231,8 @@ class TrainingSetup:
         test_datasets = []
         for dataset in datasets:
             train_size = int(len(dataset) * (1 - config['training']['p_test']))
-            train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, len(dataset) - train_size])
+            train_dataset = torch.utils.data.Subset(dataset, range(train_size))
+            test_dataset = torch.utils.data.Subset(dataset, range(train_size, len(dataset)))
             train_datasets.append(train_dataset)
             test_datasets.append(test_dataset)
         train_dataset = ConcatDataset(train_datasets)
