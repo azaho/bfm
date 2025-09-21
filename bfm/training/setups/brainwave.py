@@ -191,8 +191,25 @@ class BrainWave(TrainingSetup):
         }
 
 
-    def generate_frozen_features(self, batch: dict):
-        """Generate frozen features for the given batch."""
+    def generate_frozen_features(self, batch: dict) -> torch.Tensor:
+        """
+        Generate frozen features for the given batch.
+        
+        
+        Args:
+            batch (dict): Dictionary containing:
+                - 'data' (Tensor): Shape (batch_size, n_electrodes, n_timesamples).
+                - 'electrode_index' (Tensor): Shape (batch_size, n_electrodes).
+                - 'metadata' (dict): Contains subject identifier, trial ID, sampling rate, etc.
+            
+        Returns:
+            Tensor: Frozen features of shape (batch size, n electrodes, n timebins, feature_dim).
+        """
         with torch.no_grad():
-            _, frozen_features = self.model(batch)
+            batch['data'] = batch['data'].to(
+                self.model.device, 
+                self.model.dtype,
+                non_blocking=True
+            )
+            frozen_features, _ = self.model.forward(batch)  # [B, N, P, D]
         return frozen_features
